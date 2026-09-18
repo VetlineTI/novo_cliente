@@ -70,7 +70,7 @@ export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initia
                 </div>
 
                 <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-tight">
-                  Acompanhe seu credenciamento
+                  Acompanhe seu cadastro
                 </h2>
 
                 <p className="text-sm text-slate-600 leading-relaxed">
