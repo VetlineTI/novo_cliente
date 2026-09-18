@@ -89,32 +89,20 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
         const authUser = authData.user;
         let profile = null;
 
-        // Busca perfil na tabela admin_profiles (schema public ou novo_cliente)
+        // Busca perfil na tabela novo_cliente.admin_profiles
         try {
-          // Tenta schema public
-          const resPublic = await supabase
+          const resCustom = await supabase
+            .schema('novo_cliente')
             .from('admin_profiles')
             .select('*')
             .eq('id', authUser.id)
             .maybeSingle();
 
-          if (!resPublic.error && resPublic.data) {
-            profile = resPublic.data;
-          } else {
-            // Tenta schema novo_cliente
-            const resCustom = await supabase
-              .schema('novo_cliente')
-              .from('admin_profiles')
-              .select('*')
-              .eq('id', authUser.id)
-              .maybeSingle();
-
-            if (!resCustom.error && resCustom.data) {
-              profile = resCustom.data;
-            }
+          if (!resCustom.error && resCustom.data) {
+            profile = resCustom.data;
           }
 
-          // Se não existir perfil, cria como 'bloqueado' por padrão (NÃO dá ADM automático para todos)
+          // Se não existir perfil, cria como 'bloqueado' por padrão no schema novo_cliente
           if (!profile) {
             const isMasterEmail = cleanEmail === 'admin@vetline.com.br' || cleanEmail.startsWith('admin@');
             const defaultRole = isMasterEmail ? 'admin' : 'bloqueado';
@@ -127,7 +115,10 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
               is_admin: defaultRole === 'admin',
             };
 
-            await supabase.from('admin_profiles').insert([newProfile]);
+            await supabase
+              .schema('novo_cliente')
+              .from('admin_profiles')
+              .insert([newProfile]);
             profile = newProfile;
           }
         } catch (profileErr) {
@@ -241,31 +232,7 @@ export const fetchAuthUsersWithProfiles = async () => {
       console.warn('RPC list_auth_users_with_profiles indisponível, tentando tabela:', rpcErr);
     }
 
-    // 2. Fallback: consulta direta em admin_profiles (schema public)
-    try {
-      const { data, error } = await supabase
-        .from('admin_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        return { 
-          success: true, 
-          data: data.map(p => ({
-            id: p.id,
-            email: p.email,
-            created_at: p.created_at,
-            last_sign_in_at: p.updated_at,
-            full_name: p.full_name || p.email.split('@')[0],
-            role: p.role || 'bloqueado',
-            is_admin: p.is_admin ?? (p.role === 'admin'),
-            has_profile: true
-          }))
-        };
-      }
-    } catch (err) {}
-
-    // 3. Fallback: consulta em novo_cliente.admin_profiles
+    // 2. Consulta direta em novo_cliente.admin_profiles
     try {
       const { data, error } = await supabase
         .schema('novo_cliente')
@@ -291,7 +258,7 @@ export const fetchAuthUsersWithProfiles = async () => {
     } catch (err) {}
   }
 
-  // 4. Fallback Local Storage
+  // 3. Fallback Local Storage
   try {
     const raw = localStorage.getItem(ADMIN_USERS_LOCAL_KEY);
     const profiles = raw ? JSON.parse(raw) : [
@@ -335,25 +302,7 @@ export const setUserRole = async (userId, newRole, fullName = '') => {
       }
     } catch (rpcErr) {}
 
-    // 2. Fallback para upsert direto na tabela admin_profiles (schema public)
-    try {
-      const { data, error } = await supabase
-        .from('admin_profiles')
-        .upsert({
-          id: userId,
-          role: newRole,
-          is_admin: isAdmin,
-          ...(fullName ? { full_name: fullName } : {}),
-          updated_at: new Date().toISOString()
-        })
-        .select();
-
-      if (!error && data) {
-        return { success: true, data: data[0] };
-      }
-    } catch (err) {}
-
-    // 3. Fallback para upsert em novo_cliente.admin_profiles
+    // 2. Upsert direto em novo_cliente.admin_profiles
     try {
       const { data, error } = await supabase
         .schema('novo_cliente')
@@ -373,7 +322,7 @@ export const setUserRole = async (userId, newRole, fullName = '') => {
     } catch (err) {}
   }
 
-  // 4. Fallback Local Storage
+  // 3. Fallback Local Storage
   try {
     const raw = localStorage.getItem(ADMIN_USERS_LOCAL_KEY) || '[]';
     const profiles = JSON.parse(raw);
@@ -421,7 +370,7 @@ export const grantRoleByEmail = async (email, role = 'admin', fullName = '') => 
       }
     } catch (rpcErr) {}
 
-    // 2. Inserção direta em admin_profiles (schema public)
+    // 2. Inserção direta em novo_cliente.admin_profiles
     try {
       const newProfile = {
         id: crypto.randomUUID(),
@@ -433,6 +382,7 @@ export const grantRoleByEmail = async (email, role = 'admin', fullName = '') => 
       };
 
       const { data, error } = await supabase
+        .schema('novo_cliente')
         .from('admin_profiles')
         .insert([newProfile])
         .select();

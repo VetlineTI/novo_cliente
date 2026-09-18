@@ -158,7 +158,8 @@ export const fetchSalespeople = async (forceRefresh = false) => {
 };
 
 /**
- * Salva os dados do formulário na tabela data_new_client (tenta no schema public e depois novo_cliente)
+ * Salva os dados do formulário exclusivamente na tabela novo_cliente.data_new_client
+ * (Utiliza RPC pública com SECURITY DEFINER direcionada ao schema novo_cliente e fallback direto no schema novo_cliente)
  * @param {Object} clientData Dados formatados para persistência
  * @returns {Promise<{success: boolean, data?: any, error?: any}>}
  */
@@ -200,28 +201,28 @@ export const submitNewClient = async (clientData) => {
       doc_crmv_url: clientData.doc_crmv_url || null,
       status: 'pendente',
       terms_accepted: clientData.terms_accepted ?? true,
+      auth_user_id: clientData.auth_user_id || null,
     };
 
-    // Função de limpeza de payload para colunas opcionais que possam não existir na tabela ainda
-    const removeMissingCols = (err, payload) => {
-      const p = { ...payload };
-      const msg = err?.message || '';
-      if (msg.includes('zipcode')) delete p.zipcode;
-      if (msg.includes('street')) delete p.street;
-      if (msg.includes('number')) delete p.number;
-      if (msg.includes('neighborhood')) delete p.neighborhood;
-      if (msg.includes('complement')) delete p.complement;
-      if (msg.includes('city')) delete p.city;
-      if (msg.includes('state')) delete p.state;
-      if (msg.includes('doc_crmv_url')) delete p.doc_crmv_url;
-      if (msg.includes('cd_vend')) delete p.cd_vend;
-      if (msg.includes('tab_pre')) delete p.tab_pre;
-      if (msg.includes('tp_ped')) delete p.tp_ped;
-      if (msg.includes('storage_bucket')) delete p.storage_bucket;
-      return p;
-    };
+    // 1. Método Principal: Função RPC no Supabase que insere diretamente em novo_cliente.data_new_client
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('insert_novo_cliente', {
+        client_payload: insertPayload
+      });
 
-    // 1. Tentativa prioritária no schema customizado novo_cliente.data_new_client
+      if (!rpcError && rpcData) {
+        console.info('✅ Cliente cadastrado com sucesso no schema novo_cliente via RPC');
+        return { success: true, data: [rpcData] };
+      }
+
+      if (rpcError) {
+        console.warn('⚠️ RPC insert_novo_cliente retornou aviso/erro:', rpcError.message);
+      }
+    } catch (errRpc) {
+      console.warn('⚠️ Exceção ao tentar RPC insert_novo_cliente:', errRpc);
+    }
+
+    // 2. Método Secundário: Inserção direta no schema novo_cliente via PostgREST
     try {
       let res = await supabase
         .schema('novo_cliente')
@@ -229,41 +230,24 @@ export const submitNewClient = async (clientData) => {
         .insert([insertPayload])
         .select();
 
-      if (res.error && (res.error.code === '42703' || res.error.message?.includes('does not exist') || res.error.message?.includes('column'))) {
-        const cleanPayload = removeMissingCols(res.error, insertPayload);
-        res = await supabase.schema('novo_cliente').from('data_new_client').insert([cleanPayload]).select();
-      }
-
-      if (!res.error && res.data) {
-        return { success: true, data: res.data };
-      }
-    } catch (errCustom) {
-      console.warn('Tentativa no schema novo_cliente falhou, tentando schema public:', errCustom);
-    }
-
-    // 2. Tentativa no schema padrão (public.data_new_client)
-    try {
-      let res = await supabase
-        .from('data_new_client')
-        .insert([insertPayload])
-        .select();
-
-      if (res.error && (res.error.code === '42703' || res.error.message?.includes('does not exist') || res.error.message?.includes('column'))) {
-        const cleanPayload = removeMissingCols(res.error, insertPayload);
-        res = await supabase.from('data_new_client').insert([cleanPayload]).select();
-      }
-
-      if (!res.error && res.data) {
+      if (!res.error && res.data && res.data.length > 0) {
+        console.info('✅ Cliente cadastrado com sucesso diretamente no schema novo_cliente');
         return { success: true, data: res.data };
       }
 
       if (res.error) {
-        console.error('Erro na inserção do Supabase:', res.error);
-        throw res.error;
+        console.error('❌ Erro ao inserir no schema novo_cliente:', res.error);
+        return { 
+          success: false, 
+          error: `Erro ao salvar no schema novo_cliente: ${res.error.message}. Certifique-se de executar o script SQL no Supabase.` 
+        };
       }
-    } catch (errPublic) {
-      console.error('Falha na integração com Supabase:', errPublic);
-      return { success: false, error: errPublic.message || 'Falha ao salvar cadastro no banco' };
+    } catch (errCustom) {
+      console.error('❌ Exceção ao gravar no schema novo_cliente:', errCustom);
+      return { 
+        success: false, 
+        error: `Falha de conexão com o schema novo_cliente: ${errCustom.message || 'Erro desconhecido'}` 
+      };
     }
   }
 
@@ -315,7 +299,7 @@ const getLocalClients = () => {
 };
 
 /**
- * Busca a lista de cadastros de clientes (do Supabase ou do armazenamento local)
+ * Busca a lista de cadastros de clientes exclusivamente do schema novo_cliente (ou armazenamento local)
  * @param {Object} options Filtros e opções
  * @returns {Promise<{success: boolean, data: Array, error?: string}>}
  */
@@ -323,7 +307,21 @@ export const fetchClients = async (options = {}) => {
   const { status, searchTerm } = options;
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Tenta prioritariamente no schema novo_cliente
+    // 1. Método Principal: Consulta via RPC get_novo_cliente_clients
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_novo_cliente_clients', {
+        p_status: (status && status !== 'todos') ? status : null,
+        p_search: (searchTerm && searchTerm.trim()) ? searchTerm.trim() : null
+      });
+
+      if (!rpcError && rpcData) {
+        return { success: true, data: rpcData };
+      }
+    } catch (errRpc) {
+      console.warn('Tentativa RPC get_novo_cliente_clients falhou:', errRpc);
+    }
+
+    // 2. Método Secundário: Consulta direta no schema novo_cliente
     try {
       let query = supabase
         .schema('novo_cliente')
@@ -338,30 +336,23 @@ export const fetchClients = async (options = {}) => {
       const { data, error } = await query;
 
       if (!error && data) {
-        return { success: true, data };
+        // Aplica filtro de texto local caso venha da consulta direta
+        let filtered = data;
+        if (searchTerm && searchTerm.trim()) {
+          const term = searchTerm.toLowerCase().trim();
+          filtered = data.filter((c) => 
+            (c.full_name && c.full_name.toLowerCase().includes(term)) ||
+            (c.trade_name && c.trade_name.toLowerCase().includes(term)) ||
+            (c.document_number && c.document_number.includes(term)) ||
+            (c.email && c.email.toLowerCase().includes(term)) ||
+            (c.phone && c.phone.includes(term)) ||
+            (c.city && c.city.toLowerCase().includes(term))
+          );
+        }
+        return { success: true, data: filtered };
       }
     } catch (errCustom) {
-      // continua para tentar o schema public
-    }
-
-    // 2. Fallback no schema public
-    try {
-      let query = supabase
-        .from('data_new_client')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (status && status !== 'todos') {
-        query = query.eq('status', status);
-      }
-
-      const { data, error } = await query;
-
-      if (!error && data) {
-        return { success: true, data };
-      }
-    } catch (errPublic) {
-      console.warn('Falha na requisição ao Supabase, carregando local:', errPublic);
+      console.warn('Tentativa direta no schema novo_cliente falhou:', errCustom);
     }
   }
 
@@ -391,7 +382,7 @@ export const fetchClients = async (options = {}) => {
 };
 
 /**
- * Atualiza todos os dados de um cliente (dados cadastrais, comerciais tab_pre/tp_ped/cd_vend, endereço, status e notas)
+ * Atualiza todos os dados de um cliente exclusivamente no schema novo_cliente
  * @param {string} clientId ID do cliente
  * @param {Object} dataToUpdate Objeto com campos a serem atualizados
  * @returns {Promise<{success: boolean, data?: any, error?: string}>}
@@ -399,27 +390,23 @@ export const fetchClients = async (options = {}) => {
 export const updateClientData = async (clientId, dataToUpdate = {}) => {
   if (isSupabaseConfigured && supabase) {
     const updatePayload = { ...dataToUpdate };
-    
-    // Função auxiliar para remover colunas opcionais caso ainda não existam no schema
-    const removeMissingCols = (err, payload) => {
-      const p = { ...payload };
-      const msg = err?.message || '';
-      if (msg.includes('zipcode')) delete p.zipcode;
-      if (msg.includes('street')) delete p.street;
-      if (msg.includes('number')) delete p.number;
-      if (msg.includes('neighborhood')) delete p.neighborhood;
-      if (msg.includes('complement')) delete p.complement;
-      if (msg.includes('city')) delete p.city;
-      if (msg.includes('state')) delete p.state;
-      if (msg.includes('tab_pre')) delete p.tab_pre;
-      if (msg.includes('tp_ped')) delete p.tp_ped;
-      if (msg.includes('cd_vend')) delete p.cd_vend;
-      if (msg.includes('doc_crmv_url')) delete p.doc_crmv_url;
-      if (msg.includes('storage_bucket')) delete p.storage_bucket;
-      return p;
-    };
 
-    // 1. Tenta prioritariamente no schema novo_cliente
+    // 1. Método Principal: Atualização via RPC update_novo_cliente
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('update_novo_cliente', {
+        p_client_id: clientId,
+        p_payload: updatePayload
+      });
+
+      if (!rpcError && rpcData) {
+        updateLocalClientFull(clientId, rpcData);
+        return { success: true, data: rpcData };
+      }
+    } catch (errRpc) {
+      console.warn('Tentativa RPC update_novo_cliente falhou:', errRpc);
+    }
+
+    // 2. Método Secundário: Atualização direta no schema novo_cliente
     try {
       let res = await supabase
         .schema('novo_cliente')
@@ -428,38 +415,16 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         .eq('id', clientId)
         .select();
 
-      if (res.error && (res.error.code === '42703' || res.error.message?.includes('does not exist') || res.error.message?.includes('column'))) {
-        const cleanPayload = removeMissingCols(res.error, updatePayload);
-        res = await supabase.schema('novo_cliente').from('data_new_client').update(cleanPayload).eq('id', clientId).select();
-      }
-
       if (!res.error && res.data && res.data.length > 0) {
         updateLocalClientFull(clientId, res.data[0]);
         return { success: true, data: res.data[0] };
+      }
+
+      if (res.error) {
+        console.error('Erro ao atualizar no schema novo_cliente:', res.error);
       }
     } catch (errCustom) {
-      console.warn('Tentativa update novo_cliente falhou:', errCustom);
-    }
-
-    // 2. Fallback no schema public
-    try {
-      let res = await supabase
-        .from('data_new_client')
-        .update(updatePayload)
-        .eq('id', clientId)
-        .select();
-
-      if (res.error && (res.error.code === '42703' || res.error.message?.includes('does not exist') || res.error.message?.includes('column'))) {
-        const cleanPayload = removeMissingCols(res.error, updatePayload);
-        res = await supabase.from('data_new_client').update(cleanPayload).eq('id', clientId).select();
-      }
-
-      if (!res.error && res.data && res.data.length > 0) {
-        updateLocalClientFull(clientId, res.data[0]);
-        return { success: true, data: res.data[0] };
-      }
-    } catch (errPublic) {
-      console.warn('Falha ao atualizar cliente no schema public:', errPublic);
+      console.warn('Tentativa update novo_cliente direto falhou:', errCustom);
     }
   }
 
@@ -498,15 +463,16 @@ const updateLocalClientFull = (clientId, dataToUpdate) => {
 };
 
 /**
- * Exclui um cadastro
+ * Exclui um cadastro exclusivamente no schema novo_cliente
  */
 export const deleteClient = async (clientId) => {
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase.schema('novo_cliente').from('data_new_client').delete().eq('id', clientId);
-    } catch (err) {}
+      await supabase.rpc('delete_novo_cliente', { p_client_id: clientId });
+    } catch (errRpc) {}
+
     try {
-      await supabase.from('data_new_client').delete().eq('id', clientId);
+      await supabase.schema('novo_cliente').from('data_new_client').delete().eq('id', clientId);
     } catch (err) {}
   }
 

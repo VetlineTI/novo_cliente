@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
+import { CreatePasswordModal } from './CreatePasswordModal';
+import { registerClientWithAuth } from '../lib/clientAuth';
 import { 
   maskCPF, 
   maskCNPJ, 
@@ -98,6 +100,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Termos e status
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
@@ -438,8 +441,8 @@ export const RegistrationForm = ({ onSuccess }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Envio final do formulário
-  const handleSubmit = async (e) => {
+  // Validação e abertura da modal de criação de senha
+  const handleSubmit = (e) => {
     e.preventDefault();
     setSubmitError(null);
 
@@ -452,7 +455,25 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
+    // Abre a modal para o cliente criar sua senha de acesso
+    setShowPasswordModal(true);
+  };
+
+  // Envio final do formulário com e-mail e senha informados na modal
+  const handlePasswordSubmit = async (confirmedEmail, password) => {
     setIsSubmitting(true);
+    setSubmitError(null);
+
+    // Garante extração correta caso venha como 2 parâmetros ou como objeto
+    let finalEmail = email;
+    let finalPassword = password;
+
+    if (typeof confirmedEmail === 'string' && password) {
+      finalEmail = confirmedEmail.trim().toLowerCase();
+      finalPassword = password;
+    } else if (typeof confirmedEmail === 'string' && !password) {
+      finalPassword = confirmedEmail;
+    }
 
     try {
       // Upload dos documentos anexados para a pasta do CNPJ/CPF no bucket 'novos_clientes'
@@ -489,7 +510,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         ie_number: null,
         phone: phone,
         segment: segment,
-        email: email,
+        email: finalEmail,
         zipcode: zipcode,
         street: street,
         number: number,
@@ -516,16 +537,25 @@ export const RegistrationForm = ({ onSuccess }) => {
         terms_accepted: true,
       };
 
-      const result = await submitNewClient(payload);
+      const result = await registerClientWithAuth(payload, finalPassword);
 
       if (!result.success) {
-        throw new Error(result.error || 'Erro ao registrar cadastro');
+        throw new Error(result.error || 'Erro ao registrar cadastro e criar senha.');
       }
 
-      onSuccess(payload);
+      // Atualiza o e-mail no formulário caso tenha sido ajustado na modal
+      if (finalEmail !== email) {
+        setEmail(finalEmail);
+      }
+
+      setShowPasswordModal(false);
+      if (onSuccess) {
+        onSuccess(result.client || payload, result.session);
+      }
     } catch (err) {
-      console.error('Erro na submissão:', err);
+      console.error('Erro na submissão com senha:', err);
       setSubmitError(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');
+      setShowPasswordModal(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -1458,6 +1488,16 @@ export const RegistrationForm = ({ onSuccess }) => {
         isOpen={showTermsModal}
         onClose={() => setShowTermsModal(false)}
         onAccept={() => setAgreedTerms(true)}
+      />
+
+      {/* Modal de Criação de Senha de Acesso */}
+      <CreatePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        email={email}
+        fullName={fullName}
+        onSubmit={handlePasswordSubmit}
+        isSubmitting={isSubmitting}
       />
     </div>
   );

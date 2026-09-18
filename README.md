@@ -1,85 +1,48 @@
-# 🐾 Vetline - Formulário de Cadastro de Clientes & Painel Administrativo
+# 🐾 Vetline - Portal de Credenciamento, Área do Cliente & Painel Administrativo
 
-Aplicação web moderna, intuitiva e altamente responsiva para cadastro e credenciamento de novos clientes (Pessoa Física e Pessoa Jurídica) da **Vetline Distribuidora de Produtos Veterinários**, integrada com **React**, **Tailwind CSS** e banco de dados **Supabase** no schema **`novo_cliente`** (tabelas `data_new_client` e `admin_profiles`).
+Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, login, autoatendimento e gestão de clientes (Pessoa Física e Pessoa Jurídica) da **Vetline Distribuidora de Produtos Veterinários**, integrada com **React**, **Tailwind CSS** e banco de dados **Supabase** no schema **`novo_cliente`** (tabelas `data_new_client`, `admin_profiles` e integração com `auth.users`).
 
 ---
 
 ## 📸 Funcionalidades e Regras de Negócio
 
-1. **Tipo de Pessoa (Primeiro Campo Obrigatório)**:
-   - Seleção inicial e mandatória entre **Pessoa Jurídica (PJ)** ou **Pessoa Física (PF)**.
-   - O formulário adapta campos, máscaras e documentos exigidos automaticamente com base no tipo selecionado.
+### 1. 🔑 Tela Inicial com Abas ("Já sou cliente" & "Ainda não sou")
+- A rota principal (`/`) oferece um seletor moderno de abas:
+  - **Aba "Já sou cliente"**: Formulário de login direto com e-mail e senha cadastrados no Supabase Auth, permitindo acesso imediato à Área do Cliente.
+  - **Aba "Ainda não sou"**: Formulário completo de credenciamento e apresentação institucional da Vetline.
 
-2. **Pessoa Jurídica (com Integração BrasilAPI)**:
-   - **CNPJ** com máscara (`00.000.000/0000-00`) e validação matemática real (Módulo 11).
-   - **Consulta em Tempo Real na Receita Federal (BrasilAPI)**: Ao digitar o CNPJ, busca automaticamente a **Razão Social**, situação cadastral (**ATIVA**, **BAIXADA**), sugestão de segmento pelo CNAE e o **Quadro de Sócios (QSA)**.
-   - **Documentos PJ**:
-     - *Contrato Social / Documento Constitutivo*
-     - *Documento com Foto de um dos Sócios (RG/CNH)*
-     - **Regra**: Obrigatório anexar **pelo menos 1** documento (Contrato Social OU Documento com Foto do Sócio).
+### 2. 🛡️ Confirmação de E-mail & Criação de Senha no Supabase Auth
+- Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema valida todas as regras e abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
+- O usuário informa/confirma o **e-mail para login** e define sua **senha de acesso** com validação de força (mínimo 6 dígitos e confirmação).
+- O sistema registra o usuário no **Supabase Auth (`auth.users`)**, vincula o `auth_user_id` ao registro da tabela `novo_cliente.data_new_client` e faz o login automático do cliente.
 
-3. **Pessoa Física**:
-   - **CPF** com máscara (`000.000.000-00`) e validação matemática de dígitos verificadores.
-   - **Nome Completo**.
-   - **Documentos PF**:
-     - *CRMV (Carteira Profissional do Médico Veterinário)*
-     - *Comprovante de Endereço (recente)*
-     - **Regra**: **Ambos os 2 documentos são obrigatórios**.
+### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
+- Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:
+  - **Acompanhamento de Status em Tempo Real**:
+    - 🟡 **Pendente**: Cadastro em fila com informações de prazo de análise.
+    - 🔵 **Em Análise**: Processo de checagem documental ativo.
+    - 🟢 **Aprovado**: Boas-vindas com exibição das condições comerciais, tabela de preço liberada (`VTL01`) e vendedor responsável.
+    - 🔴 **Necessita Correções (Recusado)**: Exibição clara das notas/parecer do analista para que o cliente ajuste os dados e reenviar documentos.
+  - **Edição de Dados Cadastrais**:
+    - Alteração de Razão Social/Nome, telefone/WhatsApp, e-mail de faturamento, segmento e endereços (principal e entrega divergente com busca por CEP).
+  - **Documentos & Reenvio de Anexos**:
+    - Visualização dos arquivos já enviados com suporte a zoom e rotação.
+    - Botão **"Substituir / Enviar documento"** para reenvio direto de arquivos ao Supabase Storage.
+  - **Atendimento e Suporte**: Canal direto via WhatsApp integrado com os dados do cliente.
 
-4. **Contato e Segmento**:
-   - **Telefone / WhatsApp** com máscara `(00) 00000-0000` e ícone oficial do WhatsApp.
-   - **Segmento de Atuação** (29 opções padronizadas de mercado).
-   - **E-mail** com validação de formato.
+### 4. 🏢 Regras Cadastrais (PF & PJ)
+- **Tipo de Pessoa**: Seleção entre Pessoa Jurídica (PJ) e Pessoa Física (PF).
+- **Pessoa Jurídica (PJ)**: Consulta automática na Receita Federal via BrasilAPI ao digitar o CNPJ, preenchendo Razão Social, CNAE, Situação Cadastral e Sócios. Anexo de Contrato Social OU Documento do Sócio (pelo menos 1 obrigatório).
+- **Pessoa Física (PF)**: Validação de CPF e obrigatoriedade de CRMV (Médico Veterinário) + Comprovante de Endereço.
+- **Endereço Principal & Entrega**: Preenchimento automático via CEP (BrasilAPI / ViaCEP).
+- **Vendedor Responsável (`cd_vend`)**: Seleção de vendedor da tabela `public.vendedor` ou padrão `'ATENA'`.
 
-5. **Endereço Principal / Cadastral (Obrigatório para PF e PJ)**:
-   - **Pessoa Jurídica (PJ)**: Preenchido automaticamente em tempo real a partir da consulta do CNPJ na Receita Federal via BrasilAPI.
-   - **Pessoa Física (PF) e PJ**: Ao digitar os 8 dígitos do CEP, consulta a API (BrasilAPI com fallback para ViaCEP) e auto-preenche **Logradouro/Rua**, **Bairro**, **Cidade** e **Estado (UF)**, restando apenas informar o Número e Complemento.
-   - Campos armazenados: `zipcode`, `street`, `number`, `neighborhood`, `complement`, `city`, `state`.
-
-6. **Atendimento por Vendedor (`cd_vend`) e Dados Comerciais (`tab_pre`, `tp_ped`)**:
-   - Pergunta mandatória: *"Foi atendido por algum vendedor?"*
-   - Se **Não**: Salva automaticamente o código `'ATENA'` na coluna `cd_vend` da tabela `data_new_client`.
-   - Se **Sim**: Permite pesquisar e selecionar os vendedores cadastrados na tabela `public.vendedor` pelo código (`cd_vend`) ou pelo nome (`nome_vendedor`).
-   - **Tabela de Preço (`tab_pre`) & Tipo de Pedido (`tp_ped`)**: Preenchidos automaticamente com o valor padrão `'VTL01'` no envio do cliente, ficando disponíveis para consulta e edição no painel administrativo.
-
-7. **Endereço de Entrega Alternativo**:
-   - Campo/Toggle condicional: *"Endereço de entrega diferente do endereço principal / cadastral?"*
-   - Se **Sim**, abre os campos específicos de entrega com busca automática por CEP (preenchendo Rua, Bairro, Cidade e Estado).
-
-7. **Upload de Documentos no Bucket `novos_clientes` com Pastas por CNPJ/CPF**:
-   - Componente moderno com suporte a Drag & Drop, validação de extensão (`.pdf`, `.jpg`, `.jpeg`, `.png`), limite de 5MB por arquivo e pré-visualização.
-   - **Estrutura no Supabase Storage**: Utiliza o bucket principal **`novos_clientes`** e cria automaticamente uma subpasta com o **CNPJ ou CPF** do cliente (ex: `novos_clientes/12345678000190/` ou `novos_clientes/12345678900/`), distribuindo os arquivos nas pastas correspondentes (`documento_identificacao`, `comprovante_endereco`, `contrato_social`, `inscricao_estadual`).
-
-8. **Termos e Feedback**:
-   - Box informativo sobre entrega em endereço diferente.
-   - Modal com os Termos e Condições de Entrega completos.
-   - Checkbox obrigatório de concordância.
-   - Modal de comemoração com confetes, número de protocolo e botão único "OK".
-
-9. **Painel Administrativo com Login, Edição Completa e Gestão (/admin)**:
-   - Acesso restrito via **Supabase Auth** (`auth.users`) ou credenciais de emergência.
-   - Visão padrão focada nas solicitações com status **Pendente**.
-   - Contadores em tempo real de status (**Pendentes**, **Em Análise**, **Aprovados**, **Recusados**).
-   - Busca instantânea e filtros por Tipo de Pessoa (PJ / PF) e Status.
-   - **Edição Cadastral & Comercial Completa**:
-     - O administrador pode editar qualquer dado preenchido pelo cliente (Razão Social/Nome, Documento, Segmento, Telefone, E-mail, IE, Endereço de entrega).
-     - Edição direta dos dados comerciais: **Tabela de Preço (`tab_pre`)**, **Tipo de Pedido (`tp_ped`)** e **Vendedor Responsável (`cd_vend`)**.
-     - Ao salvar ou clicar em "Aprovar Cadastro" / "Recusar" / "Em Análise", todas as alterações são salvas e persistidas diretamente no banco de dados Supabase.
-   - **Organização por Pastas de Documentos**:
-     - 📁 *Pasta de Identificação Pessoal* (RG, CNH, CIN, CRMV).
-     - 📁 *Pasta de Comprovante de Endereço* (Residencial ou da Empresa).
-     - 📁 *Pasta de Documentos da Empresa* (Contrato Social, Cartão CNPJ e Inscrição Estadual).
-     - 📁 *Pasta Ficha Cadastral & Dados Comerciais* (Dados completos, `tab_pre`, `tp_ped`, `cd_vend` e endereço).
-   - **Visualizador Integrado de Documentos**: Suporte a zoom, rotação, tela cheia e download direto de imagens e PDFs.
-
-10. **Gestão de Usuários do Supabase Auth e Regras de Perfis**:
-   - Busca e lista todos os usuários cadastrados no `auth.users` do Supabase via RPC `list_auth_users_with_profiles`.
-   - **Regras de Perfil**:
-     - 👑 **Administrador (ADM)**: Acesso total, aprova/recusa cadastros e gerencia permissões de usuários.
-     - 👤 **Operador**: Visualização, análise de documentos e pareceres internos.
-     - 👁️ **Consulta**: Apenas visualização.
-     - 🚫 **Bloqueado / Sem Acesso**: Usuário existente no `auth.users` sem autorização para logar no painel.
-   - **Concessão de Perfil em 1 Clique**: O administrador pode selecionar qualquer usuário da lista ou informar o e-mail e conceder perfil ADM imediatamente.
+### 5. 👑 Painel Administrativo (`/admin`)
+- Rota dedicada para administradores e analistas de cadastro da Vetline.
+- Contadores de status, filtros rápidos por PJ/PF e busca textual inteligente.
+- Edição cadastral e comercial completa (`tab_pre`, `tp_ped`, `cd_vend`, status e parecer interno `notes`).
+- Organização em **Pastas de Documentos** e visualizador integrado de PDFs e imagens.
+- **Gestão de Usuários & Perfis**: Listagem dos usuários de `auth.users` via RPC e concessão de perfis (Administrador, Operador, Consulta ou Bloqueado).
 
 ---
 
@@ -89,63 +52,54 @@ Aplicação web moderna, intuitiva e altamente responsiva para cadastro e creden
 | :--- | :--- |
 | `index.html` | Estrutura HTML principal com fontes do Google Fonts (*Plus Jakarta Sans* e *Inter*) e metatags. |
 | `package.json` | Dependências do projeto (React, Lucide React, Supabase JS, Canvas Confetti, Tailwind CSS). |
-| `vite.config.js` | Configuração de build e desenvolvimento do Vite (com `server.host: true` para rede local). |
-| `vercel.json` | Configuração de rewrites para suporte a Single Page Application (SPA) e rotas diretas como `/admin` na Vercel. |
-| `tailwind.config.js` | Configuração do Tailwind CSS com a paleta de cores institucional da Vetline. |
-| `postcss.config.js` | Plugins PostCSS para processamento do Tailwind. |
-| `.env.example` | Modelo das variáveis de ambiente necessárias para conexão com o Supabase. |
-| `.env` | Arquivo de variáveis de ambiente locais com chaves do projeto. |
-| `public/vetline-logo.png` | Imagem oficial do logotipo da Vetline para favicon e acesso público. |
-| `src/assets/vetline-logo.png` | Imagem do logotipo da Vetline importada no cabeçalho. |
-| `README.md` | Documentação completa do projeto, estrutura e instruções de uso. |
-| `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, tabelas `data_new_client` e `admin_profiles`, RPCs `list_auth_users_with_profiles` e `set_user_role`, Storage e RLS. |
+| `vite.config.js` | Configuração de build e desenvolvimento do Vite. |
+| `vercel.json` | Configuração de rewrites para suporte a SPA e rotas diretas na Vercel. |
+| `tailwind.config.js` | Configuração do Tailwind CSS com a paleta institucional da Vetline. |
+| `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_client`, `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
+| `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_client` e exclusão da tabela em public. |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
-| `src/App.jsx` | Componente raiz com roteamento entre Portal do Cliente (`/`) e Painel Administrativo (`/admin`). |
-| `src/index.css` | Estilização global com Tailwind CSS, animações e scrollbar personalizada. |
-| `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, busca de clientes e atualização de status. |
-| `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth, controle de sessão, busca de usuários via RPC e regras de perfis. |
-| `src/components/Header.jsx` | Cabeçalho com logo Vetline, selo de segurança SSL, botão de atendimento e acesso rápido ao Admin. |
-| `src/components/LeftSidebar.jsx` | Painel lateral com título "Seja um cliente Vetline" e lista de benefícios com ícones. |
-| `src/components/RegistrationForm.jsx` | Formulário reativo principal com todas as regras de negócio e validações. |
-| `src/components/CameraCaptureModal.jsx` | Modal de captura de foto em tempo real pela câmera do celular/computador com enquadramento. |
-| `src/components/DocumentUpload.jsx` | Componente de upload de arquivos e fotos com suporte a câmera, drag & drop e feedback de validação. |
-| `src/components/TermsModal.jsx` | Modal com os termos e regras de entrega e conformidade. |
+| `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
+| `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
+| `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, sessão ativa, login, atualização cadastral e reenvio de anexos). |
+| `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
+| `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
+| `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
+| `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
+| `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações para criação no Supabase Auth. |
 | `src/components/SuccessModal.jsx` | Modal de confirmação do envio com confetes, protocolo e botão único OK. |
-| `src/components/admin/AdminLogin.jsx` | Tela de login administrativo integrado com Supabase Auth e credenciais de emergência. |
-| `src/components/admin/AdminDashboard.jsx` | Painel de controle com abas de Cadastros de Clientes e Gestão de Usuários & Perfis. |
-| `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users`, regras de perfil e concessão de perfil ADM em 1 clique. |
-| `src/components/admin/ClientDetailModal.jsx` | Visualização detalhada do cliente organizada em **Pastas de Documentos** e ações de aprovação. |
-| `src/components/admin/DocumentViewerModal.jsx` | Visualizador de alta resolução para documentos (zoom, rotação, PDF/imagens e download). |
-| `src/utils/masks.js` | Funções para aplicação de máscaras (CPF, CNPJ, Telefone, CEP e tamanho de arquivo). |
-| `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta na API ViaCEP. |
-| `src/utils/documentValidator.js` | Validador inteligente de documentos com OCR (Tesseract.js), leitura de QR Code (jsQR) e leitura de PDFs (pdfjs-dist). |
+| `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
+| `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |
+| `src/components/client/ClientPortalAuth.jsx` | Tela principal com as abas **"Já sou cliente"** e **"Ainda não sou"**. |
+| `src/components/client/ClientLogin.jsx` | Formulário de login do cliente com e-mail, senha e opção de recuperação. |
+| `src/components/client/ForgotPasswordModal.jsx` | Modal de solicitação de recuperação de senha via envio de link para o e-mail cadastrado. |
+| `src/components/client/ResetPasswordModal.jsx` | Modal de criação de nova senha para usuários que acessam o link de recuperação. |
+| `src/components/client/ClientDashboard.jsx` | Painel do cliente logado com acompanhamento de status, edição de dados e reenvio de documentos. |
+| `src/components/admin/AdminLogin.jsx` | Tela de login administrativo com Supabase Auth e credenciais de emergência. |
+| `src/components/admin/AdminDashboard.jsx` | Painel de controle administrativo com listagem de clientes e gestão de perfis. |
+| `src/components/admin/ClientDetailModal.jsx` | Visualização detalhada do cliente organizada em pastas e aprovações. |
+| `src/components/admin/DocumentViewerModal.jsx` | Visualizador de alta resolução para documentos (zoom, rotação e download). |
+| `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users` e concessão de perfis. |
+| `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
+| `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 
 ---
 
-## 🗄️ Execução do Script SQL no Supabase
+## 🗄️ Execução do Script SQL no Supabase (Schema `novo_cliente`)
 
-Para ativar o schema, a tabela de clientes, o controle de perfis administrativos e a busca de usuários de `auth.users`:
+O sistema foi desenhado para operar **exclusivamente no schema `novo_cliente`** (tabela `novo_cliente.data_new_client`), sem salvar dados de clientes no schema `public`.
+
+Para garantir o funcionamento completo no seu Supabase:
 
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
 3. Abra ou copie o conteúdo do arquivo [`supabase/schema.sql`](file:///supabase/schema.sql);
-4. Clique no botão verde **Run** (Executar);
-5. O script irá:
-   - Criar o schema `novo_cliente` e a tabela `data_new_client`;
-   - Criar a tabela `admin_profiles` para armazenar os perfis dos usuários;
-   - Criar a função `novo_cliente.list_auth_users_with_profiles()` para listar os usuários do `auth.users`;
-   - Criar a função `novo_cliente.set_user_role()` para conceder perfil ADM por ID ou e-mail;
-   - Configurar o bucket `novos_clientes` no Supabase Storage;
-   - Sincronizar todos os usuários já existentes no `auth.users` com perfil de **Administrador**.
+4. Clique no botão verde **Run** (Executar).
+
+> 💡 **Dica (Opcional)**: Caso queira expor o schema `novo_cliente` diretamente para consultas REST além das funções RPC, acesse no Supabase: **Project Settings > API > Data API Settings > "Exposed schemas"** e adicione `novo_cliente`.
 
 ---
 
-## 🔐 Acesso e Concessão de Perfil de Administrador
+## 🔐 Acessos e Rotas
 
-1. Acesse `http://localhost:5173/admin`;
-2. Faça login com seu e-mail e senha cadastrados no Supabase Auth (ou com `admin@vetline.com.br` / `admin`);
-3. No painel, clique na aba **"Usuários & Perfis"** no topo;
-4. Você verá a lista de todos os usuários cadastrados no `auth.users` do Supabase;
-5. Para alterar permissões ou tornar um usuário Administrador:
-   - Clique no botão verde **"Dar Perfil ADM"** diretamente na linha do usuário na tabela;
-   - Ou utilize o seletor de permissão (Administrador, Operador, Consulta ou Bloqueado) na própria linha.
+- **Área do Cliente & Cadastro**: `http://localhost:5173/` (ou rota principal em produção).
+- **Painel Administrativo**: `http://localhost:5173/admin` (ou clique em *Acesso Administrativo* no rodapé).

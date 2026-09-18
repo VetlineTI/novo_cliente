@@ -1,38 +1,71 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
-import { LeftSidebar } from './components/LeftSidebar';
-import { RegistrationForm } from './components/RegistrationForm';
+import { ClientPortalAuth } from './components/client/ClientPortalAuth';
+import { ClientDashboard } from './components/client/ClientDashboard';
+import { ResetPasswordModal } from './components/client/ResetPasswordModal';
 import { SuccessModal } from './components/SuccessModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
-import { ShieldCheck, Lock } from 'lucide-react';
+import { getClientSession, logoutClient } from './lib/clientAuth';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { ShieldCheck, Lock, ExternalLink } from 'lucide-react';
 
 export function App() {
   const [successData, setSuccessData] = useState(null);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
-  const [formKey, setFormKey] = useState(1);
-  
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+
+  // Sessão do Cliente
+  const [clientSession, setClientSession] = useState(() => getClientSession());
+
   // Controle de Rota: 'portal' ou 'admin'
-  const isInitialAdmin = 
-    typeof window !== 'undefined' && 
-    (window.location.pathname.toLowerCase().startsWith('/admin') || 
-     window.location.search.includes('admin') || 
-     window.location.hash.includes('admin'));
+  const isInitialAdmin =
+    typeof window !== 'undefined' &&
+    (window.location.pathname.toLowerCase().startsWith('/admin') ||
+      window.location.search.includes('admin') ||
+      window.location.hash.includes('admin'));
 
   const [currentRoute, setCurrentRoute] = useState(isInitialAdmin ? 'admin' : 'portal');
   const [adminUser, setAdminUser] = useState(() => getAdminSession());
 
+  // Escuta histórico de navegação e evento de recuperação de senha
+  useEffect(() => {
+    // Detecta se a URL contém parâmetros de recuperação de senha
+    const isRecoveryUrl =
+      typeof window !== 'undefined' &&
+      (window.location.search.includes('type=recovery') ||
+        window.location.hash.includes('type=recovery') ||
+        window.location.search.includes('reset_password=true'));
+
+    if (isRecoveryUrl) {
+      setIsResetPasswordOpen(true);
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsResetPasswordOpen(true);
+        }
+      });
+
+      return () => {
+        authListener?.subscription?.unsubscribe?.();
+      };
+    }
+  }, []);
+
   // Escuta histórico de navegação (botão voltar/avançar do navegador)
   useEffect(() => {
     const handlePopState = () => {
-      const isAdminPath = 
+      const isAdminPath =
         window.location.pathname.toLowerCase().startsWith('/admin') ||
         window.location.search.includes('admin') ||
         window.location.hash.includes('admin');
-      
+
       setCurrentRoute(isAdminPath ? 'admin' : 'portal');
       setAdminUser(getAdminSession());
+      setClientSession(getClientSession());
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -49,26 +82,48 @@ export function App() {
   const navigateToPortal = () => {
     window.history.pushState({}, '', '/');
     setCurrentRoute('portal');
+    setClientSession(getClientSession());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleLoginSuccess = (user) => {
+  // Handlers do Admin
+  const handleAdminLoginSuccess = (user) => {
     setAdminUser(user);
   };
 
-  const handleLogout = () => {
+  const handleAdminLogout = () => {
     logoutAdmin();
     setAdminUser(null);
   };
 
-  const handleSuccess = (submittedData) => {
+  // Handlers do Cliente
+  const handleClientLoginSuccess = (session) => {
+    setClientSession(session);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClientLogout = () => {
+    logoutClient();
+    setClientSession(null);
+    navigateToPortal();
+  };
+
+  const handleRegistrationSuccess = (submittedData, session) => {
     setSuccessData(submittedData);
+    if (session) {
+      setClientSession(session);
+    }
     setIsSuccessOpen(true);
   };
 
-  const handleResetForm = () => {
-    setSuccessData(null);
-    setFormKey((prev) => prev + 1);
+  const handleSuccessClose = () => {
+    setIsSuccessOpen(false);
+    // Se tiver sessão de cliente criada, atualiza estado para exibir painel
+    const current = getClientSession();
+    if (current) {
+      setClientSession(current);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // ============================================================================
@@ -78,7 +133,7 @@ export function App() {
     if (!adminUser) {
       return (
         <AdminLogin
-          onLoginSuccess={handleLoginSuccess}
+          onLoginSuccess={handleAdminLoginSuccess}
           onBackToPortal={navigateToPortal}
         />
       );
@@ -87,35 +142,40 @@ export function App() {
     return (
       <AdminDashboard
         adminUser={adminUser}
-        onLogout={handleLogout}
+        onLogout={handleAdminLogout}
         onNavigateToPortal={navigateToPortal}
       />
     );
   }
 
   // ============================================================================
-  // ROTA PÚBLICA: PORTAL DE CADASTRO DO CLIENTE (/)
+  // ROTA DO CLIENTE (/): SE LOGADO MOSTRA DASHBOARD, SE NÃO MOSTRA LOGIN/CADASTRO
   // ============================================================================
   return (
     <div className="min-h-screen flex flex-col bg-[#f5f8fa] text-slate-800 selection:bg-brand-green selection:text-white">
-      {/* Cabeçalho Oficial */}
-      <Header onNavigateToAdmin={navigateToAdmin} />
+      {/* Cabeçalho Oficial com suporte a sessão de cliente */}
+      <Header
+        onNavigateToAdmin={navigateToAdmin}
+        onNavigateToHome={navigateToPortal}
+        clientSession={clientSession}
+        onLogoutClient={handleClientLogout}
+      />
 
-      {/* Conteúdo Central: Layout Responsivo com Sidebar + Formulário */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-12 items-start">
-
-          {/* Coluna Esquerda: Apresentação & Benefícios Vetline */}
-          <div className="lg:col-span-5 xl:col-span-5 order-2 lg:order-1">
-            <LeftSidebar />
-          </div>
-
-          {/* Coluna Direita: Formulário de Cadastro */}
-          <div className="lg:col-span-7 xl:col-span-7 order-1 lg:order-2">
-            <RegistrationForm key={formKey} onSuccess={handleSuccess} />
-          </div>
-        </div>
-      </main>
+      {/* Conteúdo Principal */}
+      <div className="flex-1">
+        {clientSession?.isAuthenticated ? (
+          /* Cliente Autenticado: Painel & Perfil do Cliente */
+          <ClientDashboard
+            onLogout={handleClientLogout}
+          />
+        ) : (
+          /* Cliente Não Autenticado: Tela com Abas "Já sou cliente" e "Ainda não sou" */
+          <ClientPortalAuth
+            onLoginSuccess={handleClientLoginSuccess}
+            onRegistrationSuccess={handleRegistrationSuccess}
+          />
+        )}
+      </div>
 
       {/* Rodapé Moderno */}
       <footer className="w-full bg-white border-t border-slate-200 py-6 mt-12 text-center text-xs text-slate-500">
@@ -131,14 +191,6 @@ export function App() {
               <ShieldCheck className="w-3.5 h-3.5 text-brand-green" />
               Proteção de dados LGPD
             </span>
-            <span>•</span>
-            <button
-              onClick={navigateToAdmin}
-              className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 font-semibold transition-colors cursor-pointer"
-            >
-              <Lock className="w-3 h-3 text-brand-green" />
-              <span>Acesso Administrativo</span>
-            </button>
           </div>
         </div>
       </footer>
@@ -146,9 +198,19 @@ export function App() {
       {/* Modal de Sucesso com Confetes e Protocolo */}
       <SuccessModal
         isOpen={isSuccessOpen}
-        onClose={() => setIsSuccessOpen(false)}
+        onClose={handleSuccessClose}
         data={successData}
-        onReset={handleResetForm}
+        onReset={() => { }}
+      />
+
+      {/* Modal de Redefinição de Senha (via link do e-mail) */}
+      <ResetPasswordModal
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
+        onSuccess={() => {
+          setIsResetPasswordOpen(false);
+          navigateToPortal();
+        }}
       />
     </div>
   );
