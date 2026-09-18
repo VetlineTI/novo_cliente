@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- SCHEMA SUPABASE: SISTEMA DE CADASTRO DE CLIENTES VETLINE
--- Schema: novo_cliente (Tabela Principal: data_new_client)
+-- Schema: novo_cliente (Tabela Principal: data_new_cliente)
 -- Schema: public (Tabela de Vendedores: vendedor, admin_profiles)
 -- ==============================================================================
 
@@ -11,52 +11,52 @@ GRANT ALL ON ALL TABLES IN SCHEMA novo_cliente TO anon, authenticated, service_r
 GRANT ALL ON ALL SEQUENCES IN SCHEMA novo_cliente TO anon, authenticated, service_role;
 GRANT ALL ON ALL ROUTINES IN SCHEMA novo_cliente TO anon, authenticated, service_role;
 
--- 2. Criação da tabela principal data_new_client no schema NOVO_CLIENTE
-CREATE TABLE IF NOT EXISTS novo_cliente.data_new_client (
+-- 2. Criação da tabela principal data_new_cliente no schema NOVO_CLIENTE (Nomes em Português BR)
+CREATE TABLE IF NOT EXISTS novo_cliente.data_new_cliente (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     
     -- Tipo de Pessoa ('PJ' para Jurídica, 'PF' para Física)
-    person_type VARCHAR(2) NOT NULL CHECK (person_type IN ('PJ', 'PF')),
+    tipo_pessoa VARCHAR(2) NOT NULL CHECK (tipo_pessoa IN ('PJ', 'PF')),
     
-    -- Documento Principal (CNPJ formatado/limpo ou CPF formatado/limpo)
-    document_number VARCHAR(20) NOT NULL,
+    -- Documento Principal (CNPJ ou CPF)
+    cpf_cnpj VARCHAR(20) NOT NULL,
     
     -- Nome Completo (PF) ou Razão Social (PJ)
-    full_name VARCHAR(255) NOT NULL,
+    razao_social_nome VARCHAR(255) NOT NULL,
     
     -- Nome Fantasia (opcional para PJ)
-    trade_name VARCHAR(255),
+    nome_fantasia VARCHAR(255),
     
     -- Inscrição Estadual (Apenas PJ)
-    has_ie BOOLEAN DEFAULT FALSE,
-    ie_number VARCHAR(50),
+    possui_ie BOOLEAN DEFAULT FALSE,
+    numero_ie VARCHAR(50),
     
     -- Contato
-    phone VARCHAR(30) NOT NULL,
-    segment VARCHAR(100) NOT NULL,
+    telefone VARCHAR(30) NOT NULL,
+    segmento VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,
 
     -- Endereço Principal / Cadastral
-    zipcode VARCHAR(15),
-    street VARCHAR(255),
-    number VARCHAR(50),
-    neighborhood VARCHAR(150),
-    complement VARCHAR(150),
-    city VARCHAR(100),
-    state VARCHAR(10),
+    cep VARCHAR(15),
+    logradouro VARCHAR(255),
+    numero VARCHAR(50),
+    bairro VARCHAR(150),
+    complemento VARCHAR(150),
+    cidade VARCHAR(100),
+    uf VARCHAR(10),
     
-    -- Endereço de entrega alternativo (quando diferente do endereço principal)
-    has_different_delivery_address BOOLEAN DEFAULT FALSE,
-    delivery_zipcode VARCHAR(15),
-    delivery_street VARCHAR(255),
-    delivery_number VARCHAR(50),
-    delivery_neighborhood VARCHAR(150),
-    delivery_complement VARCHAR(150),
-    delivery_city VARCHAR(100),
-    delivery_state VARCHAR(10),
+    -- Endereço de entrega alternativo
+    endereco_entrega_diferente BOOLEAN DEFAULT FALSE,
+    entrega_cep VARCHAR(15),
+    entrega_logradouro VARCHAR(255),
+    entrega_numero VARCHAR(50),
+    entrega_bairro VARCHAR(150),
+    entrega_complemento VARCHAR(150),
+    entrega_cidade VARCHAR(100),
+    entrega_uf VARCHAR(10),
     
-    -- Vendedor Responsável (Código cd_vend ou 'ATENA' caso não tenha sido atendido)
+    -- Vendedor Responsável (Código cd_vend ou 'ATENA')
     cd_vend VARCHAR(50) DEFAULT 'ATENA',
     
     -- Dados Comerciais e Faturamento (Padrão: 'VTL01')
@@ -66,65 +66,55 @@ CREATE TABLE IF NOT EXISTS novo_cliente.data_new_client (
     -- URLs dos Documentos Anexados & Bucket Dedicado (Supabase Storage)
     storage_bucket VARCHAR(100) DEFAULT 'novos_clientes',
     doc_ie_url TEXT,
-    doc_contract_url TEXT,
-    doc_address_url TEXT,
-    doc_photo_id_url TEXT,
+    doc_contrato_social_url TEXT,
+    doc_comprovante_endereco_url TEXT,
+    doc_identificacao_url TEXT,
     doc_crmv_url TEXT,
     
     -- Status do Cadastro
     status VARCHAR(30) DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_analise', 'aprovado', 'recusado')),
-    terms_accepted BOOLEAN DEFAULT TRUE NOT NULL,
-    notes TEXT,
+    termos_aceitos BOOLEAN DEFAULT TRUE NOT NULL,
+    observacoes TEXT,
 
     -- Vínculo com usuário Supabase Auth (auth.users)
     auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
--- Garantir adição de colunas no schema novo_cliente caso a tabela já exista
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS zipcode VARCHAR(15);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS street VARCHAR(255);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS number VARCHAR(50);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS neighborhood VARCHAR(150);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS complement VARCHAR(150);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS city VARCHAR(100);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS state VARCHAR(10);
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS doc_crmv_url TEXT;
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS cd_vend VARCHAR(50) DEFAULT 'ATENA';
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS tab_pre VARCHAR(50) DEFAULT 'VTL01';
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS tp_ped VARCHAR(50) DEFAULT 'VTL01';
-ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS auth_user_id UUID;
+-- View de compatibilidade com data_new_client
+CREATE OR REPLACE VIEW novo_cliente.data_new_client AS
+SELECT * FROM novo_cliente.data_new_cliente;
 
--- Permissões na tabela novo_cliente.data_new_client
-GRANT ALL ON TABLE novo_cliente.data_new_client TO authenticated, anon, service_role;
+-- Permissões na tabela novo_cliente.data_new_cliente
+GRANT ALL ON TABLE novo_cliente.data_new_cliente TO authenticated, anon, service_role;
 
 -- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_data_new_client_doc ON novo_cliente.data_new_client (document_number);
-CREATE INDEX IF NOT EXISTS idx_data_new_client_email ON novo_cliente.data_new_client (email);
-CREATE INDEX IF NOT EXISTS idx_data_new_client_auth_user ON novo_cliente.data_new_client (auth_user_id);
-CREATE INDEX IF NOT EXISTS idx_data_new_client_status ON novo_cliente.data_new_client (status);
-CREATE INDEX IF NOT EXISTS idx_data_new_client_created_at ON novo_cliente.data_new_client (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_data_new_cliente_doc ON novo_cliente.data_new_cliente (cpf_cnpj);
+CREATE INDEX IF NOT EXISTS idx_data_new_cliente_email ON novo_cliente.data_new_cliente (email);
+CREATE INDEX IF NOT EXISTS idx_data_new_cliente_auth_user ON novo_cliente.data_new_cliente (auth_user_id);
+CREATE INDEX IF NOT EXISTS idx_data_new_cliente_status ON novo_cliente.data_new_cliente (status);
+CREATE INDEX IF NOT EXISTS idx_data_new_cliente_criado_em ON novo_cliente.data_new_cliente (criado_em DESC);
 
 -- Habilitação de Segurança por Linhas (RLS)
-ALTER TABLE novo_cliente.data_new_client ENABLE ROW LEVEL SECURITY;
+ALTER TABLE novo_cliente.data_new_cliente ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Permitir inserção de novo cadastro publicamente" ON novo_cliente.data_new_client;
+DROP POLICY IF EXISTS "Permitir inserção de novo cadastro publicamente" ON novo_cliente.data_new_cliente;
 CREATE POLICY "Permitir inserção de novo cadastro publicamente" 
-ON novo_cliente.data_new_client FOR INSERT 
+ON novo_cliente.data_new_cliente FOR INSERT 
 TO anon, authenticated WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Permitir leitura de clientes" ON novo_cliente.data_new_client;
+DROP POLICY IF EXISTS "Permitir leitura de clientes" ON novo_cliente.data_new_cliente;
 CREATE POLICY "Permitir leitura de clientes" 
-ON novo_cliente.data_new_client FOR SELECT 
+ON novo_cliente.data_new_cliente FOR SELECT 
 TO authenticated, anon, service_role USING (true);
 
-DROP POLICY IF EXISTS "Permitir atualização de clientes" ON novo_cliente.data_new_client;
+DROP POLICY IF EXISTS "Permitir atualização de clientes" ON novo_cliente.data_new_cliente;
 CREATE POLICY "Permitir atualização de clientes" 
-ON novo_cliente.data_new_client FOR UPDATE 
+ON novo_cliente.data_new_cliente FOR UPDATE 
 TO authenticated, anon, service_role USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Permitir exclusão de clientes" ON novo_cliente.data_new_client;
+DROP POLICY IF EXISTS "Permitir exclusão de clientes" ON novo_cliente.data_new_cliente;
 CREATE POLICY "Permitir exclusão de clientes" 
-ON novo_cliente.data_new_client FOR DELETE 
+ON novo_cliente.data_new_cliente FOR DELETE 
 TO authenticated, service_role USING (true);
 
 -- Permissões de leitura e política RLS para tabela public.vendedor (já existente no schema public)

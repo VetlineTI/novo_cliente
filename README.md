@@ -57,10 +57,11 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `package.json` | Dependências do projeto (React, Lucide React, Supabase JS, Canvas Confetti, Tailwind CSS). |
 | `vite.config.js` | Configuração de build e desenvolvimento do Vite. |
 | `vercel.json` | Configuração de rewrites para suporte a SPA e rotas diretas na Vercel. |
-| `tailwind.config.js` | Configuração do Tailwind CSS com a paleta institucional da Vetline. |
-| `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_client`, `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
-| `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_client` e exclusão da tabela em public. |
-| `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline. |
+| `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_cliente` (colunas em Português BR), `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
+| `supabase/rename_columns_to_ptbr.sql` | Script de migração para renomear todas as colunas da tabela de clientes para Português BR no Supabase. |
+| `supabase/fix_auth_trigger.sql` | Correção definitiva do trigger `handle_new_auth_user()` e criação de view de compatibilidade para evitar erro 500 no cadastro. |
+| `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
+| `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |

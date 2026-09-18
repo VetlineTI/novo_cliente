@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, submitNewClient, updateClientData, uploadDocument } from './supabase';
+import { supabase, isSupabaseConfigured, submitNewClient, updateClientData, uploadDocument, normalizeClientRecord } from './supabase';
 
 // ==============================================================================
 // Módulo de Autenticação e Gestão de Perfil do Cliente Vetline
@@ -16,6 +16,9 @@ export const getClientSession = () => {
     if (!raw) return null;
     const session = JSON.parse(raw);
     if (session && session.isAuthenticated) {
+      if (session.client) {
+        session.client = normalizeClientRecord(session.client);
+      }
       return session;
     }
   } catch (err) {}
@@ -74,23 +77,36 @@ export const fetchClientRecord = async (authUserId, email) => {
         if (authUserId && !rpcData.auth_user_id) {
           updateClientData(rpcData.id, { auth_user_id: authUserId }).catch(() => {});
         }
-        return rpcData;
+        return normalizeClientRecord(rpcData);
       }
     } catch (errRpc) {}
 
     // 2. Método Secundário: Consulta direta no schema novo_cliente por auth_user_id
     if (authUserId) {
       try {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .schema('novo_cliente')
-          .from('data_new_client')
+          .from('data_new_cliente')
           .select('*')
           .eq('auth_user_id', authUserId)
-          .order('created_at', { ascending: false })
+          .order('criado_em', { ascending: false })
           .limit(1);
 
+        if (error) {
+          const fallback = await supabase
+            .schema('novo_cliente')
+            .from('data_new_client')
+            .select('*')
+            .eq('auth_user_id', authUserId)
+            .limit(1);
+          if (!fallback.error && fallback.data) {
+            data = fallback.data;
+            error = null;
+          }
+        }
+
         if (!error && data && data.length > 0) {
-          return data[0];
+          return normalizeClientRecord(data[0]);
         }
       } catch (err) {}
     }
@@ -98,19 +114,32 @@ export const fetchClientRecord = async (authUserId, email) => {
     // 3. Consulta direta no schema novo_cliente por e-mail
     if (cleanEmail) {
       try {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .schema('novo_cliente')
-          .from('data_new_client')
+          .from('data_new_cliente')
           .select('*')
           .ilike('email', cleanEmail)
-          .order('created_at', { ascending: false })
+          .order('criado_em', { ascending: false })
           .limit(1);
+
+        if (error) {
+          const fallback = await supabase
+            .schema('novo_cliente')
+            .from('data_new_client')
+            .select('*')
+            .ilike('email', cleanEmail)
+            .limit(1);
+          if (!fallback.error && fallback.data) {
+            data = fallback.data;
+            error = null;
+          }
+        }
 
         if (!error && data && data.length > 0) {
           if (authUserId && !data[0].auth_user_id) {
             updateClientData(data[0].id, { auth_user_id: authUserId }).catch(() => {});
           }
-          return data[0];
+          return normalizeClientRecord(data[0]);
         }
       } catch (err) {}
     }
@@ -126,7 +155,7 @@ export const fetchClientRecord = async (authUserId, email) => {
           (authUserId && c.auth_user_id === authUserId) ||
           (cleanEmail && c.email && c.email.toLowerCase() === cleanEmail)
         );
-        if (found) return found;
+        if (found) return normalizeClientRecord(found);
       }
     }
   } catch (e) {}
