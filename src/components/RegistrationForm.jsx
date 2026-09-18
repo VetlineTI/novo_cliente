@@ -749,7 +749,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* ========================================================================= */}
         {/* 4. ATENDIMENTO POR VENDEDOR                                              */}
         {/* ========================================================================= */}
-        <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3.5">
+        <div className={`bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3.5 relative ${isSalespersonDropdownOpen ? 'z-50' : 'z-20'}`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <label className="block text-xs sm:text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-brand-green" />
@@ -862,7 +862,7 @@ export const RegistrationForm = ({ onSuccess }) => {
 
                 {/* Dropdown Flutuante de Seleção */}
                 {isSalespersonDropdownOpen && (
-                  <div className="absolute z-40 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100 animate-fade-in">
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-100 animate-fade-in">
                     {loadingSalespeople ? (
                       <div className="p-4 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
@@ -944,7 +944,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* ========================================================================= */}
         {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
         {/* ========================================================================= */}
-        <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4">
+        <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4 relative z-10">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 pb-2.5">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-brand-green flex-shrink-0" />
