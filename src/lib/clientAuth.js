@@ -224,6 +224,14 @@ export const registerClientWithAuth = async (clientData, password) => {
           if (!authUserId) {
             authUserId = `existing-auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
           }
+        } else if (
+          signUpError.message?.toLowerCase().includes('rate limit') || 
+          signUpError.status === 429
+        ) {
+          return {
+            success: false,
+            error: 'Limite de envio de e-mails do Supabase atingido (máx. 3 a 4 disparos por hora no plano gratuito padrão). Para resolver: desative a confirmação de e-mail no painel do Supabase (Auth > Providers > Email) ou configure um provedor SMTP próprio.'
+          };
         } else {
           return {
             success: false,
@@ -313,9 +321,13 @@ export const resendActivationEmail = async (email) => {
       });
 
       if (error) {
+        let msg = error.message || 'Não foi possível reenviar o link de ativação. Tente novamente mais tarde.';
+        if (msg.toLowerCase().includes('rate limit') || error.status === 429) {
+          msg = 'Limite temporário de envio de e-mails atingido pelo Supabase. Aguarde alguns minutos ou configure um provedor SMTP próprio.';
+        }
         return {
           success: false,
-          error: error.message || 'Não foi possível reenviar o link de ativação. Tente novamente mais tarde.'
+          error: msg
         };
       }
 
@@ -547,9 +559,13 @@ export const sendPasswordResetEmail = async (email) => {
       });
 
       if (error) {
+        let msg = error.message || 'Não foi possível enviar o e-mail de recuperação. Verifique o endereço digitado.';
+        if (msg.toLowerCase().includes('rate limit') || error.status === 429) {
+          msg = 'Limite temporário de envio de e-mails atingido pelo Supabase. Aguarde alguns minutos ou contate o suporte.';
+        }
         return { 
           success: false, 
-          error: error.message || 'Não foi possível enviar o e-mail de recuperação. Verifique o endereço digitado.' 
+          error: msg 
         };
       }
 
