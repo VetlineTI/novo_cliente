@@ -85,6 +85,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para cadastro e creden
 | `index.html` | Estrutura HTML principal com fontes do Google Fonts (*Plus Jakarta Sans* e *Inter*) e metatags. |
 | `package.json` | Dependências do projeto (React, Lucide React, Supabase JS, Canvas Confetti, Tailwind CSS). |
 | `vite.config.js` | Configuração de build e desenvolvimento do Vite (com `server.host: true` para rede local). |
+| `vercel.json` | Configuração de rewrites para suporte a Single Page Application (SPA) e rotas diretas como `/admin` na Vercel. |
 | `tailwind.config.js` | Configuração do Tailwind CSS com a paleta de cores institucional da Vetline. |
 | `postcss.config.js` | Plugins PostCSS para processamento do Tailwind. |
 | `.env.example` | Modelo das variáveis de ambiente necessárias para conexão com o Supabase. |
