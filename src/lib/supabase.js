@@ -174,6 +174,13 @@ export const submitNewClient = async (clientData) => {
       phone: clientData.phone,
       segment: clientData.segment,
       email: clientData.email,
+      zipcode: clientData.zipcode || null,
+      street: clientData.street || null,
+      number: clientData.number || null,
+      neighborhood: clientData.neighborhood || null,
+      complement: clientData.complement || null,
+      city: clientData.city || null,
+      state: clientData.state || null,
       cd_vend: clientData.cd_vend || 'ATENA',
       tab_pre: clientData.tab_pre || 'VTL01',
       tp_ped: clientData.tp_ped || 'VTL01',
@@ -199,6 +206,13 @@ export const submitNewClient = async (clientData) => {
     const removeMissingCols = (err, payload) => {
       const p = { ...payload };
       const msg = err?.message || '';
+      if (msg.includes('zipcode')) delete p.zipcode;
+      if (msg.includes('street')) delete p.street;
+      if (msg.includes('number')) delete p.number;
+      if (msg.includes('neighborhood')) delete p.neighborhood;
+      if (msg.includes('complement')) delete p.complement;
+      if (msg.includes('city')) delete p.city;
+      if (msg.includes('state')) delete p.state;
       if (msg.includes('doc_crmv_url')) delete p.doc_crmv_url;
       if (msg.includes('cd_vend')) delete p.cd_vend;
       if (msg.includes('tab_pre')) delete p.tab_pre;
@@ -366,6 +380,9 @@ export const fetchClients = async (options = {}) => {
       (c.document_number && c.document_number.includes(term)) ||
       (c.email && c.email.toLowerCase().includes(term)) ||
       (c.phone && c.phone.includes(term)) ||
+      (c.city && c.city.toLowerCase().includes(term)) ||
+      (c.street && c.street.toLowerCase().includes(term)) ||
+      (c.zipcode && c.zipcode.includes(term)) ||
       (c.delivery_city && c.delivery_city.toLowerCase().includes(term))
     );
   }
@@ -387,6 +404,13 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
     const removeMissingCols = (err, payload) => {
       const p = { ...payload };
       const msg = err?.message || '';
+      if (msg.includes('zipcode')) delete p.zipcode;
+      if (msg.includes('street')) delete p.street;
+      if (msg.includes('number')) delete p.number;
+      if (msg.includes('neighborhood')) delete p.neighborhood;
+      if (msg.includes('complement')) delete p.complement;
+      if (msg.includes('city')) delete p.city;
+      if (msg.includes('state')) delete p.state;
       if (msg.includes('tab_pre')) delete p.tab_pre;
       if (msg.includes('tp_ped')) delete p.tp_ped;
       if (msg.includes('cd_vend')) delete p.cd_vend;

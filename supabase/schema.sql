@@ -36,8 +36,17 @@ CREATE TABLE IF NOT EXISTS novo_cliente.data_new_client (
     phone VARCHAR(30) NOT NULL,
     segment VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,
+
+    -- Endereço Principal / Cadastral
+    zipcode VARCHAR(15),
+    street VARCHAR(255),
+    number VARCHAR(50),
+    neighborhood VARCHAR(150),
+    complement VARCHAR(150),
+    city VARCHAR(100),
+    state VARCHAR(10),
     
-    -- Endereço de entrega alternativo (quando diferente do comprovante)
+    -- Endereço de entrega alternativo (quando diferente do endereço principal)
     has_different_delivery_address BOOLEAN DEFAULT FALSE,
     delivery_zipcode VARCHAR(15),
     delivery_street VARCHAR(255),
@@ -69,6 +78,13 @@ CREATE TABLE IF NOT EXISTS novo_cliente.data_new_client (
 );
 
 -- Garantir adição de colunas no schema novo_cliente caso já exista
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS zipcode VARCHAR(15);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS street VARCHAR(255);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS number VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS neighborhood VARCHAR(150);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS complement VARCHAR(150);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS state VARCHAR(10);
 ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS doc_crmv_url TEXT;
 ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS cd_vend VARCHAR(50) DEFAULT 'ATENA';
 ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS tab_pre VARCHAR(50) DEFAULT 'VTL01';
@@ -78,6 +94,13 @@ ALTER TABLE novo_cliente.data_new_client ADD COLUMN IF NOT EXISTS tp_ped VARCHAR
 DO $$ 
 BEGIN
     IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'data_new_client') THEN
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS zipcode VARCHAR(15);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS street VARCHAR(255);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS number VARCHAR(50);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS neighborhood VARCHAR(150);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS complement VARCHAR(150);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+        ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS state VARCHAR(10);
         ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS doc_crmv_url TEXT;
         ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS cd_vend VARCHAR(50) DEFAULT 'ATENA';
         ALTER TABLE public.data_new_client ADD COLUMN IF NOT EXISTS tab_pre VARCHAR(50) DEFAULT 'VTL01';

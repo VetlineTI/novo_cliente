@@ -31,15 +31,20 @@ Aplicação web moderna, intuitiva e altamente responsiva para cadastro e creden
    - **Segmento de Atuação** (29 opções padronizadas de mercado).
    - **E-mail** com validação de formato.
 
-5. **Atendimento por Vendedor (`cd_vend`) e Dados Comerciais (`tab_pre`, `tp_ped`)**:
+5. **Endereço Principal / Cadastral (Obrigatório para PF e PJ)**:
+   - **Pessoa Jurídica (PJ)**: Preenchido automaticamente em tempo real a partir da consulta do CNPJ na Receita Federal via BrasilAPI.
+   - **Pessoa Física (PF) e PJ**: Ao digitar os 8 dígitos do CEP, consulta a API (BrasilAPI com fallback para ViaCEP) e auto-preenche **Logradouro/Rua**, **Bairro**, **Cidade** e **Estado (UF)**, restando apenas informar o Número e Complemento.
+   - Campos armazenados: `zipcode`, `street`, `number`, `neighborhood`, `complement`, `city`, `state`.
+
+6. **Atendimento por Vendedor (`cd_vend`) e Dados Comerciais (`tab_pre`, `tp_ped`)**:
    - Pergunta mandatória: *"Foi atendido por algum vendedor?"*
    - Se **Não**: Salva automaticamente o código `'ATENA'` na coluna `cd_vend` da tabela `data_new_client`.
    - Se **Sim**: Permite pesquisar e selecionar os vendedores cadastrados na tabela `public.vendedor` pelo código (`cd_vend`) ou pelo nome (`nome_vendedor`).
    - **Tabela de Preço (`tab_pre`) & Tipo de Pedido (`tp_ped`)**: Preenchidos automaticamente com o valor padrão `'VTL01'` no envio do cliente, ficando disponíveis para consulta e edição no painel administrativo.
 
-6. **Endereço de Entrega Alternativo**:
-   - Campo/Toggle condicional: *"Endereço de entrega diferente do comprovante de endereço anexado?"*
-   - Se **Sim**, abre os campos com busca automática por CEP através da API do **ViaCEP** (preenchendo Rua, Bairro, Cidade e Estado automaticamente).
+7. **Endereço de Entrega Alternativo**:
+   - Campo/Toggle condicional: *"Endereço de entrega diferente do endereço principal / cadastral?"*
+   - Se **Sim**, abre os campos específicos de entrega com busca automática por CEP (preenchendo Rua, Bairro, Cidade e Estado).
 
 7. **Upload de Documentos no Bucket `novos_clientes` com Pastas por CNPJ/CPF**:
    - Componente moderno com suporte a Drag & Drop, validação de extensão (`.pdf`, `.jpg`, `.jpeg`, `.png`), limite de 5MB por arquivo e pré-visualização.

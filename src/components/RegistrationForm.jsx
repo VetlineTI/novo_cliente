@@ -62,6 +62,17 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [cnpjInfo, setCnpjInfo] = useState(null);
   const [cnpjAlert, setCnpjAlert] = useState('');
 
+  // Endereço Principal / Cadastral (para PF e PJ)
+  const [zipcode, setZipcode] = useState('');
+  const [street, setStreet] = useState('');
+  const [number, setNumber] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [complement, setComplement] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [loadingMainCep, setLoadingMainCep] = useState(false);
+  const [mainCepError, setMainCepError] = useState('');
+
   // Endereço de entrega divergente
   const [hasDifferentDelivery, setHasDifferentDelivery] = useState(false);
   const [deliveryCep, setDeliveryCep] = useState('');
@@ -194,6 +205,26 @@ export const RegistrationForm = ({ onSuccess }) => {
           setEmail(data.email);
           if (errors.email) setErrors(prev => ({ ...prev, email: null }));
         }
+        // Auto-preenchimento do Endereço Principal via Receita Federal
+        if (data.endereco) {
+          if (data.endereco.cep) setZipcode(maskCEP(data.endereco.cep));
+          if (data.endereco.logradouro) setStreet(data.endereco.logradouro);
+          if (data.endereco.numero) setNumber(data.endereco.numero);
+          if (data.endereco.complemento) setComplement(data.endereco.complemento);
+          if (data.endereco.bairro) setNeighborhood(data.endereco.bairro);
+          if (data.endereco.municipio) setCity(data.endereco.municipio);
+          if (data.endereco.uf) setState(data.endereco.uf);
+          setMainCepError('');
+          setErrors(prev => ({
+            ...prev,
+            zipcode: null,
+            street: null,
+            number: null,
+            neighborhood: null,
+            city: null,
+            state: null
+          }));
+        }
         if (!data.isAtiva) {
           setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral} na Receita Federal.`);
         }
@@ -201,7 +232,37 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
-  // Busca automática do CEP
+  // Busca automática do CEP do Endereço Principal (PF e PJ)
+  const handleMainCepChange = async (e) => {
+    const val = maskCEP(e.target.value);
+    setZipcode(val);
+    setMainCepError('');
+    if (errors.zipcode) setErrors((prev) => ({ ...prev, zipcode: null }));
+
+    const clean = unmask(val);
+    if (clean.length === 8) {
+      setLoadingMainCep(true);
+      const res = await fetchAddressByCEP(clean);
+      setLoadingMainCep(false);
+      if (res) {
+        setStreet(res.street || '');
+        setNeighborhood(res.neighborhood || '');
+        setCity(res.city || '');
+        setState(res.state || '');
+        setErrors((prev) => ({
+          ...prev,
+          street: null,
+          neighborhood: null,
+          city: null,
+          state: null
+        }));
+      } else {
+        setMainCepError('CEP não encontrado. Preencha o endereço manualmente.');
+      }
+    }
+  };
+
+  // Busca automática do CEP de Entrega
   const handleCepChange = async (e) => {
     const val = maskCEP(e.target.value);
     setDeliveryCep(val);
@@ -268,26 +329,46 @@ export const RegistrationForm = ({ onSuccess }) => {
       newErrors.salesperson = 'Selecione o vendedor que realizou o atendimento ou marque "Não".';
     }
 
-    // 8. Endereço divergente
+    // 8. Endereço Principal / Cadastral (Obrigatório para PF e PJ)
+    if (!unmask(zipcode) || unmask(zipcode).length !== 8) {
+      newErrors.zipcode = 'Informe um CEP válido.';
+    }
+    if (!street.trim()) {
+      newErrors.street = 'Informe a rua / logradouro.';
+    }
+    if (!number.trim()) {
+      newErrors.number = 'Informe o número.';
+    }
+    if (!neighborhood.trim()) {
+      newErrors.neighborhood = 'Informe o bairro.';
+    }
+    if (!city.trim()) {
+      newErrors.city = 'Informe a cidade.';
+    }
+    if (!state) {
+      newErrors.state = 'Selecione a UF.';
+    }
+
+    // 9. Endereço de entrega divergente (Opcional)
     if (hasDifferentDelivery) {
       if (!unmask(deliveryCep) || unmask(deliveryCep).length !== 8) {
-        newErrors.deliveryCep = 'Informe o CEP.';
+        newErrors.deliveryCep = 'Informe o CEP de entrega.';
       }
       if (!deliveryStreet.trim()) {
-        newErrors.deliveryStreet = 'Informe a rua / logradouro.';
+        newErrors.deliveryStreet = 'Informe a rua / logradouro de entrega.';
       }
       if (!deliveryNumber.trim()) {
-        newErrors.deliveryNumber = 'Informe o número.';
+        newErrors.deliveryNumber = 'Informe o número de entrega.';
       }
       if (!deliveryCity.trim()) {
-        newErrors.deliveryCity = 'Informe a cidade.';
+        newErrors.deliveryCity = 'Informe a cidade de entrega.';
       }
       if (!deliveryState) {
-        newErrors.deliveryState = 'Selecione o estado.';
+        newErrors.deliveryState = 'Selecione o estado de entrega.';
       }
     }
 
-    // 9. Validação de Documentos conforme Regra de Negócio:
+    // 10. Validação de Documentos conforme Regra de Negócio:
     if (personType === 'PJ') {
       // PJ: Contrato Social e Documento com Foto de um dos Sócios -> OBRIGATÓRIO PELO MENOS 1
       if (!docContract && !docPartnerPhoto) {
@@ -305,7 +386,7 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
-    // 10. Termos
+    // 11. Termos
     if (!agreedTerms) {
       newErrors.agreedTerms = 'Você deve aceitar os termos de entrega para prosseguir.';
     }
@@ -366,6 +447,13 @@ export const RegistrationForm = ({ onSuccess }) => {
         phone: phone,
         segment: segment,
         email: email,
+        zipcode: zipcode,
+        street: street,
+        number: number,
+        neighborhood: neighborhood,
+        complement: complement || null,
+        city: city,
+        state: state,
         cd_vend: hasSalesperson ? (selectedSalespersonCode || 'ATENA') : 'ATENA',
         tab_pre: 'VTL01',
         tp_ped: 'VTL01',
@@ -811,7 +899,198 @@ export const RegistrationForm = ({ onSuccess }) => {
         </div>
 
         {/* ========================================================================= */}
-        {/* 5. ENDEREÇO DE ENTREGA ALTERNATIVO (CONDICIONAL - CHECKBOX)              */}
+        {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
+        {/* ========================================================================= */}
+        {/* ========================================================================= */}
+        {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
+        {/* ========================================================================= */}
+        <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200/60 pb-2.5">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-brand-green flex-shrink-0" />
+              <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight">
+                Endereço Principal / Cadastral <span className="text-red-500">*</span>
+              </label>
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium">
+              {personType === 'PJ' ? 'Preenchimento automático por CNPJ ou CEP' : 'Preenchimento automático por CEP'}
+            </span>
+          </div>
+
+          {/* 1º CAMPO EM DESTAQUE: CEP COM INFORMAÇÃO EXPLICATIVA */}
+          <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 shadow-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 items-center">
+              {/* Campo CEP */}
+              <div className="sm:col-span-4">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>1. Digite o CEP <span className="text-red-500">*</span></span>
+                  {loadingMainCep && (
+                    <span className="text-[10px] text-brand-teal font-normal flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Buscando...
+                    </span>
+                  )}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={zipcode}
+                    onChange={handleMainCepChange}
+                    placeholder="00000-000"
+                    maxLength={9}
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-semibold text-slate-800 placeholder-slate-400 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                      errors.zipcode ? 'border-red-400 bg-red-50/20' : 'border-slate-300'
+                    }`}
+                  />
+                  {loadingMainCep && (
+                    <Loader2 className="w-4 h-4 animate-spin text-brand-teal absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  )}
+                </div>
+                {errors.zipcode && <p className="text-xs text-red-500 mt-1 font-medium">{errors.zipcode}</p>}
+                {mainCepError && <p className="text-xs text-amber-600 mt-1 font-medium">{mainCepError}</p>}
+              </div>
+
+              {/* Informação / Instrução de busca rápida */}
+              <div className="sm:col-span-8 flex items-start gap-2.5 p-3 rounded-xl bg-brand-green-light/40 border border-brand-green/20 text-xs text-brand-dark">
+                <Info className="w-4 h-4 text-brand-green flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-slate-800">
+                    Preencha o CEP para buscar os dados de endereço
+                  </p>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Ao digitar o CEP, os dados de Rua, Bairro, Cidade e Estado são preenchidos automaticamente abaixo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* DEMAIS CAMPOS DO ENDEREÇO (RUA, NÚMERO, COMPLEMENTO, BAIRRO, CIDADE, UF) */}
+          <div className="space-y-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              {/* Rua / Logradouro */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Rua / Logradouro <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={street}
+                  onChange={(e) => {
+                    setStreet(e.target.value);
+                    if (errors.street) setErrors(prev => ({ ...prev, street: null }));
+                  }}
+                  placeholder="Ex: Av. Paulista, Rua das Palmeiras..."
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.street ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                />
+                {errors.street && <p className="text-xs text-red-500 mt-1 font-medium">{errors.street}</p>}
+              </div>
+
+              {/* Número */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Número <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={number}
+                  onChange={(e) => {
+                    setNumber(e.target.value);
+                    if (errors.number) setErrors(prev => ({ ...prev, number: null }));
+                  }}
+                  placeholder="Ex: 123 ou S/N"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.number ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                />
+                {errors.number && <p className="text-xs text-red-500 mt-1 font-medium">{errors.number}</p>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              {/* Complemento */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Complemento
+                </label>
+                <input
+                  type="text"
+                  value={complement}
+                  onChange={(e) => setComplement(e.target.value)}
+                  placeholder="Apto, Sala, Bloco..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all"
+                />
+              </div>
+
+              {/* Bairro */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Bairro <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={neighborhood}
+                  onChange={(e) => {
+                    setNeighborhood(e.target.value);
+                    if (errors.neighborhood) setErrors(prev => ({ ...prev, neighborhood: null }));
+                  }}
+                  placeholder="Ex: Centro"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.neighborhood ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                />
+                {errors.neighborhood && <p className="text-xs text-red-500 mt-1 font-medium">{errors.neighborhood}</p>}
+              </div>
+
+              {/* Cidade */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 truncate">
+                  Cidade <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => {
+                    setCity(e.target.value);
+                    if (errors.city) setErrors(prev => ({ ...prev, city: null }));
+                  }}
+                  placeholder="Cidade"
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.city ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                />
+                {errors.city && <p className="text-xs text-red-500 mt-1 font-medium">{errors.city}</p>}
+              </div>
+
+              {/* UF */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  UF <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={state}
+                  onChange={(e) => {
+                    setState(e.target.value);
+                    if (errors.state) setErrors(prev => ({ ...prev, state: null }));
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer ${
+                    errors.state ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                >
+                  <option value="">UF</option>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
+                {errors.state && <p className="text-xs text-red-500 mt-1 font-medium">{errors.state}</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 6. ENDEREÇO DE ENTREGA ALTERNATIVO (CONDICIONAL - CHECKBOX)              */}
         {/* ========================================================================= */}
         <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 space-y-3">
           <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -823,7 +1102,7 @@ export const RegistrationForm = ({ onSuccess }) => {
             />
             <span className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-brand-green" />
-              <span>{personType === 'PJ' ? 'Endereço de entrega diferente do endereço da empresa?' : 'Endereço de entrega diferente do comprovante de endereço?'}</span>
+              <span>{personType === 'PJ' ? 'Endereço de entrega diferente do endereço principal / cadastral?' : 'Endereço de entrega diferente do endereço principal?'}</span>
             </span>
           </label>
 

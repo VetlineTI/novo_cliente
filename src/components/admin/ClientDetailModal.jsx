@@ -98,6 +98,13 @@ export const ClientDetailModal = ({
         segment: client.segment || '',
         has_ie: Boolean(client.has_ie),
         ie_number: client.ie_number || '',
+        zipcode: client.zipcode || '',
+        street: client.street || '',
+        number: client.number || '',
+        neighborhood: client.neighborhood || '',
+        complement: client.complement || '',
+        city: client.city || '',
+        state: client.state || '',
         cd_vend: client.cd_vend || 'ATENA',
         tab_pre: client.tab_pre || 'VTL01',
         tp_ped: client.tp_ped || 'VTL01',
@@ -570,6 +577,110 @@ export const ClientDetailModal = ({
                       </div>
                     </div>
 
+                    {/* Bloco de Endereço Principal / Cadastral */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                        <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
+                          <MapPin className="w-3.5 h-3.5 text-brand-green" />
+                          <span>Endereço Principal / Cadastral</span>
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-medium">CEP</span>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={formData.zipcode}
+                              onChange={(e) => handleChange('zipcode', e.target.value)}
+                              placeholder="00000-000"
+                              className="w-full px-2 py-1 rounded border border-slate-300 font-mono text-xs"
+                            />
+                          ) : (
+                            <strong className="font-mono text-slate-800">{formData.zipcode || '-'}</strong>
+                          )}
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-[10px] text-slate-400 block font-medium">Logradouro / Nº</span>
+                          {isEditing ? (
+                            <div className="flex gap-1">
+                              <input
+                                type="text"
+                                value={formData.street}
+                                onChange={(e) => handleChange('street', e.target.value)}
+                                placeholder="Rua"
+                                className="flex-1 px-2 py-1 rounded border border-slate-300 text-xs"
+                              />
+                              <input
+                                type="text"
+                                value={formData.number}
+                                onChange={(e) => handleChange('number', e.target.value)}
+                                placeholder="Nº"
+                                className="w-14 px-2 py-1 rounded border border-slate-300 text-xs"
+                              />
+                            </div>
+                          ) : (
+                            <strong className="text-slate-800 truncate block">
+                              {formData.street || '-'}, {formData.number || 'S/N'}
+                            </strong>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-medium">Bairro</span>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={formData.neighborhood}
+                              onChange={(e) => handleChange('neighborhood', e.target.value)}
+                              placeholder="Bairro"
+                              className="w-full px-2 py-1 rounded border border-slate-300 text-xs"
+                            />
+                          ) : (
+                            <strong className="text-slate-800">{formData.neighborhood || '-'}</strong>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-medium">Cidade/UF</span>
+                          {isEditing ? (
+                            <div className="flex gap-1">
+                              <input
+                                type="text"
+                                value={formData.city}
+                                onChange={(e) => handleChange('city', e.target.value)}
+                                placeholder="Cidade"
+                                className="flex-1 px-2 py-1 rounded border border-slate-300 text-xs"
+                              />
+                              <input
+                                type="text"
+                                value={formData.state}
+                                onChange={(e) => handleChange('state', e.target.value)}
+                                maxLength={2}
+                                placeholder="UF"
+                                className="w-10 px-1 py-1 rounded border border-slate-300 text-xs uppercase"
+                              />
+                            </div>
+                          ) : (
+                            <strong className="text-slate-800">{formData.city || '-'} - {formData.state || '-'}</strong>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-medium">Complemento</span>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={formData.complement}
+                              onChange={(e) => handleChange('complement', e.target.value)}
+                              placeholder="Complemento"
+                              className="w-full px-2 py-1 rounded border border-slate-300 text-xs"
+                            />
+                          ) : (
+                            <span className="text-slate-700">{formData.complement || 'Nenhum'}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Bloco de Endereço de Entrega */}
                     <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
@@ -682,7 +793,7 @@ export const ClientDetailModal = ({
                       ) : (
                         <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50/60 p-2 rounded-lg border border-emerald-100">
                           <CheckCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                          <span>Entregar no mesmo endereço do comprovante anexado.</span>
+                          <span>Entregar no mesmo endereço principal / cadastral.</span>
                         </div>
                       )}
                     </div>
