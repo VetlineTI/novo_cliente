@@ -129,7 +129,7 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
         complemento: data.complemento || '',
         bairro: data.bairro || '',
         municipio: data.municipio || '',
-        uf: data.uf || ''
+        uf: (data.uf || '').trim().toUpperCase()
       },
       telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
       email: data.email ? String(data.email).toLowerCase() : ''
@@ -156,7 +156,7 @@ export const fetchAddressByCEP = async (cep) => {
         street: data.street || '',
         neighborhood: data.neighborhood || '',
         city: data.city || '',
-        state: data.state || '',
+        state: (data.state || data.uf || '').trim().toUpperCase(),
         service: 'brasilapi'
       };
     }
@@ -175,7 +175,7 @@ export const fetchAddressByCEP = async (cep) => {
       street: data.logradouro || '',
       neighborhood: data.bairro || '',
       city: data.localidade || '',
-      state: data.uf || '',
+      state: (data.uf || data.state || '').trim().toUpperCase(),
       service: 'viacep'
     };
   } catch (error) {

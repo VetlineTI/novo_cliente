@@ -17,7 +17,9 @@ import {
   Briefcase,
   UserCheck,
   ChevronDown,
-  X
+  X,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
@@ -282,6 +284,47 @@ export const RegistrationForm = ({ onSuccess }) => {
         setCepError('CEP não encontrado. Preencha o endereço manualmente.');
       }
     }
+  };
+
+  // Limpar todos os campos de endereço principal
+  const handleClearMainAddress = () => {
+    setZipcode('');
+    setStreet('');
+    setNumber('');
+    setComplement('');
+    setNeighborhood('');
+    setCity('');
+    setState('');
+    setMainCepError('');
+    setErrors((prev) => ({
+      ...prev,
+      zipcode: null,
+      street: null,
+      number: null,
+      neighborhood: null,
+      city: null,
+      state: null,
+    }));
+  };
+
+  // Limpar todos os campos de endereço de entrega
+  const handleClearDeliveryAddress = () => {
+    setDeliveryCep('');
+    setDeliveryStreet('');
+    setDeliveryNumber('');
+    setDeliveryComplement('');
+    setDeliveryNeighborhood('');
+    setDeliveryCity('');
+    setDeliveryState('');
+    setCepError('');
+    setErrors((prev) => ({
+      ...prev,
+      deliveryCep: null,
+      deliveryStreet: null,
+      deliveryNumber: null,
+      deliveryCity: null,
+      deliveryState: null,
+    }));
   };
 
   // Validação dos campos antes de enviar
@@ -901,20 +944,31 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* ========================================================================= */}
         {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
         {/* ========================================================================= */}
-        {/* ========================================================================= */}
-        {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
-        {/* ========================================================================= */}
         <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200/60 pb-2.5">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
+            <div className="flex items-center gap-2 min-w-0">
               <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-brand-green flex-shrink-0" />
-              <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight">
+              <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight whitespace-nowrap">
                 Endereço Principal / Cadastral <span className="text-red-500">*</span>
               </label>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">
-              {personType === 'PJ' ? 'Preenchimento automático por CNPJ ou CEP' : 'Preenchimento automático por CEP'}
-            </span>
+
+            <div className="flex items-center gap-2.5 flex-shrink-0">
+              {(zipcode || street || number || neighborhood || city || state || complement) && (
+                <button
+                  type="button"
+                  onClick={handleClearMainAddress}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-2xs hover:shadow-xs active:scale-95 flex-shrink-0"
+                  title="Apagar todos os campos de endereço preenchidos"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                  <span className="whitespace-nowrap">Limpar endereço</span>
+                </button>
+              )}
+              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap hidden lg:inline">
+                {personType === 'PJ' ? 'Preenchimento automático por CNPJ ou CEP' : 'Preenchimento automático por CEP'}
+              </span>
+            </div>
           </div>
 
           {/* 1º CAMPO EM DESTAQUE: CEP COM INFORMAÇÃO EXPLICATIVA */}
@@ -1008,9 +1062,9 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
               {/* Complemento */}
-              <div>
+              <div className="sm:col-span-3">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Complemento
                 </label>
@@ -1024,7 +1078,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
 
               {/* Bairro */}
-              <div>
+              <div className="sm:col-span-3">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Bairro <span className="text-red-500">*</span>
                 </label>
@@ -1044,7 +1098,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
 
               {/* Cidade */}
-              <div>
+              <div className="sm:col-span-4">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 truncate">
                   Cidade <span className="text-red-500">*</span>
                 </label>
@@ -1056,7 +1110,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                     if (errors.city) setErrors(prev => ({ ...prev, city: null }));
                   }}
                   placeholder="Cidade"
-                  className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
                     errors.city ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
                   }`}
                 />
@@ -1064,17 +1118,17 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
 
               {/* UF */}
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   UF <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={state}
                   onChange={(e) => {
-                    setState(e.target.value);
+                    setState(e.target.value.toUpperCase());
                     if (errors.state) setErrors(prev => ({ ...prev, state: null }));
                   }}
-                  className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer ${
+                  className={`w-full min-w-[70px] px-2.5 py-2.5 rounded-xl border text-sm font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer ${
                     errors.state ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
                   }`}
                 >
@@ -1093,18 +1147,32 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* 6. ENDEREÇO DE ENTREGA ALTERNATIVO (CONDICIONAL - CHECKBOX)              */}
         {/* ========================================================================= */}
         <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={hasDifferentDelivery}
-              onChange={(e) => setHasDifferentDelivery(e.target.checked)}
-              className="w-4 h-4 rounded text-brand-green focus:ring-emerald-500 border-slate-300"
-            />
-            <span className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-brand-green" />
-              <span>{personType === 'PJ' ? 'Endereço de entrega diferente do endereço principal / cadastral?' : 'Endereço de entrega diferente do endereço principal?'}</span>
-            </span>
-          </label>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={hasDifferentDelivery}
+                onChange={(e) => setHasDifferentDelivery(e.target.checked)}
+                className="w-4 h-4 rounded text-brand-green focus:ring-emerald-500 border-slate-300"
+              />
+              <span className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-brand-green" />
+                <span>{personType === 'PJ' ? 'Endereço de entrega diferente do endereço principal / cadastral?' : 'Endereço de entrega diferente do endereço principal?'}</span>
+              </span>
+            </label>
+
+            {hasDifferentDelivery && (deliveryCep || deliveryStreet || deliveryNumber || deliveryNeighborhood || deliveryCity || deliveryState || deliveryComplement) && (
+              <button
+                type="button"
+                onClick={handleClearDeliveryAddress}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95 self-start sm:self-center"
+                title="Limpar endereço de entrega"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Limpar entrega</span>
+              </button>
+            )}
+          </div>
 
           {hasDifferentDelivery && (
             <div className="space-y-3 pt-2 border-t border-slate-200/80">
@@ -1121,7 +1189,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                       onChange={handleCepChange}
                       placeholder="00000-000"
                       maxLength={9}
-                      className={`w-full px-3 py-2 rounded-lg border text-sm text-slate-800 bg-white ${
+                      className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 bg-white ${
                         errors.deliveryCep ? 'border-red-400' : 'border-slate-200'
                       }`}
                     />
@@ -1140,48 +1208,48 @@ export const RegistrationForm = ({ onSuccess }) => {
                     value={deliveryStreet}
                     onChange={(e) => setDeliveryStreet(e.target.value)}
                     placeholder="Ex: Av. Veterinária das Nações"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-3">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Número *</label>
                   <input
                     type="text"
                     value={deliveryNumber}
                     onChange={(e) => setDeliveryNumber(e.target.value)}
                     placeholder="123"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-3">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Bairro</label>
                   <input
                     type="text"
                     value={deliveryNeighborhood}
                     onChange={(e) => setDeliveryNeighborhood(e.target.value)}
                     placeholder="Bairro"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-4">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Cidade *</label>
                   <input
                     type="text"
                     value={deliveryCity}
                     onChange={(e) => setDeliveryCity(e.target.value)}
                     placeholder="Cidade"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">UF *</label>
                   <select
                     value={deliveryState}
-                    onChange={(e) => setDeliveryState(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white"
+                    onChange={(e) => setDeliveryState(e.target.value.toUpperCase())}
+                    className="w-full min-w-[70px] px-2.5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 bg-white cursor-pointer"
                   >
                     <option value="">UF</option>
                     {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
