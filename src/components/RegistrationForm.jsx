@@ -945,30 +945,25 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
         {/* ========================================================================= */}
         <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 pb-2.5">
+            <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-brand-green flex-shrink-0" />
               <label className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight whitespace-nowrap">
                 Endereço Principal / Cadastral <span className="text-red-500">*</span>
               </label>
             </div>
 
-            <div className="flex items-center gap-2.5 flex-shrink-0">
-              {(zipcode || street || number || neighborhood || city || state || complement) && (
-                <button
-                  type="button"
-                  onClick={handleClearMainAddress}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-2xs hover:shadow-xs active:scale-95 flex-shrink-0"
-                  title="Apagar todos os campos de endereço preenchidos"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
-                  <span className="whitespace-nowrap">Limpar endereço</span>
-                </button>
-              )}
-              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap hidden lg:inline">
-                {personType === 'PJ' ? 'Preenchimento automático por CNPJ ou CEP' : 'Preenchimento automático por CEP'}
-              </span>
-            </div>
+            {(zipcode || street || number || neighborhood || city || state || complement) && (
+              <button
+                type="button"
+                onClick={handleClearMainAddress}
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-2xs hover:shadow-xs active:scale-95 flex-shrink-0"
+                title="Apagar todos os campos de endereço preenchidos"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                <span>Limpar endereço</span>
+              </button>
+            )}
           </div>
 
           {/* 1º CAMPO EM DESTAQUE: CEP COM INFORMAÇÃO EXPLICATIVA */}
