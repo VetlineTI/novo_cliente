@@ -12,8 +12,8 @@ import { ClientLogin } from './ClientLogin';
 import { RegistrationForm } from '../RegistrationForm';
 import { LeftSidebar } from '../LeftSidebar';
 
-export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initialTab = 'login' }) => {
-  const [activeTab, setActiveTab] = useState(initialTab); // 'login' | 'register'
+export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initialTab = 'register' }) => {
+  const [activeTab, setActiveTab] = useState(initialTab); // 'register' | 'login'
 
   return (
     <div className="w-full">
@@ -24,20 +24,7 @@ export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initia
         <div className="flex justify-center">
           <div className="bg-white/90 p-1.5 rounded-2xl border border-slate-200/80 shadow-md backdrop-blur-xs flex items-center gap-1.5 max-w-md w-full">
 
-            {/* Aba 1: Já sou cliente */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('login')}
-              className={`flex-1 py-3 px-4 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'login'
-                ? 'bg-[#1d5b79] text-white shadow-md shadow-[#1d5b79]/25 scale-[1.01]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-                }`}
-            >
-              <LogIn className="w-4 h-4 text-emerald-300" />
-              <span>Já sou cliente</span>
-            </button>
-
-            {/* Aba 2: Ainda não sou cliente */}
+            {/* Aba 1: Ainda não sou cliente (Principal) */}
             <button
               type="button"
               onClick={() => setActiveTab('register')}
@@ -48,6 +35,19 @@ export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initia
             >
               <UserPlus className="w-4 h-4 text-white" />
               <span>Ainda não sou</span>
+            </button>
+
+            {/* Aba 2: Já sou cliente */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('login')}
+              className={`flex-1 py-3 px-4 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'login'
+                ? 'bg-[#1d5b79] text-white shadow-md shadow-[#1d5b79]/25 scale-[1.01]'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                }`}
+            >
+              <LogIn className="w-4 h-4 text-emerald-300" />
+              <span>Já sou cliente</span>
             </button>
           </div>
         </div>
