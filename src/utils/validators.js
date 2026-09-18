@@ -131,55 +131,51 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
         municipio: data.municipio || '',
         uf: (data.uf || '').trim().toUpperCase()
       },
-      telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
-      email: data.email ? String(data.email).toLowerCase() : ''
-    };
-  } catch (error) {
-    console.warn('Erro ao consultar BrasilAPI para CNPJ:', error);
-    return null;
-  }
-};
-
-/**
- * Consulta CEP inteligente com redundância (BrasilAPI v2 com fallback para ViaCEP)
- */
-export const fetchAddressByCEP = async (cep) => {
-  const clean = unmask(cep);
-  if (clean.length !== 8) return null;
-
-  // 1. Tenta BrasilAPI v2 (alta velocidade e provedores múltiplos)
-  try {
-    const response = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`);
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        street: data.street || '',
-        neighborhood: data.neighborhood || '',
-        city: data.city || '',
-        state: (data.state || data.uf || '').trim().toUpperCase(),
-        service: 'brasilapi'
+        telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
+        email: data.email ? String(data.email).toLowerCase() : ''
       };
+    } catch (error) {
+      return null;
     }
-  } catch (err) {
-    console.warn('Fallback para ViaCEP...');
-  }
+  };
 
-  // 2. Fallback para ViaCEP
-  try {
-    const response = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data.erro) return null;
+  /**
+   * Consulta CEP inteligente com redundância (BrasilAPI v2 com fallback para ViaCEP)
+   */
+  export const fetchAddressByCEP = async (cep) => {
+    const clean = unmask(cep);
+    if (clean.length !== 8) return null;
 
-    return {
-      street: data.logradouro || '',
-      neighborhood: data.bairro || '',
-      city: data.localidade || '',
-      state: (data.uf || data.state || '').trim().toUpperCase(),
-      service: 'viacep'
-    };
-  } catch (error) {
-    console.warn('Erro ao consultar CEP:', error);
-    return null;
-  }
-};
+    // 1. Tenta BrasilAPI v2 (alta velocidade e provedores múltiplos)
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`);
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          street: data.street || '',
+          neighborhood: data.neighborhood || '',
+          city: data.city || '',
+          state: (data.state || data.uf || '').trim().toUpperCase(),
+          service: 'brasilapi'
+        };
+      }
+    } catch (err) {}
+
+    // 2. Fallback para ViaCEP
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data.erro) return null;
+
+      return {
+        street: data.logradouro || '',
+        neighborhood: data.bairro || '',
+        city: data.localidade || '',
+        state: (data.uf || data.state || '').trim().toUpperCase(),
+        service: 'viacep'
+      };
+    } catch (error) {
+      return null;
+    }
+  };

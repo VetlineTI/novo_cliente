@@ -60,9 +60,7 @@ export const getAdminSession = () => {
     if (session && session.isAuthenticated) {
       return session;
     }
-  } catch (err) {
-    console.error('Erro ao ler sessão admin:', err);
-  }
+  } catch (err) {}
   return null;
 };
 
@@ -121,9 +119,7 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
               .insert([newProfile]);
             profile = newProfile;
           }
-        } catch (profileErr) {
-          console.warn('Aviso ao consultar perfil de admin:', profileErr);
-        }
+        } catch (profileErr) {}
 
         // Validação da Regra de Perfil: Usuário Bloqueado/Sem Perfil NÃO entra no painel
         if (!profile || profile.role === 'bloqueado' || !profile.is_admin && profile.role !== 'operador' && profile.role !== 'consulta' && profile.role !== 'admin') {
@@ -153,7 +149,6 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
 
         return { success: true, user: userSession };
       } else if (authError) {
-        console.warn('Supabase Auth error:', authError.message);
         if (authError.message?.includes('Email not confirmed')) {
           return {
             success: false,
@@ -161,9 +156,7 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
           };
         }
       }
-    } catch (err) {
-      console.warn('Erro ao autenticar com Supabase Auth:', err);
-    }
+    } catch (err) {}
   }
 
   // 2. Validação das credenciais padrão de emergência / bootstrap
@@ -228,9 +221,7 @@ export const fetchAuthUsersWithProfiles = async () => {
           }))
         };
       }
-    } catch (rpcErr) {
-      console.warn('RPC list_auth_users_with_profiles indisponível, tentando tabela:', rpcErr);
-    }
+    } catch (rpcErr) {}
 
     // 2. Consulta direta em novo_cliente.admin_profiles
     try {

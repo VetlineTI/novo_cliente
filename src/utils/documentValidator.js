@@ -63,7 +63,6 @@ function scanQRCodeFromCanvas(canvas, jsQR) {
     });
     return code ? code.data : null;
   } catch (err) {
-    console.warn('Erro na leitura de QR Code:', err);
     return null;
   }
 }
@@ -331,8 +330,7 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     };
 
   } catch (error) {
-    console.warn('Aviso no validador inteligente de documento:', error);
-    // Em caso de falha de carregamento do Tesseract, aceita graciosamente sem travar o cliente
+    // Em caso de falha de processamento, aceita graciosamente sem travar o cliente
     return {
       isValid: true,
       status: 'FALLBACK_OK',

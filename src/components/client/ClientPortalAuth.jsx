@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LogIn,
   UserPlus,
@@ -12,8 +12,20 @@ import { ClientLogin } from './ClientLogin';
 import { RegistrationForm } from '../RegistrationForm';
 import { LeftSidebar } from '../LeftSidebar';
 
-export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initialTab = 'register' }) => {
+export const ClientPortalAuth = ({ 
+  onLoginSuccess, 
+  onRegistrationSuccess, 
+  initialTab = 'register',
+  activationSuccessMessage = '',
+  initialLoginEmail = ''
+}) => {
   const [activeTab, setActiveTab] = useState(initialTab); // 'register' | 'login'
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   return (
     <div className="w-full">
@@ -108,6 +120,8 @@ export const ClientPortalAuth = ({ onLoginSuccess, onRegistrationSuccess, initia
               <ClientLogin
                 onLoginSuccess={onLoginSuccess}
                 onSwitchToRegister={() => setActiveTab('register')}
+                activationSuccessMessage={activationSuccessMessage}
+                initialEmail={initialLoginEmail}
               />
             </div>
           </div>

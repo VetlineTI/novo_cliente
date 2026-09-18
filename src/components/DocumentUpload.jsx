@@ -73,7 +73,6 @@ export const DocumentUpload = ({
       });
       setValidationResult(result);
     } catch (err) {
-      console.warn('Erro ao validar documento:', err);
     } finally {
       setIsValidating(false);
     }

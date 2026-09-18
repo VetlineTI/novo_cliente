@@ -55,7 +55,6 @@ export const ResetPasswordModal = ({ isOpen, onSuccess, onClose }) => {
         setError(res.error || 'Não foi possível redefinir sua senha.');
       }
     } catch (err) {
-      console.error('Erro ao redefinir senha:', err);
       setError('Falha ao atualizar a senha. Tente novamente.');
     } finally {
       setLoading(false);

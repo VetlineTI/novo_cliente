@@ -66,18 +66,14 @@ export const uploadDocument = async (file, folder = 'geral', clientDocument = ''
           upsert: true
         });
 
-      if (error) {
-        console.warn(`Aviso no upload para bucket '${bucketName}':`, error.message);
-      } else if (data?.path) {
+      if (data?.path) {
         const { data: publicUrlData } = supabase.storage
           .from(bucketName)
           .getPublicUrl(data.path);
 
         return publicUrlData?.publicUrl || `supabase://${bucketName}/${data.path}`;
       }
-    } catch (err) {
-      console.error('Erro na integração do Storage Supabase:', err);
-    }
+    } catch (err) {}
   }
 
   // Modo Local/Demonstração: Converte o arquivo real para Data URL para visualização 100% fiel no admin
@@ -117,9 +113,7 @@ export const fetchSalespeople = async (forceRefresh = false) => {
           .select('*');
       }
 
-      if (res.error) {
-        console.warn('⚠️ Erro ao consultar tabela public.vendedor no Supabase:', res.error);
-      } else if (res.data && res.data.length > 0) {
+      if (res.data && res.data.length > 0) {
         // Normaliza as colunas e remove ATENA da lista de seleção manual
         const normalized = res.data.map((item) => {
           const cd = item.cd_vend ?? item.CD_VEND ?? item.cd_vendedor ?? item.CD_VENDEDOR ?? item.codigo ?? item.id ?? '';
@@ -139,15 +133,11 @@ export const fetchSalespeople = async (forceRefresh = false) => {
 
         // Ordena por nome do vendedor
         normalized.sort((a, b) => a.nome_vendedor.localeCompare(b.nome_vendedor, 'pt-BR'));
-
-        console.info(`✅ ${normalized.length} vendedores carregados de public.vendedor`);
         cachedSalespeople = normalized;
         return { success: true, data: normalized };
-      } else {
-        console.warn('⚠️ A tabela public.vendedor retornou 0 registros.');
       }
     } catch (err) {
-      console.error('❌ Exceção ao consultar public.vendedor no Supabase:', err);
+      // ignore
     }
   }
 
@@ -211,16 +201,9 @@ export const submitNewClient = async (clientData) => {
       });
 
       if (!rpcError && rpcData) {
-        console.info('✅ Cliente cadastrado com sucesso no schema novo_cliente via RPC');
         return { success: true, data: [rpcData] };
       }
-
-      if (rpcError) {
-        console.warn('⚠️ RPC insert_novo_cliente retornou aviso/erro:', rpcError.message);
-      }
-    } catch (errRpc) {
-      console.warn('⚠️ Exceção ao tentar RPC insert_novo_cliente:', errRpc);
-    }
+    } catch (errRpc) {}
 
     // 2. Método Secundário: Inserção direta no schema novo_cliente via PostgREST
     try {
@@ -231,19 +214,16 @@ export const submitNewClient = async (clientData) => {
         .select();
 
       if (!res.error && res.data && res.data.length > 0) {
-        console.info('✅ Cliente cadastrado com sucesso diretamente no schema novo_cliente');
         return { success: true, data: res.data };
       }
 
       if (res.error) {
-        console.error('❌ Erro ao inserir no schema novo_cliente:', res.error);
         return { 
           success: false, 
           error: `Erro ao salvar no schema novo_cliente: ${res.error.message}. Certifique-se de executar o script SQL no Supabase.` 
         };
       }
     } catch (errCustom) {
-      console.error('❌ Exceção ao gravar no schema novo_cliente:', errCustom);
       return { 
         success: false, 
         error: `Falha de conexão com o schema novo_cliente: ${errCustom.message || 'Erro desconhecido'}` 
@@ -252,7 +232,6 @@ export const submitNewClient = async (clientData) => {
   }
 
   // Simulação para testes locais quando Supabase não configurado
-  console.info('ℹ️ Supabase não configurado no .env - Dados salvos no armazenamento local:', clientData);
   await new Promise((resolve) => setTimeout(resolve, 800));
   
   try {
@@ -266,9 +245,7 @@ export const submitNewClient = async (clientData) => {
     existing.unshift(newRecord);
     localStorage.setItem('vetline_saved_clients', JSON.stringify(existing));
     return { success: true, data: [newRecord], isDemo: true };
-  } catch (e) {
-    console.error('Erro ao salvar localmente:', e);
-  }
+  } catch (e) {}
 
   return { 
     success: true, 
@@ -293,7 +270,6 @@ const getLocalClients = () => {
     }
     return realClientsOnly;
   } catch (err) {
-    console.error('Erro ao ler clientes do localStorage:', err);
     return [];
   }
 };
@@ -317,9 +293,7 @@ export const fetchClients = async (options = {}) => {
       if (!rpcError && rpcData) {
         return { success: true, data: rpcData };
       }
-    } catch (errRpc) {
-      console.warn('Tentativa RPC get_novo_cliente_clients falhou:', errRpc);
-    }
+    } catch (errRpc) {}
 
     // 2. Método Secundário: Consulta direta no schema novo_cliente
     try {
@@ -351,9 +325,7 @@ export const fetchClients = async (options = {}) => {
         }
         return { success: true, data: filtered };
       }
-    } catch (errCustom) {
-      console.warn('Tentativa direta no schema novo_cliente falhou:', errCustom);
-    }
+    } catch (errCustom) {}
   }
 
   // Fallback Local Storage
@@ -402,9 +374,7 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         updateLocalClientFull(clientId, rpcData);
         return { success: true, data: rpcData };
       }
-    } catch (errRpc) {
-      console.warn('Tentativa RPC update_novo_cliente falhou:', errRpc);
-    }
+    } catch (errRpc) {}
 
     // 2. Método Secundário: Atualização direta no schema novo_cliente
     try {
@@ -419,13 +389,7 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         updateLocalClientFull(clientId, res.data[0]);
         return { success: true, data: res.data[0] };
       }
-
-      if (res.error) {
-        console.error('Erro ao atualizar no schema novo_cliente:', res.error);
-      }
-    } catch (errCustom) {
-      console.warn('Tentativa update novo_cliente direto falhou:', errCustom);
-    }
+    } catch (errCustom) {}
   }
 
   // Atualização no LocalStorage
@@ -456,9 +420,7 @@ const updateLocalClientFull = (clientId, dataToUpdate) => {
       localStorage.setItem('vetline_saved_clients', JSON.stringify(clients));
       return clients[index];
     }
-  } catch (e) {
-    console.error('Erro ao atualizar no localStorage:', e);
-  }
+  } catch (e) {}
   return dataToUpdate;
 };
 

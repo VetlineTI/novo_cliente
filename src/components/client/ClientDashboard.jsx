@@ -114,7 +114,6 @@ export const ClientDashboard = ({ onLogout }) => {
         }
       }
     } catch (e) {
-      console.error('Erro ao atualizar dados do cliente:', e);
     } finally {
       setIsRefreshing(false);
     }
@@ -218,7 +217,6 @@ export const ClientDashboard = ({ onLogout }) => {
         setSaveError(res.error || 'Não foi possível salvar as alterações.');
       }
     } catch (err) {
-      console.error('Erro ao salvar:', err);
       setSaveError('Erro ao comunicar com o servidor.');
     } finally {
       setIsSaving(false);
@@ -251,7 +249,6 @@ export const ClientDashboard = ({ onLogout }) => {
         setUploadError(res.error || `Erro ao reenviar o arquivo ${title}.`);
       }
     } catch (err) {
-      console.error('Erro no upload:', err);
       setUploadError('Erro ao enviar documento. Verifique o tamanho do arquivo.');
     } finally {
       setUploadingField(null);

@@ -36,7 +36,6 @@ export const CameraCaptureModal = ({ isOpen, onClose, onCapture, documentLabel =
       }
       setIsLoading(false);
     } catch (err) {
-      console.error('Erro ao acessar a câmera:', err);
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões do seu navegador.');
       setIsLoading(false);
     }

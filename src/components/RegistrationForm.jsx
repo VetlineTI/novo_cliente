@@ -123,7 +123,6 @@ export const RegistrationForm = ({ onSuccess }) => {
         setSalespeopleList(res.data);
       }
     } catch (e) {
-      console.error('Erro ao carregar vendedores:', e);
     } finally {
       setLoadingSalespeople(false);
     }
@@ -553,7 +552,6 @@ export const RegistrationForm = ({ onSuccess }) => {
         onSuccess(result.client || payload, result.session);
       }
     } catch (err) {
-      console.error('Erro na submissão com senha:', err);
       setSubmitError(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');
       setShowPasswordModal(false);
     } finally {

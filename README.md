@@ -11,10 +11,13 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
   - **Aba "Já sou cliente"**: Formulário de login direto com e-mail e senha cadastrados no Supabase Auth, permitindo acesso imediato à Área do Cliente.
   - **Aba "Ainda não sou"**: Formulário completo de credenciamento e apresentação institucional da Vetline.
 
-### 2. 🛡️ Confirmação de E-mail & Criação de Senha no Supabase Auth
-- Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema valida todas as regras e abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
-- O usuário informa/confirma o **e-mail para login** e define sua **senha de acesso** com validação de força (mínimo 6 dígitos e confirmação).
-- O sistema registra o usuário no **Supabase Auth (`auth.users`)**, vincula o `auth_user_id` ao registro da tabela `novo_cliente.data_new_client` e faz o login automático do cliente.
+### 2. 🛡️ Confirmação de E-mail & Ativação de Conta no Supabase Auth
+- Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
+- O usuário confirma o **e-mail para login** e define sua **senha de acesso**.
+- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com `emailRedirectTo: `${window.location.origin}/?type=signup-confirmed`` e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
+- **Ativação Obrigatória**: Um e-mail com link de ativação é enviado para o cliente. O login só é permitido após a confirmação.
+- **Redirecionamento Inteligente**: Ao clicar no link do e-mail, o usuário é redirecionado de volta diretamente para a aba **"Já sou cliente"** com o aviso destacado: *"🎉 Cadastro ativado com sucesso! Digite sua senha abaixo para acessar"*.
+- **Reenvio de Link**: Se o cliente tentar logar sem ter ativado, a tela exibe um aviso com o botão **"Reenviar e-mail de ativação"**.
 
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
 - Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:
@@ -57,20 +60,22 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `tailwind.config.js` | Configuração do Tailwind CSS com a paleta institucional da Vetline. |
 | `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_client`, `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_client` e exclusão da tabela em public. |
+| `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline. |
+| `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
-| `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, sessão ativa, login, atualização cadastral e reenvio de anexos). |
+| `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
-| `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações para criação no Supabase Auth. |
-| `src/components/SuccessModal.jsx` | Modal de confirmação do envio com confetes, protocolo e botão único OK. |
+| `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações e aviso de ativação por e-mail. |
+| `src/components/SuccessModal.jsx` | Modal de confirmação com orientações de verificação do e-mail de ativação e botão para ir ao login. |
 | `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
 | `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |
 | `src/components/client/ClientPortalAuth.jsx` | Tela principal com as abas **"Já sou cliente"** e **"Ainda não sou"**. |
-| `src/components/client/ClientLogin.jsx` | Formulário de login do cliente com e-mail, senha e opção de recuperação. |
+| `src/components/client/ClientLogin.jsx` | Formulário de login do cliente com banner de ativação, tratamento de conta pendente e reenvio de e-mail. |
 | `src/components/client/ForgotPasswordModal.jsx` | Modal de solicitação de recuperação de senha via envio de link para o e-mail cadastrado. |
 | `src/components/client/ResetPasswordModal.jsx` | Modal de criação de nova senha para usuários que acessam o link de recuperação. |
 | `src/components/client/ClientDashboard.jsx` | Painel do cliente logado com acompanhamento de status, edição de dados e reenvio de documentos. |
@@ -81,6 +86,21 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users` e concessão de perfis. |
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
+
+---
+
+## ✉️ Configuração dos Templates de E-mail no Supabase
+
+Para utilizar os templates com as cores e visual profissional da Vetline:
+
+1. No Supabase Dashboard, acesse **Authentication > Email Templates**;
+2. Na aba **Confirm signup** (Confirmação de cadastro):
+   - Assunto: `Ative seu cadastro - Vetline Distribuidora`
+   - Cole o conteúdo do arquivo [`supabase/templates/confirm_signup.html`](file:///supabase/templates/confirm_signup.html);
+3. Na aba **Reset password** (Redefinição de senha):
+   - Assunto: `Recuperação de Senha - Vetline Distribuidora`
+   - Cole o conteúdo do arquivo [`supabase/templates/reset_password.html`](file:///supabase/templates/reset_password.html);
+4. Em **Authentication > URL Configuration > Redirect URLs**, certifique-se de adicionar a URL do seu site (ex: `http://localhost:5173/` e a URL de produção na Vercel).
 
 ---
 

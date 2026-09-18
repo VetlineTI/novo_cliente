@@ -15,6 +15,9 @@ export function App() {
   const [successData, setSuccessData] = useState(null);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [portalTab, setPortalTab] = useState('register'); // 'register' | 'login'
+  const [activationMessage, setActivationMessage] = useState('');
+  const [initialLoginEmail, setInitialLoginEmail] = useState('');
 
   // Sessão do Cliente
   const [clientSession, setClientSession] = useState(() => getClientSession());
@@ -29,23 +32,57 @@ export function App() {
   const [currentRoute, setCurrentRoute] = useState(isInitialAdmin ? 'admin' : 'portal');
   const [adminUser, setAdminUser] = useState(() => getAdminSession());
 
-  // Escuta histórico de navegação e evento de recuperação de senha
+  // Escuta histórico de navegação e eventos de recuperação/ativação de conta
   useEffect(() => {
-    // Detecta se a URL contém parâmetros de recuperação de senha
+    if (typeof window === 'undefined') return;
+
+    const urlSearch = window.location.search || '';
+    const urlHash = window.location.hash || '';
+
+    // 1. Detecta parâmetros de ativação de conta (link recebido no e-mail)
+    const isSignupConfirmed =
+      urlSearch.includes('type=signup-confirmed') ||
+      urlSearch.includes('type=signup') ||
+      urlSearch.includes('account_confirmed=true') ||
+      urlHash.includes('type=signup') ||
+      urlHash.includes('type=signup-confirmed');
+
+    if (isSignupConfirmed) {
+      setPortalTab('login');
+      setActivationMessage('🎉 Cadastro ativado com sucesso! Seu e-mail foi confirmado. Informe seu e-mail e senha abaixo para acessar seu painel.');
+      
+      // Limpa qualquer sessão temporária criada pelo link para forçar login explícito
+      if (isSupabaseConfigured && supabase) {
+        supabase.auth.signOut().catch(() => {});
+      }
+
+      // Limpa os parâmetros de hash/query da URL
+      window.history.replaceState({}, '', window.location.pathname);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 2. Detecta parâmetros de recuperação de senha
     const isRecoveryUrl =
-      typeof window !== 'undefined' &&
-      (window.location.search.includes('type=recovery') ||
-        window.location.hash.includes('type=recovery') ||
-        window.location.search.includes('reset_password=true'));
+      urlSearch.includes('type=recovery') ||
+      urlHash.includes('type=recovery') ||
+      urlSearch.includes('reset_password=true');
 
     if (isRecoveryUrl) {
       setIsResetPasswordOpen(true);
     }
 
+    // 3. Listener do Supabase Auth
     if (isSupabaseConfigured && supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
           setIsResetPasswordOpen(true);
+        } else if (event === 'USER_UPDATED' || event === 'SIGNED_IN') {
+          // Se o usuário veio de um clique de confirmação de e-mail
+          if (window.location.hash.includes('type=signup') || window.location.search.includes('type=signup')) {
+            setPortalTab('login');
+            setActivationMessage('🎉 Cadastro ativado com sucesso! Seu e-mail foi confirmado. Faça seu login abaixo com sua senha.');
+            window.history.replaceState({}, '', window.location.pathname);
+          }
         }
       });
 
@@ -99,17 +136,23 @@ export function App() {
   // Handlers do Cliente
   const handleClientLoginSuccess = (session) => {
     setClientSession(session);
+    setActivationMessage('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleClientLogout = () => {
     logoutClient();
     setClientSession(null);
+    setPortalTab('register');
+    setActivationMessage('');
     navigateToPortal();
   };
 
   const handleRegistrationSuccess = (submittedData, session) => {
     setSuccessData(submittedData);
+    if (submittedData?.email) {
+      setInitialLoginEmail(submittedData.email);
+    }
     if (session) {
       setClientSession(session);
     }
@@ -118,7 +161,8 @@ export function App() {
 
   const handleSuccessClose = () => {
     setIsSuccessOpen(false);
-    // Se tiver sessão de cliente criada, atualiza estado para exibir painel
+    // Posiciona o usuário na aba "Já sou cliente" para ele logar após confirmar o e-mail
+    setPortalTab('login');
     const current = getClientSession();
     if (current) {
       setClientSession(current);
@@ -173,6 +217,9 @@ export function App() {
           <ClientPortalAuth
             onLoginSuccess={handleClientLoginSuccess}
             onRegistrationSuccess={handleRegistrationSuccess}
+            initialTab={portalTab}
+            activationSuccessMessage={activationMessage}
+            initialLoginEmail={initialLoginEmail}
           />
         )}
       </div>
@@ -209,6 +256,7 @@ export function App() {
         onClose={() => setIsResetPasswordOpen(false)}
         onSuccess={() => {
           setIsResetPasswordOpen(false);
+          setPortalTab('login');
           navigateToPortal();
         }}
       />

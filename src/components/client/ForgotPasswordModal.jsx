@@ -44,7 +44,6 @@ export const ForgotPasswordModal = ({ isOpen, onClose, initialEmail = '' }) => {
         setError(res.error || 'Não foi possível enviar o e-mail de recuperação.');
       }
     } catch (err) {
-      console.error('Erro ao solicitar redefinição:', err);
       setError('Ocorreu um erro ao processar seu pedido. Tente novamente.');
     } finally {
       setLoading(false);

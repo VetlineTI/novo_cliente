@@ -135,7 +135,6 @@ export const ClientDetailModal = ({
             setSalespeopleList(res.data);
           }
         } catch (e) {
-          console.error('Erro ao carregar vendedores no modal:', e);
         } finally {
           setLoadingSalespeople(false);
         }
@@ -180,7 +179,6 @@ export const ClientDetailModal = ({
       setIsEditing(false);
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err) {
-      console.error('Erro ao salvar alterações do cliente no banco:', err);
       alert('Erro ao salvar dados no banco: ' + (err.message || 'Verifique sua conexão'));
     } finally {
       setIsSaving(false);

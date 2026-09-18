@@ -50,7 +50,6 @@ export const UserManagementView = () => {
         setUsers(res.data || []);
       }
     } catch (err) {
-      console.error('Erro ao carregar usuários:', err);
       setActionError('Falha ao conectar e carregar usuários do Supabase.');
     } finally {
       setLoading(false);

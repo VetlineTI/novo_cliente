@@ -50,7 +50,6 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         setClients(res.data || []);
       }
     } catch (err) {
-      console.error('Erro ao carregar clientes:', err);
     } finally {
       setLoading(false);
     }
@@ -74,7 +73,6 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         return res;
       }
     } catch (err) {
-      console.error('Erro ao atualizar cadastro do cliente no banco:', err);
       throw err;
     }
   };

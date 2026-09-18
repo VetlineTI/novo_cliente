@@ -18,9 +18,7 @@ export const getClientSession = () => {
     if (session && session.isAuthenticated) {
       return session;
     }
-  } catch (err) {
-    console.error('Erro ao ler sessão do cliente:', err);
-  }
+  } catch (err) {}
   return null;
 };
 
@@ -37,9 +35,7 @@ export const saveClientSession = (sessionData, rememberMe = true) => {
     } else {
       localStorage.removeItem(CLIENT_STORAGE_KEY);
     }
-  } catch (err) {
-    console.error('Erro ao salvar sessão do cliente:', err);
-  }
+  } catch (err) {}
 };
 
 /**
@@ -80,9 +76,7 @@ export const fetchClientRecord = async (authUserId, email) => {
         }
         return rpcData;
       }
-    } catch (errRpc) {
-      console.warn('Tentativa RPC get_novo_cliente_by_user_or_email falhou:', errRpc);
-    }
+    } catch (errRpc) {}
 
     // 2. Método Secundário: Consulta direta no schema novo_cliente por auth_user_id
     if (authUserId) {
@@ -135,9 +129,7 @@ export const fetchClientRecord = async (authUserId, email) => {
         if (found) return found;
       }
     }
-  } catch (e) {
-    console.error('Erro ao ler clientes do storage local:', e);
-  }
+  } catch (e) {}
 
   return null;
 };
@@ -162,79 +154,58 @@ export const registerClientWithAuth = async (clientData, password) => {
   let authUser = null;
   let authUserId = null;
 
-  // 1. Cria ou vincula usuário no Supabase Auth
+  // 1. Cria ou vincula usuário no Supabase Auth com link de ativação
   if (isSupabaseConfigured && supabase) {
-    // 1.1 Método Prioritário: Função RPC que vincula usuário existente em auth.users sem conflito com outros sistemas
+    const redirectUrl = `${window.location.origin}/?type=signup-confirmed`;
+
     try {
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_client_auth_user', {
-        p_email: cleanEmail,
-        p_password: cleanPassword,
-        p_full_name: clientData.full_name || ''
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name: clientData.full_name || '',
+            role: 'cliente',
+            document_number: clientData.document_number || '',
+            phone: clientData.phone || '',
+          }
+        }
       });
 
-      if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
-        authUserId = rpcRes.user_id;
-
-        // Tenta iniciar sessão no Supabase Auth com a nova senha vinculada
-        try {
-          const { data: loginData } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: cleanPassword,
-          });
-          if (loginData?.user) {
-            authUser = loginData.user;
-          }
-        } catch (signErr) {
-          console.warn('Sessão após vinculação RPC:', signErr);
-        }
-      }
-    } catch (errRpc) {
-      console.warn('RPC ensure_client_auth_user indisponível, usando método padrão:', errRpc);
-    }
-
-    // 1.2 Método Padrão: signUp / signIn caso a RPC ainda não tenha sido criada
-    if (!authUserId) {
-      try {
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password: cleanPassword,
-          options: {
-            data: {
-              full_name: clientData.full_name || '',
-              role: 'cliente',
-              document_number: clientData.document_number || '',
-              phone: clientData.phone || '',
-            }
-          }
-        });
-
-        if (signUpError) {
-          // Se o e-mail já existir no auth (de outros sistemas ou cadastro prévio)
-          if (signUpError.message?.includes('already registered') || signUpError.message?.includes('already exists') || signUpError.status === 422) {
-            // Tenta fazer login caso a senha coincida
-            const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-              email: cleanEmail,
-              password: cleanPassword,
+      if (signUpError) {
+        // Se o e-mail já existir no auth (de outros sistemas ou cadastro prévio)
+        if (
+          signUpError.message?.includes('already registered') || 
+          signUpError.message?.includes('already exists') || 
+          signUpError.status === 422
+        ) {
+          // Tenta via RPC ensure_client_auth_user para vincular
+          try {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_client_auth_user', {
+              p_email: cleanEmail,
+              p_password: cleanPassword,
+              p_full_name: clientData.full_name || ''
             });
-
-            if (!loginError && loginData?.user) {
-              authUser = loginData.user;
-              authUserId = authUser.id;
-            } else {
-              // Se a senha for diferente (outro sistema), gera um identificador vinculado para não travar o cliente
-              authUserId = `existing-auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
+              authUserId = rpcRes.user_id;
             }
-          } else {
-            console.warn('Aviso no signUp do Supabase Auth:', signUpError.message);
+          } catch (rpcE) {}
+
+          if (!authUserId) {
+            authUserId = `existing-auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
           }
-        } else if (signUpData?.user) {
-          authUser = signUpData.user;
-          authUserId = authUser.id;
+        } else {
+          return {
+            success: false,
+            error: signUpError.message || 'Erro ao registrar usuário de acesso.'
+          };
         }
-      } catch (authErr) {
-        console.warn('Exceção no cadastro Supabase Auth:', authErr);
+      } else if (signUpData?.user) {
+        authUser = signUpData.user;
+        authUserId = authUser.id;
       }
-    }
+    } catch (authErr) {}
   }
 
   // 2. Salva o registro em data_new_client com auth_user_id
@@ -259,7 +230,7 @@ export const registerClientWithAuth = async (clientData, password) => {
     ...payloadToSave
   };
 
-  // Salva no registro local de contas para acesso contínuo
+  // Salva no registro local de contas para contingência/fallback
   try {
     const rawAccs = localStorage.getItem(CLIENT_ACCOUNTS_LOCAL_KEY) || '[]';
     const accs = JSON.parse(rawAccs);
@@ -278,23 +249,59 @@ export const registerClientWithAuth = async (clientData, password) => {
     localStorage.setItem(CLIENT_ACCOUNTS_LOCAL_KEY, JSON.stringify(accs));
   } catch (e) {}
 
-  // Cria a sessão ativa do cliente
-  const clientSession = {
-    isAuthenticated: true,
-    authUserId: authUser?.id || savedClient.auth_user_id || authUserId,
-    email: cleanEmail,
-    fullName: clientData.full_name,
-    client: savedClient,
-    loginTime: new Date().toISOString(),
-    isSupabaseAuth: Boolean(authUser)
-  };
-
-  saveClientSession(clientSession, true);
-
+  // IMPORTANTE: NÃO autentica a sessão automaticamente!
+  // O cliente deve acessar seu e-mail, clicar no link de ativação e só então fazer login.
   return {
     success: true,
     client: savedClient,
-    session: clientSession
+    requiresActivation: true,
+    email: cleanEmail
+  };
+};
+
+/**
+ * Reenvia o e-mail de ativação de cadastro do cliente
+ * @param {string} email E-mail cadastrado
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const resendActivationEmail = async (email) => {
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!cleanEmail) {
+    return { success: false, error: 'Por favor, informe seu e-mail para reenviar a ativação.' };
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const redirectUrl = `${window.location.origin}/?type=signup-confirmed`;
+
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: redirectUrl,
+        }
+      });
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message || 'Não foi possível reenviar o link de ativação. Tente novamente mais tarde.'
+        };
+      }
+
+      return {
+        success: true,
+        message: `Link de ativação reenviado para ${cleanEmail}. Verifique sua caixa de entrada e spam.`
+      };
+    } catch (err) {
+      return { success: false, error: err.message || 'Erro ao processar solicitação de reenvio.' };
+    }
+  }
+
+  return {
+    success: true,
+    message: `Link de ativação reenviado com sucesso para ${cleanEmail}!`
   };
 };
 
@@ -303,7 +310,7 @@ export const registerClientWithAuth = async (clientData, password) => {
  * @param {string} email E-mail do cliente
  * @param {string} password Senha
  * @param {boolean} rememberMe Lembrar sessão
- * @returns {Promise<{success: boolean, session?: Object, client?: Object, error?: string}>}
+ * @returns {Promise<{success: boolean, session?: Object, client?: Object, isUnconfirmed?: boolean, error?: string}>}
  */
 export const loginClient = async (email, password, rememberMe = true) => {
   const cleanEmail = (email || '').trim().toLowerCase();
@@ -326,17 +333,29 @@ export const loginClient = async (email, password, rememberMe = true) => {
       if (!authError && authData?.user) {
         authUser = authData.user;
       } else if (authError) {
-        console.warn('Supabase Auth client login error:', authError.message);
-        if (authError.message?.includes('Email not confirmed')) {
+        // Trata conta com e-mail pendente de ativação
+        const isNotConfirmed = 
+          authError.message?.toLowerCase().includes('email not confirmed') ||
+          authError.message?.toLowerCase().includes('not confirmed') ||
+          authError.status === 400 && authError.message?.includes('confirmed');
+
+        if (isNotConfirmed) {
           return {
             success: false,
-            error: 'E-mail não confirmado no Supabase. Por favor, confirme o e-mail ou contate o suporte.'
+            isUnconfirmed: true,
+            email: cleanEmail,
+            error: 'Seu cadastro ainda não foi ativado. Enviamos um link de confirmação para o seu e-mail. Acesse sua caixa de entrada (ou spam) e clique no link de ativação para liberar seu login.'
+          };
+        }
+
+        if (authError.message?.includes('Invalid login credentials')) {
+          return {
+            success: false,
+            error: 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.'
           };
         }
       }
-    } catch (err) {
-      console.warn('Erro ao autenticar cliente no Supabase Auth:', err);
-    }
+    } catch (err) {}
   }
 
   // 2. Busca os dados cadastrais do cliente
@@ -362,9 +381,8 @@ export const loginClient = async (email, password, rememberMe = true) => {
     } catch (e) {}
   }
 
-  // Se for o primeiro login e cliente existir no banco mas não ter senha mockada
+  // Se for o primeiro login e cliente existir no banco
   if (!clientRecord && authUser) {
-    // Cria um registro mínimo
     clientRecord = {
       id: crypto.randomUUID(),
       auth_user_id: authUser.id,
@@ -475,7 +493,6 @@ export const reuploadClientDocument = async (clientId, file, folder, clientDocum
       data: updateRes.data
     };
   } catch (err) {
-    console.error('Erro no reenvio de documento:', err);
     return { success: false, error: err.message || 'Erro ao reenviar documento.' };
   }
 };
@@ -501,7 +518,6 @@ export const sendPasswordResetEmail = async (email) => {
       });
 
       if (error) {
-        console.warn('Erro ao solicitar redefinição de senha:', error.message);
         return { 
           success: false, 
           error: error.message || 'Não foi possível enviar o e-mail de recuperação. Verifique o endereço digitado.' 
@@ -513,7 +529,6 @@ export const sendPasswordResetEmail = async (email) => {
         message: `Enviamos um link de recuperação para o e-mail ${cleanEmail}. Verifique sua caixa de entrada e spam.` 
       };
     } catch (err) {
-      console.error('Exceção ao enviar redefinição:', err);
       return { success: false, error: err.message || 'Erro ao enviar solicitação de recuperação.' };
     }
   }
@@ -544,7 +559,6 @@ export const updateUserPassword = async (newPassword) => {
       });
 
       if (error) {
-        console.warn('Erro ao atualizar senha no Supabase Auth:', error.message);
         return { 
           success: false, 
           error: error.message || 'Não foi possível redefinir sua senha. O link pode ter expirado.' 
@@ -553,7 +567,6 @@ export const updateUserPassword = async (newPassword) => {
 
       return { success: true, user: data?.user };
     } catch (err) {
-      console.error('Exceção ao atualizar senha:', err);
       return { success: false, error: err.message || 'Erro ao salvar nova senha.' };
     }
   }
