@@ -163,37 +163,53 @@ export const ClientDetailModal = ({
     try {
       const res = await executarAuditoriaBureau(client);
 
-      if (res.allSuccessful) {
-        setBureauFeedback({
+      const feedbacks = [];
+
+      // Feedback JUCESP
+      if (res.data?.jucesp?.success || res.docJucespUrl) {
+        feedbacks.push({
           type: 'success',
-          message: '✓ Auditoria concluída! Ficha Cadastral JUCESP e Consulta de Protestos (CENPROT) foram consultadas e anexadas com sucesso.'
+          message: '✓ Ficha Cadastral JUCESP e NIRE consultados e anexados com sucesso!'
         });
-      } else if (res.docJucespUrl || res.data?.jucesp?.success) {
-        setBureauFeedback({
-          type: 'success',
-          message: '✓ Ficha Cadastral JUCESP e NIRE consultados e anexados com sucesso! (Central de Protestos CENPROT temporariamente em manutenção nos cartórios).'
-        });
-      } else if (res.isPartial) {
-        const succList = (res.successfulServices || []).join(', ');
-        const failList = (res.failedServices || []).map(f => `${f.service} (${f.error})`).join('; ');
-        setBureauFeedback({
+      } else if (res.data?.jucesp?.error) {
+        feedbacks.push({
           type: 'warning',
-          message: `⚠ Auditoria: ${succList} obtidos. Aviso: ${failList}.`
+          message: `⚠ JUCESP: ${res.data.jucesp.error}`
         });
-      } else {
-        const failList = (res.failedServices || []).map(f => `${f.service}: ${f.error}`).join(' | ') || res.error || 'Erro desconhecido';
-        setBureauFeedback({
-          type: 'error',
-          message: `✕ Falha no Bureau: ${failList}`
+      }
+
+      // Feedback CENPROT
+      if (res.data?.cenprot?.success && !res.data?.cenprot?.skipped) {
+        const protestMsg = res.data.cenprot.totalProtests === 0
+          ? '0 Protestos (Nada Consta)'
+          : `${res.data.cenprot.totalProtests} Protesto(s)`;
+        feedbacks.push({
+          type: 'success',
+          message: `✓ Consulta de Protestos (CENPROT) realizada e anexada com sucesso! (${protestMsg})`
+        });
+      } else if (res.data?.cenprot?.error) {
+        feedbacks.push({
+          type: 'warning',
+          message: `⚠ CENPROT: ${res.data.cenprot.error}`
+        });
+      }
+
+      // Caso de segurança se nenhum item foi adicionado
+      if (feedbacks.length === 0) {
+        feedbacks.push({
+          type: res.allFailed ? 'error' : (res.isPartial ? 'warning' : 'success'),
+          message: res.error || (res.allSuccessful ? '✓ Consulta concluída com sucesso!' : '✕ Falha ao consultar Bureau.')
         });
       }
 
       if (res.dbSaveSuccess === false) {
-        setBureauFeedback({
+        feedbacks.push({
           type: 'error',
           message: `✕ Documentos obtidos na API, mas erro ao salvar no banco de dados: ${res.dbSaveError}`
         });
       }
+
+      setBureauFeedback(feedbacks);
 
       if (res.successfulServices && res.successfulServices.length > 0 && onUpdateClient) {
         await onUpdateClient(client.id, {
@@ -1038,13 +1054,20 @@ export const ClientDetailModal = ({
                         </div>
 
                         {bureauFeedback && (
-                          <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${bureauFeedback.type === 'success'
-                            ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
-                            : (bureauFeedback.type === 'warning'
-                              ? 'bg-amber-950/90 border-amber-600 text-amber-200'
-                              : 'bg-red-950/90 border-red-600 text-red-200')
-                            }`}>
-                            <span className="flex-1">{bureauFeedback.message}</span>
+                          <div className="space-y-2">
+                            {(Array.isArray(bureauFeedback) ? bureauFeedback : [bureauFeedback]).map((fb, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${fb.type === 'success'
+                                  ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
+                                  : (fb.type === 'warning'
+                                    ? 'bg-amber-950/90 border-amber-600 text-amber-200'
+                                    : 'bg-red-950/90 border-red-600 text-red-200')
+                                  }`}
+                              >
+                                <span className="flex-1">{fb.message}</span>
+                              </div>
+                            ))}
                           </div>
                         )}
 
