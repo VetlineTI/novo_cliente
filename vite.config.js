@@ -11,6 +11,11 @@ export default defineConfig({
         target: 'https://api.infosimples.com/api/v2/consultas',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api-infosimples/, '')
+      },
+      '/api-directd': {
+        target: 'https://apiv3.directd.com.br/api',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-directd/, '')
       }
     }
   },

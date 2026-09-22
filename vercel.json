@@ -2,12 +2,19 @@
   "functions": {
     "api/infosimples.js": {
       "maxDuration": 60
+    },
+    "api/directd.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/api-infosimples/(.*)",
       "destination": "/api/infosimples?service=$1"
+    },
+    {
+      "source": "/api-directd/(.*)",
+      "destination": "/api/directd?service=$1"
     },
     {
       "source": "/(.*)",

@@ -355,18 +355,38 @@ export const consultarProtestosCenprot = async (cnpj) => {
   };
 };
 
+import { consultarDirectDataPJ } from './directd';
+
 /**
- * Consulta JUCESP - Ficha Cadastral Simplificada Oficial (com login Gov.br autenticado)
- * Endpoint oficial da Infosimples: /junta-comercial/sp/ficha
+ * Consulta Cadastral PJ / JUCESP
+ * Prioridade: Direct Data (CadastroPessoaJuridicaPlus) com fallback para JUCESP Oficial (Gov.br)
  */
 export const consultarJucespSimplificada = async (cnpj, options = {}) => {
-  const loginCpf = options.login_cpf || JUCESP_LOGIN_CPF;
-  const loginSenha = options.login_senha || JUCESP_LOGIN_SENHA;
-
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || cleanCnpj.length !== 14) {
-    return { success: false, error: 'CNPJ inválido para consulta na JUCESP.' };
+    return { success: false, error: 'CNPJ inválido para consulta.' };
   }
+
+  // 1. Tenta Direct Data (CadastroPessoaJuridicaPlus)
+  try {
+    const directRes = await consultarDirectDataPJ(cleanCnpj);
+    if (directRes.success && directRes.data) {
+      return {
+        success: true,
+        source: 'directd',
+        nire: directRes.data.nire || null,
+        receiptUrl: directRes.receiptUrl,
+        data: directRes.data,
+        raw: directRes.raw
+      };
+    }
+  } catch (dErr) {
+    console.warn('Tentativa Direct Data:', dErr);
+  }
+
+  // 2. Fallback: Consulta Oficial JUCESP Ficha Cadastral (com Gov.br)
+  const loginCpf = options.login_cpf || JUCESP_LOGIN_CPF;
+  const loginSenha = options.login_senha || JUCESP_LOGIN_SENHA;
 
   try {
     const params = new URLSearchParams();
@@ -390,6 +410,7 @@ export const consultarJucespSimplificada = async (cnpj, options = {}) => {
         const nire = dataItem.nire || dataItem.empresa?.nire || dataItem.numero_nire || null;
         return {
           success: true,
+          source: 'infosimples',
           nire,
           receiptUrl,
           data: dataItem,
@@ -399,16 +420,16 @@ export const consultarJucespSimplificada = async (cnpj, options = {}) => {
       return {
         success: false,
         code: result.code,
-        error: result.code_message || (result.errors && result.errors[0]) || 'Falha na consulta da JUCESP',
+        error: result.code_message || (result.errors && result.errors[0]) || 'Falha na consulta',
         raw: result
       };
     }
     return {
       success: false,
-      error: `Servidor da JUCESP retornou HTTP ${response.status}`
+      error: `Servidor retornou HTTP ${response.status}`
     };
   } catch (e) {
-    return { success: false, error: e.message || 'Erro de conexão na JUCESP' };
+    return { success: false, error: e.message || 'Erro de conexão na consulta cadastral' };
   }
 };
 

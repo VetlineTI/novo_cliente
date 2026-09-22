@@ -1,0 +1,211 @@
+// Integração com a API Direct Data (DirectD) - Cadastro Pessoa Jurídica Plus
+// Endpoint Oficial: https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus
+
+const DIRECTD_TOKEN =
+  import.meta.env.VITE_DIRECTD_TOKEN ||
+  '12DC14EA-112C-426C-9EC9-05A1280D23D1';
+
+const BASE_URL = '/api-directd';
+
+/**
+ * Gera um comprovante HTML estilizado com os dados consolidados da Direct Data
+ * @param {Object} retorno Dados da empresa
+ * @param {Object} metaDados Metadados da consulta
+ * @returns {string} Data URI com HTML formatado
+ */
+export const generateDirectDReceiptHtml = (retorno = {}, metaDados = {}) => {
+  const cnpj = retorno.cnpj || '';
+  const razaoSocial = retorno.razaoSocial || '';
+  const nomeFantasia = retorno.nomeFantasia || '********';
+  const dataFundacao = retorno.dataFundacao || '';
+  const situacao = retorno.situacaoCadastral || 'ATIVA';
+  const cnaePrincipal = retorno.cnaeDescricao ? `${retorno.cnaeCodigo || ''} - ${retorno.cnaeDescricao}` : '';
+  const natureza = retorno.naturezaJuridicaDescricao || retorno.naturezaJuridicaTipo || '';
+  const porte = retorno.porte || '';
+  const faturamento = retorno.faturamentoPresumido || retorno.faixaFaturamento || '';
+  const tributacao = retorno.tributacao || retorno.opcaoSimples || '';
+  
+  const end = (retorno.enderecos && retorno.enderecos[0]) || {};
+  const enderecoFormatado = end.logradouro ? `${end.logradouro}, ${end.numero || 'S/N'}${end.complemento ? ' - ' + end.complemento : ''} - ${end.bairro || ''}, ${end.cidade || ''}/${end.uf || ''} - CEP: ${end.cep || ''}` : '-';
+
+  const tel = (retorno.telefones && retorno.telefones[0]) || {};
+  const email = (retorno.emails && retorno.emails[0]) || {};
+
+  const socios = Array.isArray(retorno.socios) ? retorno.socios : [];
+  const sociosHtml = socios.length > 0
+    ? socios.map(s => `<tr><td style="padding:7px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">${s.nome || ''}</td><td style="padding:7px 10px;border:1px solid #cbd5e1;color:#334155;">${s.cargo || 'Sócio / Administrador'}</td><td style="padding:7px 10px;border:1px solid #cbd5e1;color:#64748b;">${s.dataEntrada || '-'}</td></tr>`).join('')
+    : `<tr><td colspan="3" style="padding:10px;border:1px solid #cbd5e1;color:#64748b;font-style:italic;">Sem outros sócios registrados no QSA</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprovante Cadastral PJ - Direct Data - ${razaoSocial}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; font-size: 12px; }
+    .card { max-width: 820px; margin: 0 auto; background: #ffffff; border: 2px solid #0f766e; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
+    .header { text-align: center; border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 16px; }
+    .title { font-size: 15px; font-weight: bold; color: #0f766e; text-transform: uppercase; margin: 0; }
+    .subtitle { font-size: 11px; color: #475569; margin-top: 4px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; }
+    .box { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; background: #ffffff; }
+    .label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; display: block; margin-bottom: 2px; }
+    .val { font-size: 11px; font-weight: 600; color: #0f172a; }
+    .col-12 { grid-column: span 12; }
+    .col-8 { grid-column: span 8; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    .col-3 { grid-column: span 3; }
+    .badge-status { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    th { background: #f1f5f9; padding: 6px 10px; border: 1px solid #cbd5e1; font-size: 10px; text-align: left; color: #475569; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">Comprovante de Cadastro de Pessoa Jurídica (Direct Data Plus)</div>
+      <div class="subtitle">Base Integrada de Dados Oficiais e Junta Comercial • Consulta UID: ${metaDados.consultaUid || '-'}</div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-4">
+        <span class="label">Número de Inscrição (CNPJ)</span>
+        <span class="val">${cnpj}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Data de Fundação / Abertura</span>
+        <span class="val">${dataFundacao || '-'}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Situação Cadastral</span>
+        <span class="val badge-status">${situacao}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Nome Empresarial (Razão Social)</span>
+        <span class="val" style="font-size: 13px; color: #0f766e;">${razaoSocial}</span>
+      </div>
+
+      <div class="box col-8">
+        <span class="label">Título do Estabelecimento (Nome Fantasia)</span>
+        <span class="val">${nomeFantasia}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Porte / Regime</span>
+        <span class="val">${porte || '-'} ${tributacao ? '(' + tributacao + ')' : ''}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Atividade Econômica Principal (CNAE)</span>
+        <span class="val">${cnaePrincipal || '-'}</span>
+      </div>
+
+      <div class="box col-8">
+        <span class="label">Natureza Jurídica</span>
+        <span class="val">${natureza || '-'}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Faturamento Presumido</span>
+        <span class="val">${faturamento || '-'}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Endereço Cadastral</span>
+        <span class="val">${enderecoFormatado}</span>
+      </div>
+
+      <div class="box col-6">
+        <span class="label">Telefone de Contato</span>
+        <span class="val">${tel.telefoneComDDD || '-'}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">E-mail de Contato</span>
+        <span class="val">${email.enderecoEmail || '-'}</span>
+      </div>
+
+      <div class="box col-12" style="background:#f8fafc;">
+        <span class="label">Quadro de Sócios e Administradores (QSA)</span>
+        <table>
+          <thead>
+            <tr><th>Nome do Sócio / Administrador</th><th>Qualificação / Cargo</th><th>Data de Entrada</th></tr>
+          </thead>
+          <tbody>
+            ${sociosHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;text-align:center;font-size:10px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:8px;">
+      Documento gerado via API Direct Data • Validação Vetline em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+};
+
+/**
+ * Consulta de Pessoa Jurídica na Direct Data (CadastroPessoaJuridicaPlus)
+ * @param {string} cnpj CNPJ para consulta
+ * @returns {Promise<Object>} Resultado padronizado
+ */
+export const consultarDirectDataPJ = async (cnpj) => {
+  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) {
+    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('CNPJ', cleanCnpj);
+    params.append('TOKEN', DIRECTD_TOKEN);
+    params.append('gerarComprovante', 'true');
+
+    const response = await fetch(`${BASE_URL}/CadastroPessoaJuridicaPlus?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Vetline-App/1.0'
+      }
+    });
+
+    const result = await response.json();
+    const meta = result.metaDados || {};
+    const retorno = result.retorno || {};
+
+    if (response.ok && retorno && (retorno.cnpj || retorno.razaoSocial)) {
+      const receiptUrl = meta.urlComprovante || generateDirectDReceiptHtml(retorno, meta);
+
+      return {
+        success: true,
+        data: retorno,
+        metaDados: meta,
+        razaoSocial: retorno.razaoSocial || '',
+        nomeFantasia: retorno.nomeFantasia || '',
+        dataAbertura: retorno.dataFundacao || '',
+        situacaoCadastral: retorno.situacaoCadastral || 'ATIVA',
+        porte: retorno.porte || '',
+        naturezaJuridica: retorno.naturezaJuridicaDescricao || '',
+        socios: Array.isArray(retorno.socios) ? retorno.socios : [],
+        receiptUrl,
+        raw: result
+      };
+    }
+
+    return {
+      success: false,
+      code: meta.resultadoId || response.status,
+      error: meta.mensagem || meta.resultado || 'Falha na consulta Direct Data',
+      raw: result
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Erro ao conectar com Direct Data: ${err.message || 'Erro inesperado'}`
+    };
+  }
+};

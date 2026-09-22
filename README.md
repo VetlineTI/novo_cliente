@@ -64,12 +64,14 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
+| `api/directd.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Direct Data (evita CORS). |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP Ficha Simplificada e CENPROT Protestos). |
+| `src/lib/directd.js` | Módulo de integração com a API Direct Data (CadastroPessoaJuridicaPlus) para obtenção de dados cadastrais e comprovante. |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
