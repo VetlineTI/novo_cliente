@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  Building2, 
-  User, 
-  Folder, 
-  FolderOpen, 
-  FileText, 
-  Eye, 
-  Download, 
-  Phone, 
-  Mail, 
-  MapPin, 
-  CheckCircle, 
-  Clock, 
-  AlertTriangle, 
-  XCircle, 
-  Save, 
+import {
+  X,
+  Building2,
+  User,
+  Folder,
+  FolderOpen,
+  FileText,
+  Eye,
+  Download,
+  Phone,
+  Mail,
+  MapPin,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  XCircle,
+  Save,
   ExternalLink,
   ShieldCheck,
   Calendar,
@@ -67,12 +67,12 @@ const AVAILABLE_SEGMENTS = [
   'VETERINARIO AUTONOMO'
 ];
 
-export const ClientDetailModal = ({ 
-  isOpen, 
-  onClose, 
-  client, 
+export const ClientDetailModal = ({
+  isOpen,
+  onClose,
+  client,
   onUpdateStatus,
-  onUpdateClient 
+  onUpdateClient
 }) => {
   const [activeFolder, setActiveFolder] = useState('ficha');
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -80,7 +80,7 @@ export const ClientDetailModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  
+
   // Lista de vendedores para seleção
   const [salespeopleList, setSalespeopleList] = useState([]);
   const [loadingSalespeople, setLoadingSalespeople] = useState(false);
@@ -162,7 +162,7 @@ export const ClientDetailModal = ({
     setBureauFeedback(null);
     try {
       const res = await executarAuditoriaBureau(client);
-      
+
       if (res.allSuccessful) {
         setBureauFeedback({
           type: 'success',
@@ -324,7 +324,7 @@ export const ClientDetailModal = ({
       ] : []),
       {
         id: 'bureau_certidoes',
-        name: 'Certidões & Bureau',
+        name: 'Doc. Jucesp e Cenprot',
         icon: Search,
         badge: (client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url) ? 'Consultado ✓' : 'Disponível',
         hasDocs: Boolean(client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url),
@@ -351,7 +351,7 @@ export const ClientDetailModal = ({
               bucket: bucketName,
               path: `${clientStoragePath}/cenprot/`,
               url: client.doc_cenprot_url,
-              verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined 
+              verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined
                 ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta)' : `${client.total_protestos} Protesto(s)`)
                 : 'Consulta CENPROT',
               notes: `Consulta à Central de Protestos de Títulos (SP)`
@@ -429,7 +429,7 @@ export const ClientDetailModal = ({
     <>
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-fade-in">
         <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
-          
+
           {/* 1. Cabeçalho Compacto e Elegante */}
           <div className="bg-slate-900 text-white px-4 py-3 sm:px-6 sm:py-3.5 flex items-center justify-between gap-3 border-b border-slate-800 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
@@ -439,30 +439,28 @@ export const ClientDetailModal = ({
 
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`px-2 py-0.2 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                    isPJ ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40' : 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                  }`}>
+                  <span className={`px-2 py-0.2 rounded-md text-[10px] font-black uppercase tracking-wider ${isPJ ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40' : 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                    }`}>
                     {isPJ ? 'PJ' : 'PF'}
                   </span>
-                  
+
                   <span className="text-xs text-slate-300 font-mono font-bold">
                     {formData.document_number}
                   </span>
 
                   {/* Badge de Status Atual */}
-                  <span className={`px-2 py-0.2 rounded-full text-[11px] font-bold flex items-center gap-1 ${
-                    formData.status === 'aprovado'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : formData.status === 'recusado'
+                  <span className={`px-2 py-0.2 rounded-full text-[11px] font-bold flex items-center gap-1 ${formData.status === 'aprovado'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : formData.status === 'recusado'
                       ? 'bg-red-500/20 text-red-300 border border-red-500/40'
                       : formData.status === 'em_analise'
-                      ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  }`}>
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
                     {formData.status === 'aprovado' ? 'Aprovado' :
-                     formData.status === 'recusado' ? 'Recusado' :
-                     formData.status === 'em_analise' ? 'Em Análise' : 'Pendente'}
+                      formData.status === 'recusado' ? 'Recusado' :
+                        formData.status === 'em_analise' ? 'Em Análise' : 'Pendente'}
                   </span>
                 </div>
 
@@ -484,11 +482,10 @@ export const ClientDetailModal = ({
               <button
                 type="button"
                 onClick={() => setIsEditing(!isEditing)}
-                className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
-                  isEditing 
-                    ? 'bg-brand-green text-white ring-2 ring-brand-green/40' 
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700'
-                }`}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${isEditing
+                  ? 'bg-brand-green text-white ring-2 ring-brand-green/40'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700'
+                  }`}
                 title={isEditing ? 'Sair do Modo de Edição' : 'Habilitar Edição dos Campos'}
               >
                 <Edit3 className="w-3.5 h-3.5" />
@@ -525,20 +522,18 @@ export const ClientDetailModal = ({
                 <button
                   key={folder.id}
                   onClick={() => setActiveFolder(folder.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer border-t border-x ${
-                    isActive
-                      ? 'bg-white text-slate-900 border-slate-200 border-b-transparent shadow-xs relative -mb-px z-10'
-                      : 'bg-slate-200/70 text-slate-600 hover:bg-slate-200 border-transparent hover:text-slate-900'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer border-t border-x ${isActive
+                    ? 'bg-white text-slate-900 border-slate-200 border-b-transparent shadow-xs relative -mb-px z-10'
+                    : 'bg-slate-200/70 text-slate-600 hover:bg-slate-200 border-transparent hover:text-slate-900'
+                    }`}
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-brand-green' : 'text-slate-400'}`} />
                   <span>{folder.name}</span>
                   {folder.badge && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                      folder.badge.includes('✓') || folder.id === 'ficha'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-slate-200 text-slate-500'
-                    }`}>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${folder.badge.includes('✓') || folder.id === 'ficha'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-200 text-slate-500'
+                      }`}>
                       {folder.badge}
                     </span>
                   )}
@@ -549,11 +544,11 @@ export const ClientDetailModal = ({
 
           {/* 3. Conteúdo Central (Scroll Suave e Espaçamento Otimizado) */}
           <div className="p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-50/50">
-            
+
             {/* SE FOR A FICHA CADASTRAL & DADOS COMERCIAIS */}
             {activeFolder === 'ficha' ? (
               <div className="space-y-3.5">
-                
+
                 {/* Banner de Edição */}
                 {isEditing && (
                   <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 flex items-center justify-between text-xs text-amber-900">
@@ -575,10 +570,10 @@ export const ClientDetailModal = ({
 
                 {/* GRID 2 COLUNAS: DADOS CADASTRAIS (ESQ) & DADOS COMERCIAIS / ERP (DIR) */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
-                  
+
                   {/* COLUNA ESQUERDA (7 colunas): Identificação, Contato e Endereço */}
                   <div className="lg:col-span-7 space-y-3.5">
-                    
+
                     {/* Bloco de Dados Pessoais / Empresa */}
                     <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5">
                       <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider border-b border-slate-100 pb-1.5">
@@ -913,7 +908,7 @@ export const ClientDetailModal = ({
 
                   {/* COLUNA DIREITA (5 colunas): Dados Comerciais & ERP em Destaque */}
                   <div className="lg:col-span-5 space-y-3.5">
-                    
+
                     {/* Card Comercial ERP */}
                     <div className="bg-white rounded-xl border-2 border-brand-green/30 p-3.5 shadow-xs space-y-3 bg-gradient-to-br from-white to-brand-green-light/10">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
@@ -927,7 +922,7 @@ export const ClientDetailModal = ({
                       </div>
 
                       <div className="space-y-2.5 text-xs">
-                        
+
                         {/* Tabela de Preço */}
                         <div>
                           <label className="text-[11px] text-slate-600 font-bold block mb-1">
@@ -993,11 +988,10 @@ export const ClientDetailModal = ({
                               <span className="font-mono font-bold text-slate-900 text-xs">
                                 {formData.cd_vend || 'ATENA'}
                               </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                formData.cd_vend === 'ATENA' || !formData.cd_vend
-                                  ? 'bg-slate-200 text-slate-600'
-                                  : 'bg-emerald-100 text-emerald-800'
-                              }`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${formData.cd_vend === 'ATENA' || !formData.cd_vend
+                                ? 'bg-slate-200 text-slate-600'
+                                : 'bg-emerald-100 text-emerald-800'
+                                }`}>
                                 {formData.cd_vend === 'ATENA' || !formData.cd_vend ? 'Sem Vendedor' : 'Atribuído'}
                               </span>
                             </div>
@@ -1032,12 +1026,11 @@ export const ClientDetailModal = ({
                           </div>
                           <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
                             <span className="text-[10px] text-slate-400 block font-medium">CENPROT (Protestos)</span>
-                            <span className={`font-bold truncate block text-[11px] ${
-                              client.total_protestos === 0 
-                                ? 'text-emerald-400' 
-                                : (client.total_protestos > 0 ? 'text-amber-400' : (client.doc_cenprot_url ? 'text-emerald-400' : 'text-slate-300'))
-                            }`}>
-                              {client.total_protestos !== null && client.total_protestos !== undefined 
+                            <span className={`font-bold truncate block text-[11px] ${client.total_protestos === 0
+                              ? 'text-emerald-400'
+                              : (client.total_protestos > 0 ? 'text-amber-400' : (client.doc_cenprot_url ? 'text-emerald-400' : 'text-slate-300'))
+                              }`}>
+                              {client.total_protestos !== null && client.total_protestos !== undefined
                                 ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta) ✓' : `${client.total_protestos} Protesto(s)`)
                                 : (client.doc_cenprot_url ? 'Consultado ✓' : 'Disponível')}
                             </span>
@@ -1045,13 +1038,12 @@ export const ClientDetailModal = ({
                         </div>
 
                         {bureauFeedback && (
-                          <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${
-                            bureauFeedback.type === 'success' 
-                              ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200' 
-                              : (bureauFeedback.type === 'warning'
-                                  ? 'bg-amber-950/90 border-amber-600 text-amber-200'
-                                  : 'bg-red-950/90 border-red-600 text-red-200')
-                          }`}>
+                          <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${bureauFeedback.type === 'success'
+                            ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
+                            : (bureauFeedback.type === 'warning'
+                              ? 'bg-amber-950/90 border-amber-600 text-amber-200'
+                              : 'bg-red-950/90 border-red-600 text-red-200')
+                            }`}>
                             <span className="flex-1">{bureauFeedback.message}</span>
                           </div>
                         )}
@@ -1071,7 +1063,7 @@ export const ClientDetailModal = ({
                           ) : (
                             <>
                               <Search className="w-3.5 h-3.5" />
-                              <span>{client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar Bureau (JUCESP & CENPROT)' : 'Consultar Bureau (JUCESP & CENPROT)'}</span>
+                              <span>{client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar (JUCESP & CENPROT)' : 'Consultar Bureau (JUCESP & CENPROT)'}</span>
                             </>
                           )}
                         </button>
@@ -1086,15 +1078,14 @@ export const ClientDetailModal = ({
                       </h4>
                       <div className="space-y-1.5">
                         {folders.filter(f => f.id !== 'ficha').map(f => (
-                          <div 
-                            key={f.id} 
+                          <div
+                            key={f.id}
                             onClick={() => setActiveFolder(f.id)}
                             className="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-brand-green-light/30 transition-colors cursor-pointer"
                           >
                             <span className="text-slate-700 font-medium truncate">{f.name}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full ${
-                              f.hasDocs ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
-                            }`}>
+                            <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full ${f.hasDocs ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
+                              }`}>
                               {f.badge}
                             </span>
                           </div>
@@ -1143,7 +1134,7 @@ export const ClientDetailModal = ({
                           </div>
 
                           {/* Preview Otimizado do Documento */}
-                          <div 
+                          <div
                             onClick={() => handleOpenDoc(doc)}
                             className="w-full h-44 bg-slate-100 rounded-lg overflow-hidden relative cursor-pointer group border border-slate-200 flex items-center justify-center my-2"
                           >
@@ -1204,7 +1195,7 @@ export const ClientDetailModal = ({
 
           {/* 4. Rodapé Fixo e Otimizado */}
           <div className="bg-white px-3 py-2.5 sm:px-6 sm:py-3 border-t border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 flex-shrink-0">
-            
+
             {/* Campo de Observações Internas */}
             <div className="flex-1 flex items-center gap-2">
               <input
@@ -1240,11 +1231,10 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('em_analise')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                  formData.status === 'em_analise'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
-                }`}
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${formData.status === 'em_analise'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                  }`}
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>Em Análise</span>
@@ -1255,11 +1245,10 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('recusado')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                  formData.status === 'recusado'
-                    ? 'bg-red-600 text-white shadow-xs'
-                    : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
-                }`}
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${formData.status === 'recusado'
+                  ? 'bg-red-600 text-white shadow-xs'
+                  : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                  }`}
               >
                 <XCircle className="w-3.5 h-3.5" />
                 <span>Recusar</span>
@@ -1270,11 +1259,10 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('aprovado')}
                 disabled={isSaving}
-                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  formData.status === 'aprovado'
-                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                }`}
+                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${formData.status === 'aprovado'
+                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  }`}
               >
                 <CheckCircle className="w-3.5 h-3.5" />
                 <span>Confirmar & Aprovar</span>

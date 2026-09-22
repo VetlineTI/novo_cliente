@@ -1,15 +1,15 @@
 import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
 
-const INFOSIMPLES_TOKEN = 
-  import.meta.env.VITE_INFOSIMPLES_TOKEN || 
+const INFOSIMPLES_TOKEN =
+  import.meta.env.VITE_INFOSIMPLES_TOKEN ||
   'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
 
-const JUCESP_LOGIN_CPF = 
-  import.meta.env.VITE_JUCESP_LOGIN_CPF || 
+const JUCESP_LOGIN_CPF =
+  import.meta.env.VITE_JUCESP_LOGIN_CPF ||
   '41152588885';
 
-const JUCESP_LOGIN_SENHA = 
-  import.meta.env.VITE_JUCESP_LOGIN_SENHA || 
+const JUCESP_LOGIN_SENHA =
+  import.meta.env.VITE_JUCESP_LOGIN_SENHA ||
   '@13setCaio';
 
 // Rota com proxy no Vite (localhost) e Vercel (produção)
@@ -25,10 +25,10 @@ export const generateCartaoCnpjHtml = (data) => {
   const nomeFantasia = data.nome_fantasia || data.nomeFantasia || data.trade_name || '********';
   const abertura = data.data_inicio_atividade || data.abertura_data || data.dataAbertura || data.situacao_cadastral_data || '';
   const situacao = data.descricao_situacao_cadastral || data.situacao_cadastral || data.situacaoCadastral || 'ATIVA';
-  const capital = data.capital_social 
-    ? (typeof data.capital_social === 'number' 
-        ? data.capital_social.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-        : data.capital_social) 
+  const capital = data.capital_social
+    ? (typeof data.capital_social === 'number'
+      ? data.capital_social.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : data.capital_social)
     : 'R$ 0,00';
   const natureza = data.natureza_juridica || data.naturezaJuridica || 'Empresarial';
   const porte = data.porte || 'ME / EPP';
@@ -203,10 +203,10 @@ export const consultarReceitaCNPJ = async (cnpj) => {
       const result = await response.json();
       if (result.code === 200 && result.data && result.data.length > 0) {
         const dataItem = result.data[0];
-        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || 
-          dataItem.site_receipt || 
+        const receiptUrl = (result.site_receipts && result.site_receipts[0]) ||
+          dataItem.site_receipt ||
           generateCartaoCnpjHtml({ ...dataItem, cnpj: cleanCnpj });
-        
+
         return {
           success: true,
           data: dataItem,
@@ -409,11 +409,11 @@ export const consultarJucespCompleta = consultarJucespSimplificada;
  */
 export const executarAuditoriaBureau = async (client) => {
   if (!client || (!client.cpf_cnpj && !client.document_number)) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       allFailed: true,
       error: 'Dados do cliente inválidos ou CNPJ não informado.',
-      failedServices: [{ service: 'Geral', error: 'CNPJ não informado' }] 
+      failedServices: [{ service: 'Geral', error: 'CNPJ não informado' }]
     };
   }
 
@@ -422,8 +422,8 @@ export const executarAuditoriaBureau = async (client) => {
   const clientId = client.id;
 
   if (cleanDoc.length !== 14) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       allFailed: true,
       error: 'CNPJ deve conter exatamente 14 dígitos numéricos.',
       failedServices: [{ service: 'Geral', error: 'CNPJ com menos de 14 dígitos' }]
@@ -491,7 +491,7 @@ export const executarAuditoriaBureau = async (client) => {
       allSuccessful: false,
       isPartial: false,
       allFailed: true,
-      error: `Falha na consulta do Bureau: ${errorDetails}`,
+      error: `Falha na consulta: ${errorDetails}`,
       failedServices,
       successfulServices,
       data: results
