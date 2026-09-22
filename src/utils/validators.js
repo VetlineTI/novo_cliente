@@ -78,66 +78,140 @@ export const isValidEmail = (email) => {
 };
 
 /**
- * Consulta de CNPJ na BrasilAPI (Dados Oficiais da Receita Federal)
+ * Consulta de CNPJ com redundância multi-provedor (Minha Receita, BrasilAPI e CNPJ.ws)
+ * Evita falhas por CORS / Rate Limit 429 e garante preenchimento automático contínuo
  * @param {string} cnpj 
- * @returns {Promise<Object|null>} Dados completos da empresa ou erro
+ * @returns {Promise<Object|null>} Dados completos da empresa ou null
  */
 export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
   const clean = unmask(cnpj);
   if (clean.length !== 14 || !isValidCNPJ(clean)) return null;
 
+  const mapSegment = (cnaeDesc) => {
+    const desc = String(cnaeDesc || '').toLowerCase();
+    if (desc.includes('veterin')) return 'Clinica Veterinaria';
+    if (desc.includes('animais') || desc.includes('pet') || desc.includes('higiene')) return 'Pet Shop';
+    if (desc.includes('agropecu') || desc.includes('racao') || desc.includes('sementes')) return 'Agropecuaria';
+    if (desc.includes('farmacia') || desc.includes('medicamento')) return 'Farmacia Veterinaria';
+    if (desc.includes('distribui') || desc.includes('atacad')) return 'Distribuidora / Revenda';
+    return '';
+  };
+
+  // Provedor 1: Minha Receita (Base oficial aberta, sem bloqueio de CORS / 429)
+  try {
+    const response = await fetch(`https://minhareceita.org/${clean}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.razao_social) {
+        return {
+          razaoSocial: data.razao_social || '',
+          nomeFantasia: data.nome_fantasia || '',
+          situacaoCadastral: data.descricao_situacao_cadastral || 'ATIVA',
+          isAtiva: (data.descricao_situacao_cadastral || '').toUpperCase() === 'ATIVA' || data.situacao_cadastral === 2,
+          dataAbertura: data.data_inicio_atividade || '',
+          cnaeDescricao: data.cnae_fiscal_descricao || '',
+          suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
+          socios: (data.qsa || []).map(s => ({
+            nome: s.nome_socio || s.nome_do_socio || '',
+            qualificacao: s.qualificacao_socio || s.qualificacao_do_socio || '',
+            cpfRepresentante: s.cpf_representante_legal || ''
+          })),
+          endereco: {
+            cep: data.cep ? maskCEP(data.cep) : '',
+            logradouro: `${data.descricao_tipo_de_logradouro || ''} ${data.logradouro || ''}`.trim(),
+            numero: data.numero || '',
+            complemento: data.complemento || '',
+            bairro: data.bairro || '',
+            municipio: data.municipio || '',
+            uf: (data.uf || '').trim().toUpperCase()
+          },
+          telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
+          email: data.email ? String(data.email).toLowerCase() : ''
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Tentando próximo provedor de CNPJ (BrasilAPI)...', err);
+  }
+
+  // Provedor 2: BrasilAPI
   try {
     const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`);
-    if (!response.ok) return null;
-    const data = await response.json();
-
-    // Mapeamento inteligente de segmento baseado na atividade econômica principal (CNAE)
-    const cnaeDesc = (data.cnae_fiscal_descricao || '').toLowerCase();
-    let suggestedSegment = '';
-
-    if (cnaeDesc.includes('veterin')) {
-      suggestedSegment = 'Clinica Veterinaria';
-    } else if (cnaeDesc.includes('animais') || cnaeDesc.includes('pet') || cnaeDesc.includes('higiene')) {
-      suggestedSegment = 'Pet Shop';
-    } else if (cnaeDesc.includes('agropecu') || cnaeDesc.includes('racao') || cnaeDesc.includes('sementes')) {
-      suggestedSegment = 'Agropecuaria';
-    } else if (cnaeDesc.includes('farmacia') || cnaeDesc.includes('medicamento')) {
-      suggestedSegment = 'Farmacia Veterinaria';
-    } else if (cnaeDesc.includes('distribui') || cnaeDesc.includes('atacad')) {
-      suggestedSegment = 'Distribuidora / Revenda';
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.razao_social) {
+        return {
+          razaoSocial: data.razao_social || '',
+          nomeFantasia: data.nome_fantasia || '',
+          situacaoCadastral: data.descricao_situacao_cadastral || 'ATIVA',
+          isAtiva: (data.descricao_situacao_cadastral || '').toUpperCase() === 'ATIVA',
+          dataAbertura: data.data_inicio_atividade || '',
+          cnaeDescricao: data.cnae_fiscal_descricao || '',
+          suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
+          socios: (data.qsa || []).map(s => ({
+            nome: s.nome_socio || '',
+            qualificacao: s.qualificacao_socio || '',
+            cpfRepresentante: s.cpf_representante_legal || ''
+          })),
+          endereco: {
+            cep: data.cep ? maskCEP(data.cep) : '',
+            logradouro: `${data.descricao_tipo_de_logradouro || ''} ${data.logradouro || ''}`.trim(),
+            numero: data.numero || '',
+            complemento: data.complemento || '',
+            bairro: data.bairro || '',
+            municipio: data.municipio || '',
+            uf: (data.uf || '').trim().toUpperCase()
+          },
+          telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
+          email: data.email ? String(data.email).toLowerCase() : ''
+        };
+      }
     }
+  } catch (err) {
+    console.warn('Tentando próximo provedor de CNPJ (CNPJ.ws)...', err);
+  }
 
-    return {
-      razaoSocial: data.razao_social || '',
-      nomeFantasia: data.nome_fantasia || '',
-      situacaoCadastral: data.descricao_situacao_cadastral || 'ATIVA',
-      isAtiva: (data.descricao_situacao_cadastral || '').toUpperCase() === 'ATIVA',
-      dataAbertura: data.data_inicio_atividade || '',
-      cnaeDescricao: data.cnae_fiscal_descricao || '',
-      suggestedSegment,
-      // Quadro de Sócios (QSA)
-      socios: (data.qsa || []).map(s => ({
-        nome: s.nome_socio || '',
-        qualificacao: s.qualificacao_socio || '',
-        cpfRepresentante: s.cpf_representante_legal || ''
-      })),
-      // Endereço oficial registrado
-      endereco: {
-        cep: data.cep || '',
-        logradouro: `${data.descricao_tipo_de_logradouro || ''} ${data.logradouro || ''}`.trim(),
-        numero: data.numero || '',
-        complemento: data.complemento || '',
-        bairro: data.bairro || '',
-        municipio: data.municipio || '',
-        uf: (data.uf || '').trim().toUpperCase()
-      },
-        telefone: data.ddd_telefone_1 ? maskPhone(data.ddd_telefone_1) : '',
-        email: data.email ? String(data.email).toLowerCase() : ''
-      };
-    } catch (error) {
-      return null;
+  // Provedor 3: CNPJ.ws (Pública)
+  try {
+    const response = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`);
+    if (response.ok) {
+      const data = await response.json();
+      const est = data.estabelecimento || {};
+      if (data.razao_social) {
+        const fullPhone = est.ddd1 && est.telefone1 ? `${est.ddd1}${est.telefone1}` : '';
+        return {
+          razaoSocial: data.razao_social || '',
+          nomeFantasia: est.nome_fantasia || '',
+          situacaoCadastral: est.situacao_cadastral || 'Ativa',
+          isAtiva: (est.situacao_cadastral || '').toLowerCase() === 'ativa',
+          dataAbertura: est.data_inicio_atividade || '',
+          cnaeDescricao: est.atividade_principal?.descricao || '',
+          suggestedSegment: mapSegment(est.atividade_principal?.descricao),
+          socios: (data.socios || []).map(s => ({
+            nome: s.nome || '',
+            qualificacao: s.qualificacao_socio?.descricao || '',
+            cpfRepresentante: s.cpf_representante_legal || ''
+          })),
+          endereco: {
+            cep: est.cep ? maskCEP(est.cep) : '',
+            logradouro: `${est.tipo_logradouro || ''} ${est.logradouro || ''}`.trim(),
+            numero: est.numero || '',
+            complemento: est.complemento || '',
+            bairro: est.bairro || '',
+            municipio: est.cidade?.nome || '',
+            uf: (est.estado?.sigla || '').trim().toUpperCase()
+          },
+          telefone: fullPhone ? maskPhone(fullPhone) : '',
+          email: est.email ? String(est.email).toLowerCase() : ''
+        };
+      }
     }
-  };
+  } catch (error) {
+    console.warn('Todos os provedores de CNPJ falharam:', error);
+  }
+
+  return null;
+};
 
   /**
    * Consulta CEP inteligente com redundância (BrasilAPI v2 com fallback para ViaCEP)

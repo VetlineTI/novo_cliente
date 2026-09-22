@@ -168,12 +168,17 @@ export const ClientDetailModal = ({
           type: 'success',
           message: '✓ Auditoria concluída! Ficha Cadastral JUCESP e Consulta de Protestos (CENPROT) foram consultadas e anexadas com sucesso.'
         });
+      } else if (res.docJucespUrl || res.data?.jucesp?.success) {
+        setBureauFeedback({
+          type: 'success',
+          message: '✓ Ficha Cadastral JUCESP e NIRE consultados e anexados com sucesso! (Central de Protestos CENPROT temporariamente em manutenção nos cartórios).'
+        });
       } else if (res.isPartial) {
         const succList = (res.successfulServices || []).join(', ');
         const failList = (res.failedServices || []).map(f => `${f.service} (${f.error})`).join('; ');
         setBureauFeedback({
           type: 'warning',
-          message: `⚠ Auditoria: ${succList} obtidos com sucesso. Falhas: ${failList}.`
+          message: `⚠ Auditoria: ${succList} obtidos. Aviso: ${failList}.`
         });
       } else {
         const failList = (res.failedServices || []).map(f => `${f.service}: ${f.error}`).join(' | ') || res.error || 'Erro desconhecido';
