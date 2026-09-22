@@ -27,10 +27,12 @@ import {
   Tag,
   Receipt,
   Loader2,
-  Maximize2
+  Maximize2,
+  Search
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople } from '../../lib/supabase';
+import { executarAuditoriaBureau } from '../../lib/infosimples';
 
 // Segmentos padronizados de mercado
 const AVAILABLE_SEGMENTS = [
@@ -85,6 +87,10 @@ export const ClientDetailModal = ({
 
   // Estado dos campos editáveis do cliente
   const [formData, setFormData] = useState({});
+
+  // Estado de consulta do Bureau (Infosimples)
+  const [isAuditingBureau, setIsAuditingBureau] = useState(false);
+  const [bureauFeedback, setBureauFeedback] = useState(null);
 
   // Inicializa o formulário com os dados do cliente
   useEffect(() => {
@@ -149,6 +155,44 @@ export const ClientDetailModal = ({
   const cleanDoc = client.document_number?.replace(/\D/g, '') || 'geral';
   const bucketName = 'novos_clientes';
   const clientStoragePath = `${bucketName}/${cleanDoc}`;
+
+  // Executa consulta no Bureau da Infosimples sob demanda
+  const handleRunBureauAudit = async () => {
+    setIsAuditingBureau(true);
+    setBureauFeedback(null);
+    try {
+      const res = await executarAuditoriaBureau(client);
+      if (res.success) {
+        setBureauFeedback({
+          type: 'success',
+          message: 'Consulta finalizada com sucesso! Comprovantes anexados.'
+        });
+        if (onUpdateClient) {
+          onUpdateClient({
+            ...client,
+            doc_receita_url: res.docReceitaUrl || client.doc_receita_url,
+            doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
+            doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
+            nire_jucesp: res.data?.jucesp?.nire || client.nire_jucesp,
+            total_protestos: res.data?.cenprot?.totalProtests ?? client.total_protestos,
+            bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
+          });
+        }
+      } else {
+        setBureauFeedback({
+          type: 'error',
+          message: res.error || 'Erro ao realizar consulta no Bureau.'
+        });
+      }
+    } catch (err) {
+      setBureauFeedback({
+        type: 'error',
+        message: err.message || 'Falha na comunicação com a API Infosimples.'
+      });
+    } finally {
+      setIsAuditingBureau(false);
+    }
+  };
 
   // Atualizador de campo individual
   const handleChange = (field, value) => {
@@ -257,7 +301,57 @@ export const ClientDetailModal = ({
             }
           ]
         }
-      ] : [])
+      ] : []),
+      {
+        id: 'bureau_certidoes',
+        name: 'Certidões & Bureau',
+        icon: Search,
+        badge: (client.doc_receita_url || client.doc_jucesp_url || client.doc_cenprot_url) ? 'Consultado ✓' : 'Disponível',
+        hasDocs: Boolean(client.doc_receita_url || client.doc_jucesp_url || client.doc_cenprot_url),
+        docs: [
+          ...(client.doc_receita_url ? [
+            {
+              id: 'doc_receita',
+              title: 'Cartão CNPJ - Receita Federal Oficial (Infosimples)',
+              category: 'Receita Federal',
+              fileName: `comprovante_cnpj_${cleanDoc}.html`,
+              bucket: bucketName,
+              path: `${clientStoragePath}/receita_federal/`,
+              url: client.doc_receita_url,
+              verificationBadge: 'Receita Federal Ativa',
+              notes: `Comprovante oficial emitido via Infosimples`
+            }
+          ] : []),
+          ...(client.doc_jucesp_url ? [
+            {
+              id: 'doc_jucesp',
+              title: 'Ficha Cadastral / Registro JUCESP (Infosimples)',
+              category: 'Junta Comercial',
+              fileName: `jucesp_${cleanDoc}.pdf`,
+              bucket: bucketName,
+              path: `${clientStoragePath}/jucesp/`,
+              url: client.doc_jucesp_url,
+              verificationBadge: client.nire_jucesp ? `NIRE: ${client.nire_jucesp}` : 'JUCESP Registrada',
+              notes: `Registro oficial na Junta Comercial do Estado de SP`
+            }
+          ] : []),
+          ...(client.doc_cenprot_url ? [
+            {
+              id: 'doc_cenprot',
+              title: 'Certidão / Consulta CENPROT Protestos (Infosimples)',
+              category: 'Protestos',
+              fileName: `cenprot_${cleanDoc}.pdf`,
+              bucket: bucketName,
+              path: `${clientStoragePath}/cenprot/`,
+              url: client.doc_cenprot_url,
+              verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined 
+                ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta)' : `${client.total_protestos} Protesto(s)`)
+                : 'Consulta CENPROT',
+              notes: `Consulta à Central de Protestos de Títulos`
+            }
+          ] : [])
+        ]
+      }
     ] : [
       {
         id: 'crmv',
@@ -892,6 +986,75 @@ export const ClientDetailModal = ({
 
                       </div>
                     </div>
+
+                    {/* Card de Auditoria & Bureau Automático (Infosimples) */}
+                    {isPJ && (
+                      <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl p-3.5 shadow-md space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                            <h4 className="font-bold text-xs text-white">Bureau & Conformidade (Infosimples)</h4>
+                          </div>
+                          {client.bureau_consulted_at && (
+                            <span className="text-[10px] text-emerald-400 font-mono">
+                              {new Date(client.bureau_consulted_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status resumidos */}
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700">
+                            <span className="text-[10px] text-slate-400 block">JUCESP (SP)</span>
+                            <span className="font-bold text-slate-200 truncate block text-[11px]">
+                              {client.nire_jucesp ? `NIRE: ${client.nire_jucesp}` : (client.doc_jucesp_url ? 'Registrada ✓' : 'Disponível')}
+                            </span>
+                          </div>
+                          <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700">
+                            <span className="text-[10px] text-slate-400 block">CENPROT (Protestos)</span>
+                            <span className={`font-bold truncate block text-[11px] ${
+                              client.total_protestos === 0 
+                                ? 'text-emerald-400' 
+                                : (client.total_protestos > 0 ? 'text-amber-400' : 'text-slate-300')
+                            }`}>
+                              {client.total_protestos !== null && client.total_protestos !== undefined 
+                                ? (client.total_protestos === 0 ? '0 Protestos ✓' : `${client.total_protestos} Protesto(s)`)
+                                : (client.doc_cenprot_url ? 'Consultado' : 'Disponível')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {bureauFeedback && (
+                          <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                            bureauFeedback.type === 'success' 
+                              ? 'bg-emerald-950/80 border border-emerald-700/60 text-emerald-300' 
+                              : 'bg-red-950/80 border border-red-700/60 text-red-300'
+                          }`}>
+                            <span>{bureauFeedback.message}</span>
+                          </div>
+                        )}
+
+                        {/* Botão de Disparo */}
+                        <button
+                          type="button"
+                          onClick={handleRunBureauAudit}
+                          disabled={isAuditingBureau}
+                          className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                        >
+                          {isAuditingBureau ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Consultando JUCESP & CENPROT...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-3.5 h-3.5" />
+                              <span>{client.doc_jucesp_url || client.doc_cenprot_url ? 'Reconsultar Bureau (Infosimples)' : 'Consultar JUCESP & CENPROT Agora'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Resumo de Documentos Anexados */}
                     <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2 text-xs">

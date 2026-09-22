@@ -19,11 +19,13 @@ import {
   ChevronDown,
   X,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  HelpCircle
 } from 'lucide-react';
 import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
 import { CreatePasswordModal } from './CreatePasswordModal';
+import { SegmentHelpModal } from './SegmentHelpModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { 
   maskCPF, 
@@ -101,6 +103,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showSegmentModal, setShowSegmentModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
@@ -752,10 +755,23 @@ export const RegistrationForm = ({ onSuccess }) => {
 
           {/* Segmento de Atuação (Largura Total na linha) */}
           <div className="sm:col-span-2">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 whitespace-nowrap">
-              <span>Segmento de Atuação</span>
-              <span className="text-red-500 ml-1">*</span>
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                <span>Segmento de Atuação</span>
+                <span className="text-red-500">*</span>
+              </label>
+
+              {/* Tooltip / Botão de Guia de Segmentos */}
+              <button
+                type="button"
+                onClick={() => setShowSegmentModal(true)}
+                className="group inline-flex items-center gap-1.5 text-xs font-semibold text-brand-green hover:text-emerald-700 bg-emerald-50/90 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200/70 transition-all cursor-pointer shadow-2xs"
+                title="Dúvida de qual segmento escolher? Clique aqui para abrir o guia explicativo"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-brand-green group-hover:scale-110 transition-transform shrink-0" />
+                <span className="underline decoration-dotted underline-offset-2">Dúvida de qual segmento escolher? Clique aqui</span>
+              </button>
+            </div>
             <select
               value={segment}
               onChange={(e) => {
@@ -1523,6 +1539,17 @@ export const RegistrationForm = ({ onSuccess }) => {
         fullName={fullName}
         onSubmit={handlePasswordSubmit}
         isSubmitting={isSubmitting}
+      />
+
+      {/* Modal de Ajuda de Segmento */}
+      <SegmentHelpModal
+        isOpen={showSegmentModal}
+        onClose={() => setShowSegmentModal(false)}
+        currentValue={segment}
+        onSelectSegment={(val) => {
+          setSegment(val);
+          if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+        }}
       />
     </div>
   );

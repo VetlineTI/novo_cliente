@@ -60,6 +60,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_cliente` (colunas em Português BR), `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
 | `supabase/rename_columns_to_ptbr.sql` | Script de migração para renomear todas as colunas da tabela de clientes para Português BR no Supabase. |
 | `supabase/fix_auth_trigger.sql` | Correção definitiva do trigger `handle_new_auth_user()` e criação de view de compatibilidade para evitar erro 500 no cadastro. |
+| `supabase/add_bureau_columns.sql` | Script SQL para adicionar as colunas do Bureau e Certidões (JUCESP, CENPROT e Receita Federal) no Supabase. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
@@ -68,12 +69,14 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
+| `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP, CENPROT e Receita Federal). |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
 | `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações e aviso de ativação por e-mail. |
 | `src/components/SuccessModal.jsx` | Modal de confirmação com orientações de verificação do e-mail de ativação e botão para ir ao login. |
 | `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
+| `src/components/SegmentHelpModal.jsx` | Modal com guia descritivo e tabela de identificação de todos os segmentos de atuação. |
 | `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |
 | `src/components/client/ClientPortalAuth.jsx` | Tela principal com as abas **"Já sou cliente"** e **"Ainda não sou"**. |
 | `src/components/client/ClientLogin.jsx` | Formulário de login do cliente com banner de ativação, tratamento de conta pendente e reenvio de e-mail. |

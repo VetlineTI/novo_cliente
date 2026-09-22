@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Lock, 
   Eye, 
@@ -35,7 +36,13 @@ export const CreatePasswordModal = ({
       setPassword('');
       setConfirmPassword('');
       setError('');
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen, initialEmail]);
 
   if (!isOpen) return null;
@@ -80,8 +87,8 @@ export const CreatePasswordModal = ({
   const isLengthValid = password.length >= 6;
   const isMatchValid = password.length > 0 && password === confirmPassword;
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-fade-in">
       <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden relative animate-scale-up">
         
         {/* Botão Fechar */}
@@ -250,6 +257,7 @@ export const CreatePasswordModal = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

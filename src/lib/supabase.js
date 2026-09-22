@@ -260,8 +260,13 @@ export const normalizeClientRecord = (c) => {
     doc_comprovante_endereco_url,
     doc_address_url: doc_comprovante_endereco_url,
     doc_identificacao_url,
-    doc_photo_id_url: doc_identificacao_url,
     doc_crmv_url,
+    doc_receita_url: c.doc_receita_url || null,
+    doc_jucesp_url: c.doc_jucesp_url || null,
+    doc_cenprot_url: c.doc_cenprot_url || null,
+    nire_jucesp: c.nire_jucesp || null,
+    total_protestos: c.total_protestos !== undefined ? c.total_protestos : null,
+    bureau_consulted_at: c.bureau_consulted_at || null,
     status,
     termos_aceitos,
     terms_accepted: termos_aceitos,
@@ -342,6 +347,12 @@ export const toPortuguesePayload = (data) => {
     p.doc_identificacao_url = data.doc_identificacao_url || data.doc_photo_id_url || null;
   }
   if (data.doc_crmv_url !== undefined) p.doc_crmv_url = data.doc_crmv_url;
+  if (data.doc_receita_url !== undefined) p.doc_receita_url = data.doc_receita_url;
+  if (data.doc_jucesp_url !== undefined) p.doc_jucesp_url = data.doc_jucesp_url;
+  if (data.doc_cenprot_url !== undefined) p.doc_cenprot_url = data.doc_cenprot_url;
+  if (data.nire_jucesp !== undefined) p.nire_jucesp = data.nire_jucesp;
+  if (data.total_protestos !== undefined) p.total_protestos = data.total_protestos;
+  if (data.bureau_consulted_at !== undefined) p.bureau_consulted_at = data.bureau_consulted_at;
   if (data.status) p.status = data.status;
   if (data.termos_aceitos !== undefined || data.terms_accepted !== undefined) {
     p.termos_aceitos = data.termos_aceitos ?? data.terms_accepted ?? true;

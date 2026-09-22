@@ -33,6 +33,7 @@ import {
   fetchClientRecord 
 } from '../../lib/clientAuth';
 import { DocumentViewerModal } from '../admin/DocumentViewerModal';
+import { SegmentHelpModal } from '../SegmentHelpModal';
 import { maskPhone, maskCEP, maskCPF, maskCNPJ } from '../../utils/masks';
 import { fetchAddressByCEP } from '../../utils/validators';
 
@@ -81,6 +82,7 @@ export const ClientDashboard = ({ onLogout }) => {
   const [uploadSuccessField, setUploadSuccessField] = useState(null);
   const [uploadError, setUploadError] = useState('');
   const [viewerDoc, setViewerDoc] = useState(null);
+  const [showSegmentModal, setShowSegmentModal] = useState(false);
 
   // Sincroniza dados com o banco ao carregar
   const refreshClientData = async () => {
@@ -683,25 +685,56 @@ export const ClientDashboard = ({ onLogout }) => {
 
               {/* Segmento */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Segmento de Atuação <span className="text-red-500">*</span>
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Segmento de Atuação <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowSegmentModal(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-green hover:text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200/60 transition-colors cursor-pointer"
+                    title="Dúvida de qual segmento escolher? Clique aqui para abrir o guia explicativo"
+                  >
+                    <HelpCircle className="w-3 h-3 shrink-0" />
+                    <span className="underline decoration-dotted underline-offset-2">Qual escolher?</span>
+                  </button>
+                </div>
                 <select
                   value={segment}
                   onChange={(e) => setSegment(e.target.value)}
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer"
                 >
-                  <option value="">Selecione...</option>
+                  <option value="">Selecione o segmento...</option>
+                  <option value="LOJA AGROPECUARIA">LOJA AGROPECUARIA</option>
+                  <option value="FORNECEDOR">FORNECEDOR</option>
+                  <option value="ATACADISTA">ATACADISTA</option>
+                  <option value="BANHO E TOSA">BANHO E TOSA</option>
+                  <option value="CLÍNICA COM LOJA">CLÍNICA COM LOJA</option>
+                  <option value="CRIADOR">CRIADOR</option>
+                  <option value="CRECHE">CRECHE</option>
                   <option value="CLINICA VETERINARIA">CLINICA VETERINARIA</option>
+                  <option value="DISTRIBUIDORA">DISTRIBUIDORA</option>
+                  <option value="E-COMMERCE">E-COMMERCE</option>
+                  <option value="FUNCIONARIO">FUNCIONARIO</option>
                   <option value="HOSPITAL VETERINARIO">HOSPITAL VETERINARIO</option>
+                  <option value="HOTEL / CRECHE">HOTEL / CRECHE</option>
+                  <option value="INDUSTRIA VLF">INDUSTRIA VLF</option>
+                  <option value="INSTITUIÇAO DE ENSINO">INSTITUIÇAO DE ENSINO</option>
+                  <option value="LABORATORIO DE EXAMES">LABORATORIO DE EXAMES</option>
+                  <option value="PET SHOP COM BANHO E TOSA">PET SHOP COM BANHO E TOSA</option>
                   <option value="PET SHOP COM CLINICA">PET SHOP COM CLINICA</option>
                   <option value="PET SHOP COMPLETO">PET SHOP COMPLETO</option>
-                  <option value="PET SHOP">PET SHOP</option>
-                  <option value="LOJA AGROPECUARIA">LOJA AGROPECUARIA</option>
-                  <option value="VETERINARIO AUTONOMO">VETERINARIO AUTONOMO</option>
-                  <option value="DISTRIBUIDORA">DISTRIBUIDORA</option>
+                  <option value="ONGs">ONGs</option>
                   <option value="OUTROS SEGMENTOS">OUTROS SEGMENTOS</option>
+                  <option value="PREFEITURA">PREFEITURA</option>
+                  <option value="ANIMAIS DE PRODUÇAO">ANIMAIS DE PRODUÇAO</option>
+                  <option value="PET SHOP GRANEL">PET SHOP GRANEL</option>
+                  <option value="PET SHOP COM VETERINARIO">PET SHOP COM VETERINARIO</option>
+                  <option value="PET SHOP">PET SHOP</option>
+                  <option value="PRODUTOR RURAL">PRODUTOR RURAL</option>
+                  <option value="TRANSPORTADORA">TRANSPORTADORA</option>
+                  <option value="VETERINARIO AUTONOMO">VETERINARIO AUTONOMO</option>
                 </select>
               </div>
             </div>
@@ -1153,6 +1186,14 @@ export const ClientDashboard = ({ onLogout }) => {
           document={viewerDoc}
         />
       )}
+
+      {/* Modal de Ajuda de Segmento */}
+      <SegmentHelpModal
+        isOpen={showSegmentModal}
+        onClose={() => setShowSegmentModal(false)}
+        currentValue={segment}
+        onSelectSegment={(val) => setSegment(val)}
+      />
     </div>
   );
 };
