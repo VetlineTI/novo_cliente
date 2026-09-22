@@ -248,18 +248,20 @@ export const registerClientWithAuth = async (clientData, password) => {
     ...payloadToSave
   };
 
-  // Garante a persistência dos documentos de Bureau (JUCESP/CENPROT) na tabela do banco
-  if (savedClient.id && (clientData.doc_jucesp_url || clientData.doc_cenprot_url || clientData.nire_jucesp || clientData.total_protestos !== undefined)) {
+  // Garante a persistência dos documentos de Bureau (JUCESP/CENPROT/SINTEGRA) na tabela do banco
+  if (savedClient.id && (clientData.doc_jucesp_url || clientData.doc_cenprot_url || clientData.doc_ie_url || clientData.nire_jucesp || clientData.total_protestos !== undefined)) {
     try {
       await updateClientData(savedClient.id, {
         doc_jucesp_url: clientData.doc_jucesp_url,
         doc_cenprot_url: clientData.doc_cenprot_url,
+        doc_ie_url: clientData.doc_ie_url,
         nire_jucesp: clientData.nire_jucesp,
         total_protestos: clientData.total_protestos,
         bureau_consulted_at: clientData.bureau_consulted_at || new Date().toISOString()
       });
       if (clientData.doc_jucesp_url) savedClient.doc_jucesp_url = clientData.doc_jucesp_url;
       if (clientData.doc_cenprot_url) savedClient.doc_cenprot_url = clientData.doc_cenprot_url;
+      if (clientData.doc_ie_url) savedClient.doc_ie_url = clientData.doc_ie_url;
       if (clientData.nire_jucesp) savedClient.nire_jucesp = clientData.nire_jucesp;
       if (clientData.total_protestos !== undefined) savedClient.total_protestos = clientData.total_protestos;
     } catch (bureauSyncErr) {

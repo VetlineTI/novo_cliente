@@ -316,34 +316,34 @@ export const ClientDetailModal = ({
           }
         ] : []
       },
-      ...(client.doc_ie_url ? [
+      ...((client.doc_ie_url || client.doc_sintegra_url) ? [
         {
           id: 'ie_fiscal',
-          name: 'Inscrição Estadual',
+          name: 'Inscrição Estadual (SINTEGRA)',
           icon: FileCheck2,
-          badge: 'Anexado ✓',
+          badge: 'Consultado ✓',
           hasDocs: true,
           docs: [
             {
               id: 'doc_ie',
-              title: 'Comprovante de Inscrição Estadual (SINTEGRA / SEFAZ)',
-              category: 'Fiscal',
-              fileName: `inscricao_estadual_${cleanDoc}.pdf`,
+              title: 'Comprovante Oficial SINTEGRA / CADESP (SEFAZ)',
+              category: 'Fiscal / SEFAZ',
+              fileName: `sintegra_${cleanDoc}.pdf`,
               bucket: bucketName,
-              path: `${clientStoragePath}/inscricao_estadual/`,
-              url: client.doc_ie_url,
-              verificationBadge: 'Inscrição Ativa',
-              notes: `Armazenado em: ${clientStoragePath}/inscricao_estadual/`
+              path: `${clientStoragePath}/sintegra/`,
+              url: client.doc_ie_url || client.doc_sintegra_url,
+              verificationBadge: client.numero_ie || client.ie_number ? `IE: ${client.numero_ie || client.ie_number}` : 'SINTEGRA Habilitado',
+              notes: `Comprovante oficial de Inscrição Estadual (Direct Data)`
             }
           ]
         }
       ] : []),
       {
         id: 'bureau_certidoes',
-        name: 'Doc. Jucesp e Cenprot',
+        name: 'Doc. Bureau & Certidões',
         icon: Search,
-        badge: (client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url) ? 'Consultado ✓' : 'Disponível',
-        hasDocs: Boolean(client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url),
+        badge: (client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url || client.doc_ie_url || client.doc_sintegra_url) ? 'Consultado ✓' : 'Disponível',
+        hasDocs: Boolean(client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url || client.doc_ie_url || client.doc_sintegra_url),
         docs: [
           ...(client.doc_jucesp_url ? [
             {
@@ -361,7 +361,7 @@ export const ClientDetailModal = ({
           ...(client.doc_cenprot_url ? [
             {
               id: 'doc_cenprot',
-              title: 'Certidão / Consulta de Protestos CENPROT',
+              title: 'Certidão / Consulta de Protestos CENPROT (IEPTB)',
               category: 'Protestos',
               fileName: `cenprot_${cleanDoc}.pdf`,
               bucket: bucketName,
@@ -370,7 +370,20 @@ export const ClientDetailModal = ({
               verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined
                 ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta)' : `${client.total_protestos} Protesto(s)`)
                 : 'Consulta CENPROT',
-              notes: `Consulta à Central de Protestos de Títulos (SP)`
+              notes: `Consulta à Central de Protestos de Títulos`
+            }
+          ] : []),
+          ...((client.doc_ie_url || client.doc_sintegra_url) ? [
+            {
+              id: 'doc_sintegra_bureau',
+              title: 'Comprovante SINTEGRA / CADESP (SEFAZ)',
+              category: 'Fiscal',
+              fileName: `sintegra_${cleanDoc}.pdf`,
+              bucket: bucketName,
+              path: `${clientStoragePath}/sintegra/`,
+              url: client.doc_ie_url || client.doc_sintegra_url,
+              verificationBadge: client.numero_ie || client.ie_number ? `IE: ${client.numero_ie || client.ie_number}` : 'SINTEGRA',
+              notes: `Comprovante de Situação Cadastral Estadual`
             }
           ] : []),
           ...(client.doc_receita_url ? [

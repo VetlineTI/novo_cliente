@@ -340,6 +340,125 @@ export const consultarDirectDataPJ = async (cnpj) => {
 };
 
 /**
+ * Gera um comprovante / certidão digital estilizado do SINTEGRA / Cadastro Estadual
+ * @param {Object} retorno Dados da consulta do Sintegra
+ * @param {Object} metaDados Metadados da consulta
+ * @param {string} documento CNPJ / Inscrição Estadual
+ * @returns {string} Data URI com HTML formatado
+ */
+export const generateSintegraDirectDHtml = (retorno = {}, metaDados = {}, documento = '') => {
+  const cnpj = retorno.cnpj || documento || '';
+  const ie = retorno.ie || '-';
+  const razaoSocial = retorno.nomeEmpresarial || '';
+  const nomeFantasia = retorno.nomeFantasia || '-';
+  const situacao = retorno.situacaoCadastral || 'Habilitado';
+  const situacaoCNPJ = retorno.situacaoCNPJ || 'Sem restrição';
+  const tipoIE = retorno.tipoIE || 'IE Normal';
+  const ufie = retorno.ufie || retorno.uf || 'SP';
+  const regime = retorno.regimeApuracao || '-';
+  const cnae = retorno.atividadeEconomicaPrincipal || '-';
+  const dataConsulta = retorno.dataConsulta || metaDados.data || new Date().toLocaleString('pt-BR');
+
+  const enderecoFormatado = retorno.logradouro
+    ? `${retorno.logradouro}, ${retorno.numero || 'S/N'}${retorno.complemento ? ' - ' + retorno.complemento : ''} - ${retorno.bairro || ''}, ${retorno.municipio || ''}/${retorno.uf || ''} - CEP: ${retorno.cep || ''}`
+    : '-';
+
+  const isHabilitado = ['HABILITADO', 'ATIVO', 'ATIVA'].includes(String(situacao).trim().toUpperCase());
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprovante SINTEGRA / CADESP - ${razaoSocial || cnpj}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; font-size: 12px; }
+    .card { max-width: 820px; margin: 0 auto; background: #ffffff; border: 2px solid #0369a1; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
+    .header { text-align: center; border-bottom: 2px solid #0369a1; padding-bottom: 12px; margin-bottom: 16px; }
+    .title { font-size: 15px; font-weight: bold; color: #0369a1; text-transform: uppercase; margin: 0; }
+    .subtitle { font-size: 11px; color: #475569; margin-top: 4px; }
+    .status-box { padding: 14px; border-radius: 8px; text-align: center; margin: 14px 0; }
+    .status-ok { background: #dcfce7; border: 2px solid #16a34a; color: #166534; }
+    .status-warning { background: #fee2e2; border: 2px solid #dc2626; color: #991b1b; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; }
+    .box { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; background: #ffffff; }
+    .label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; display: block; margin-bottom: 2px; }
+    .val { font-size: 12px; font-weight: 600; color: #0f172a; }
+    .col-12 { grid-column: span 12; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    .col-3 { grid-column: span 3; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">SINTEGRA - Cadastro Estadual / SEFAZ (${ufie})</div>
+      <div class="subtitle">Comprovante de Situação Cadastral Estadual • UID: ${metaDados.consultaUid || '-'}</div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-6">
+        <span class="label">CNPJ</span>
+        <span class="val">${cnpj}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">Inscrição Estadual (IE)</span>
+        <span class="val" style="font-size: 13px; color: #0369a1;">${ie} (${tipoIE})</span>
+      </div>
+    </div>
+
+    <div class="status-box ${isHabilitado ? 'status-ok' : 'status-warning'}">
+      <div style="font-size: 15px; font-weight: bold; margin-bottom: 2px;">
+        ${isHabilitado ? `✓ SITUAÇÃO CADASTRAL: ${situacao.toUpperCase()}` : `⚠ SITUAÇÃO CADASTRAL: ${situacao.toUpperCase()}`}
+      </div>
+      <div style="font-size: 11px;">
+        Situação no CNPJ: ${situacaoCNPJ} • Regime de Apuração: ${regime}
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-12">
+        <span class="label">Razão Social / Nome Empresarial</span>
+        <span class="val">${razaoSocial}</span>
+      </div>
+      <div class="box col-8">
+        <span class="label">Nome Fantasia</span>
+        <span class="val">${nomeFantasia}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">UF da Inscrição</span>
+        <span class="val">${ufie}</span>
+      </div>
+      <div class="box col-12">
+        <span class="label">Atividade Econômica (CNAE Principal)</span>
+        <span class="val">${cnae}</span>
+      </div>
+      <div class="box col-12">
+        <span class="label">Endereço do Estabelecimento</span>
+        <span class="val">${enderecoFormatado}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">Data da Consulta</span>
+        <span class="val">${dataConsulta}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">Código de Controle / UID</span>
+        <span class="val">${metaDados.consultaUid || '-'}</span>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;text-align:center;font-size:10px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:8px;">
+      Documento gerado via API Direct Data (Sintegra) • Validação Sistema Vetline em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+};
+
+/**
  * Consulta de Protestos no IEPTB / CENPROT Nacional via Direct Data (ProtestosOnline)
  * @param {string} documento CPF ou CNPJ
  * @returns {Promise<Object>} Resultado padronizado
@@ -402,3 +521,75 @@ export const consultarDirectDataProtestos = async (documento) => {
     };
   }
 };
+
+/**
+ * Consulta de Sintegra / Cadastros Estaduais via Direct Data (/api/Sintegra)
+ * @param {string} cnpj CNPJ da empresa
+ * @param {string} uf Estado da inscrição (ex: 'SP')
+ * @returns {Promise<Object>} Resultado padronizado do Sintegra com IE e comprovante PDF
+ */
+export const consultarDirectDataSintegra = async (cnpj, uf = 'SP') => {
+  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) {
+    return { success: false, error: 'CNPJ inválido para consulta do Sintegra.' };
+  }
+
+  const cleanUf = String(uf || 'SP').trim().toUpperCase() || 'SP';
+
+  try {
+    const params = new URLSearchParams();
+    params.append('CNPJ', cleanCnpj);
+    params.append('UF', cleanUf);
+    params.append('TOKEN', DIRECTD_TOKEN);
+    params.append('gerarComprovante', 'true');
+
+    const response = await fetch(`${BASE_URL}/Sintegra?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Vetline-App/1.0'
+      }
+    });
+
+    const result = await response.json();
+    const meta = result.metaDados || {};
+    const retorno = result.retorno || {};
+
+    if (response.ok && meta.resultadoId === 1 && retorno) {
+      const ie = retorno.ie || null;
+      const situacaoCadastral = retorno.situacaoCadastral || 'Habilitado';
+      const situacaoCNPJ = retorno.situacaoCNPJ || 'Sem restrição';
+      const isHabilitado = String(situacaoCadastral).trim().toLowerCase() === 'habilitado';
+      const receiptUrl = meta.urlComprovante || generateSintegraDirectDHtml(retorno, meta, cleanCnpj);
+
+      return {
+        success: true,
+        ie,
+        hasIE: Boolean(ie && ie !== 'ISENTO' && ie !== 'ISENTA' && ie !== '-'),
+        situacaoCadastral,
+        situacaoCNPJ,
+        isHabilitado,
+        uf: retorno.ufie || retorno.uf || cleanUf,
+        nomeEmpresarial: retorno.nomeEmpresarial || '',
+        nomeFantasia: retorno.nomeFantasia || '',
+        data: retorno,
+        metaDados: meta,
+        receiptUrl,
+        raw: result
+      };
+    }
+
+    return {
+      success: false,
+      code: meta.resultadoId || response.status,
+      error: meta.mensagem || meta.resultado || 'Falha na consulta Sintegra na Direct Data',
+      raw: result
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Erro ao conectar com API Sintegra: ${err.message || 'Erro inesperado'}`
+    };
+  }
+};
+

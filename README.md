@@ -70,15 +70,15 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
-| `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP Ficha Simplificada e CENPROT Protestos). |
-| `src/lib/directd.js` | Módulo de integração com a API Direct Data: `CadastroPessoaJuridicaPlus` e `ProtestosOnline` (IEPTB / CENPROT Nacional com certidão e comprovantes). |
+| `src/lib/infosimples.js` | Módulo de integração com APIs de bureau (JUCESP Ficha Simplificada, CENPROT Protestos e SINTEGRA). |
+| `src/lib/directd.js` | Módulo de integração com a API Direct Data: `CadastroPessoaJuridicaPlus`, `ProtestosOnline` (IEPTB / CENPROT Nacional) e `Sintegra` (Consulta e validação cadastral estadual com comprovante em PDF). |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
-| `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
+| `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio, checagem antecipada de Sócios (QSA) e Sintegra, e acionamento de criação de senha. |
 | `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações e aviso de ativação por e-mail. |
 | `src/components/SuccessModal.jsx` | Modal de confirmação com orientações de verificação do e-mail de ativação e botão para ir ao login. |
 | `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
-| `src/components/PartnerMismatchModal.jsx` | Modal de alerta de divergência societária (QSA) com motivos de não aprovação e botão para reenviar documentos. |
+| `src/components/PartnerMismatchModal.jsx` | Modal de alerta de divergência cadastral e societária (QSA / SINTEGRA) com motivos de não aprovação e botão de ação. |
 | `src/components/SegmentHelpModal.jsx` | Modal com guia descritivo e tabela de identificação de todos os segmentos de atuação. |
 | `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |
 | `src/components/client/ClientPortalAuth.jsx` | Tela principal com as abas **"Já sou cliente"** e **"Ainda não sou"**. |
@@ -94,11 +94,12 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 
-### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Infosimples)
-- Integrado na esteira de análise de crédito e validação documental com a API da **Infosimples**:
-  - **JUCESP (Ficha Cadastral Simplificada)**: Consulta oficial na Junta Comercial de SP via Gov.br (`/junta-comercial/sp/ficha`), obtendo NIRE, capital, objeto social e comprovante em PDF oficial.
-  - **CENPROT (Central de Protestos)**: Verificação de ocorrências de protestos em cartórios de SP (`/cenprot-sp/protestos`).
-- **Proxy Seguro Serverless**: Função `api/infosimples.js` para garantir execução rápida e segura no Vercel sem bloqueios de CORS ou WAF.
+### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
+- Integrado na esteira de análise de crédito e validação documental com a API da **Direct Data** e **Infosimples**:
+  - **SINTEGRA / Cadastros Estaduais (`/api/Sintegra`)**: Consulta automática da Inscrição Estadual (IE) e verificação de situação cadastral (Habilitado/Ativo) no SEFAZ. O comprovante oficial em PDF (`urlComprovante`) é anexado automaticamente aos documentos do cliente para análise do administrador.
+  - **JUCESP (Ficha Cadastral Simplificada)**: Consulta oficial na Junta Comercial via Direct Data / Gov.br, obtendo NIRE, capital, objeto social e comprovante em PDF oficial.
+  - **CENPROT / IEPTB (`/api/ProtestosOnline`)**: Verificação unificada de ocorrências de protestos em cartórios em âmbito nacional.
+- **Proxy Seguro Serverless**: Funções `api/directd.js` e `api/infosimples.js` para garantir execução rápida e segura no Vercel sem bloqueios de CORS ou WAF.
 
 ---
 

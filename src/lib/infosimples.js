@@ -262,12 +262,17 @@ export const consultarReceitaCNPJ = async (cnpj) => {
   };
 };
 
-import { consultarDirectDataPJ, consultarDirectDataProtestos } from './directd';
+import { consultarDirectDataPJ, consultarDirectDataProtestos, consultarDirectDataSintegra } from './directd';
 
 /**
- * Consulta de Protestos em Cartórios (IEPTB / CENPROT Nacional)
- * Fonte Principal: Direct Data (ProtestosOnline) com fallback para Infosimples
+ * Consulta de Inscrição Estadual e Situação Cadastral no SINTEGRA / CADESP
+ * Fonte Principal: Direct Data (/api/Sintegra)
+ * @param {string} cnpj CNPJ da empresa
+ * @param {string} uf Estado da inscrição (ex: 'SP')
  */
+export const consultarSintegra = async (cnpj, uf = 'SP') => {
+  return await consultarDirectDataSintegra(cnpj, uf);
+};
 export const consultarProtestosCenprot = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || (cleanCnpj.length !== 14 && cleanCnpj.length !== 11)) {
@@ -491,6 +496,7 @@ export const executarAuditoriaBureau = async (client) => {
   const results = {
     jucesp: null,
     cenprot: null,
+    sintegra: null,
     consultedAt: new Date().toISOString()
   };
 
@@ -508,11 +514,21 @@ export const executarAuditoriaBureau = async (client) => {
     results.cenprot = { success: true, skipped: true, totalProtests: 0 };
   }
 
+  // 3. Consulta SINTEGRA / CADESP (Inscrição Estadual)
+  try {
+    const ufSearch = client.uf || client.state || client.delivery_state || 'SP';
+    results.sintegra = await consultarDirectDataSintegra(cleanDoc, ufSearch);
+  } catch (e) {
+    results.sintegra = { success: false, error: e.message || 'Erro na consulta do Sintegra' };
+  }
+
   // URLs dos comprovantes válidos
   const docJucespUrl = results.jucesp?.success ? results.jucesp.receiptUrl : null;
   const docCenprotUrl = results.cenprot?.success && !results.cenprot?.skipped ? results.cenprot.receiptUrl : null;
+  const docSintegraUrl = results.sintegra?.success ? results.sintegra.receiptUrl : null;
   const nireJucesp = results.jucesp?.nire || null;
   const totalProtestos = results.cenprot?.totalProtests ?? null;
+  const inscricaoEstadual = results.sintegra?.ie || null;
 
   const successfulServices = [];
   const failedServices = [];
@@ -537,9 +553,19 @@ export const executarAuditoriaBureau = async (client) => {
     });
   }
 
-  const allSuccessful = Boolean(results.jucesp?.success && (results.cenprot?.success || results.cenprot?.skipped));
-  const isPartial = Boolean(results.jucesp?.success || (results.cenprot?.success && !results.cenprot?.skipped));
-  const allFailed = !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped);
+  if (results.sintegra?.success) {
+    successfulServices.push('SINTEGRA / Cadastro Estadual');
+  } else if (results.sintegra?.error) {
+    failedServices.push({
+      service: 'SINTEGRA',
+      code: results.sintegra?.code,
+      error: results.sintegra?.error
+    });
+  }
+
+  const allSuccessful = Boolean(results.jucesp?.success && (results.cenprot?.success || results.cenprot?.skipped) && results.sintegra?.success);
+  const isPartial = Boolean(results.jucesp?.success || (results.cenprot?.success && !results.cenprot?.skipped) || results.sintegra?.success);
+  const allFailed = !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped) && !results.sintegra?.success;
 
   // Se nenhum serviço funcionou
   if (allFailed) {
@@ -568,6 +594,16 @@ export const executarAuditoriaBureau = async (client) => {
 
       if (docJucespUrl) updatePayload.doc_jucesp_url = docJucespUrl;
       if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
+      if (docSintegraUrl) {
+        updatePayload.doc_ie_url = docSintegraUrl;
+        updatePayload.doc_sintegra_url = docSintegraUrl;
+      }
+      if (inscricaoEstadual) {
+        updatePayload.numero_ie = inscricaoEstadual;
+        updatePayload.ie_number = inscricaoEstadual;
+        updatePayload.possui_ie = true;
+        updatePayload.has_ie = true;
+      }
       if (nireJucesp) updatePayload.nire_jucesp = nireJucesp;
       if (totalProtestos !== null && totalProtestos !== undefined) {
         updatePayload.total_protestos = totalProtestos;
@@ -598,6 +634,9 @@ export const executarAuditoriaBureau = async (client) => {
     nireJucesp,
     totalProtestos,
     docJucespUrl,
-    docCenprotUrl
+    docCenprotUrl,
+    docSintegraUrl,
+    docIeUrl: docSintegraUrl,
+    inscricaoEstadual
   };
 };

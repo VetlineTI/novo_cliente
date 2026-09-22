@@ -5,8 +5,11 @@ import { AlertTriangle, Users, FileWarning, RefreshCw, X, ShieldAlert } from 'lu
 export const PartnerMismatchModal = ({
   isOpen,
   onClose,
+  title = 'O cadastro não foi concluído',
+  subtitle = 'Divergência identificada na validação cadastral',
   reasons = [],
   authorizedPartners = [],
+  buttonText = 'Reenviar Documentos',
   onReupload
 }) => {
   if (!isOpen) return null;
@@ -28,8 +31,8 @@ export const PartnerMismatchModal = ({
           <div className="w-14 h-14 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
             <ShieldAlert className="w-8 h-8 text-white animate-pulse" />
           </div>
-          <h3 className="text-xl font-bold tracking-tight">O cadastro não foi concluído</h3>
-          <p className="text-rose-100 text-xs mt-1">Divergência identificada no Quadro Societário (QSA)</p>
+          <h3 className="text-xl font-bold tracking-tight">{title}</h3>
+          <p className="text-rose-100 text-xs mt-1">{subtitle}</p>
         </div>
 
         {/* Corpo com motivos */}
@@ -40,7 +43,7 @@ export const PartnerMismatchModal = ({
               <span>Motivo da não aprovação:</span>
             </div>
             <ul className="space-y-1.5 text-xs text-rose-900 leading-relaxed pl-1">
-              {(reasons.length > 0 ? reasons : ['O documento anexado não corresponde a nenhum sócio registrado no CNPJ.']).map((r, idx) => (
+              {(reasons.length > 0 ? reasons : ['Não foi possível validar as informações cadastrais.']).map((r, idx) => (
                 <li key={idx} className="flex items-start gap-1.5">
                   <span className="text-rose-500 font-bold">•</span>
                   <span>{r}</span>
@@ -49,7 +52,7 @@ export const PartnerMismatchModal = ({
             </ul>
           </div>
 
-          {/* Lista de Sócios Autorizados */}
+          {/* Lista de Sócios Autorizados (se aplicável) */}
           {authorizedPartners && authorizedPartners.length > 0 && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5">
               <div className="flex items-center gap-2 text-slate-700 font-bold text-xs uppercase tracking-wider">
@@ -84,7 +87,7 @@ export const PartnerMismatchModal = ({
               className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Reenviar Documentos do Sócio</span>
+              <span>{buttonText}</span>
             </button>
             <button
               type="button"
@@ -101,3 +104,4 @@ export const PartnerMismatchModal = ({
     document.body
   );
 };
+

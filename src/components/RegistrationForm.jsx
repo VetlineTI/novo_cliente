@@ -28,7 +28,7 @@ import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
-import { executarAuditoriaBureau } from '../lib/infosimples';
+import { executarAuditoriaBureau, consultarSintegra } from '../lib/infosimples';
 import { validatePartnerDocument } from '../utils/documentValidator';
 import { 
   maskCPF, 
@@ -71,9 +71,10 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [cnpjInfo, setCnpjInfo] = useState(null);
   const [cnpjAlert, setCnpjAlert] = useState('');
 
-  // Refs para pré-consulta antecipada do Bureau (JUCESP & CENPROT)
+  // Refs para pré-consulta antecipada do Bureau (JUCESP & CENPROT & SINTEGRA)
   const bureauAuditPromiseRef = useRef(null);
   const bureauAuditResultRef = useRef(null);
+  const sintegraResultRef = useRef(null);
 
   // Endereço Principal / Cadastral (para PF e PJ)
   const [zipcode, setZipcode] = useState('');
@@ -498,32 +499,82 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Validação antecipada do documento do sócio contra o QSA (antes de permitir criar senha)
-    if (personType === 'PJ' && docPartnerPhoto) {
+    // Validação antecipada do documento do sócio contra o QSA e SINTEGRA (antes de permitir criar senha)
+    if (personType === 'PJ') {
       setIsValidatingPartnerDoc(true);
       try {
-        let partners = cnpjInfo?.socios || [];
-        if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
-          partners = bureauAuditResultRef.current.data.socios;
-        }
-        if (partners.length === 0 && bureauAuditPromiseRef.current) {
-          const bRes = await bureauAuditPromiseRef.current;
-          if (bRes?.data?.socios) {
-            partners = bRes.data.socios;
+        // 1. Validação do Documento do Sócio contra o QSA
+        if (docPartnerPhoto) {
+          let partners = cnpjInfo?.socios || [];
+          if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
+            partners = bureauAuditResultRef.current.data.socios;
+          }
+          if (partners.length === 0 && bureauAuditPromiseRef.current) {
+            const bRes = await bureauAuditPromiseRef.current;
+            if (bRes?.data?.socios) {
+              partners = bRes.data.socios;
+            }
+          }
+
+          if (partners.length > 0) {
+            const partnerCheck = await validatePartnerDocument(docPartnerPhoto, partners);
+            if (!partnerCheck.isValid) {
+              setPartnerMismatchData({
+                title: 'O cadastro não foi concluído',
+                subtitle: 'Divergência identificada no Quadro Societário (QSA)',
+                reasons: partnerCheck.reasons,
+                authorizedPartners: partnerCheck.authorizedPartners,
+                buttonText: 'Reenviar Documentos do Sócio'
+              });
+              setShowPartnerMismatchModal(true);
+              setIsValidatingPartnerDoc(false);
+              return;
+            }
           }
         }
 
-        if (partners.length > 0) {
-          const partnerCheck = await validatePartnerDocument(docPartnerPhoto, partners);
-          if (!partnerCheck.isValid) {
-            setPartnerMismatchData(partnerCheck);
-            setShowPartnerMismatchModal(true);
-            setIsValidatingPartnerDoc(false);
-            return;
+        // 2. Validação do SINTEGRA / Inscrição Estadual (SEFAZ)
+        const cleanCnpj = unmask(documentNumber);
+        const ufState = state || cnpjInfo?.uf || 'SP';
+
+        let sintegraRes = bureauAuditResultRef.current?.data?.sintegra;
+        if (!sintegraRes && bureauAuditPromiseRef.current) {
+          const bRes = await bureauAuditPromiseRef.current;
+          if (bRes?.data?.sintegra) {
+            sintegraRes = bRes.data.sintegra;
           }
         }
+        if (!sintegraRes) {
+          sintegraRes = await consultarSintegra(cleanCnpj, ufState);
+        }
+
+        const isHabilitado = Boolean(
+          sintegraRes &&
+          sintegraRes.success &&
+          String(sintegraRes.situacaoCadastral || '').trim().toLowerCase() === 'habilitado'
+        );
+
+        if (!isHabilitado) {
+          const sitDesc = sintegraRes?.situacaoCadastral || sintegraRes?.error || 'Não Habilitado';
+          setPartnerMismatchData({
+            title: 'Cadastro Impedido - SINTEGRA',
+            subtitle: 'Situação Cadastral no SINTEGRA diferente de "Habilitado"',
+            reasons: [
+              `Situação Cadastral no SINTEGRA: "${sitDesc}".`,
+              'O cadastro como Pessoa Jurídica (PJ) só é permitido quando a Situação Cadastral no SINTEGRA constar estritamente como "Habilitado".',
+              `Qualquer situação diferente de "Habilitado" impede a conclusão do cadastro no estado de ${sintegraRes?.uf || ufState}.`
+            ],
+            authorizedPartners: [],
+            buttonText: 'Revisar Dados do Formulário'
+          });
+          setShowPartnerMismatchModal(true);
+          setIsValidatingPartnerDoc(false);
+          return;
+        }
+
+        sintegraResultRef.current = sintegraRes;
       } catch (checkErr) {
-        console.warn('Erro ao validar sócio antecipadamente:', checkErr);
+        console.warn('Erro ao validar sócio e sintegra antecipadamente:', checkErr);
       } finally {
         setIsValidatingPartnerDoc(false);
       }
@@ -573,9 +624,11 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Se for PJ, obtém a consulta no Bureau (JUCESP Ficha Simplificada & CENPROT)
+      // Se for PJ, obtém a consulta no Bureau (JUCESP Ficha Simplificada, CENPROT & SINTEGRA)
       let docJucespUrl = null;
       let docCenprotUrl = null;
+      let docSintegraUrl = sintegraResultRef.current?.receiptUrl || null;
+      let sintegraIe = sintegraResultRef.current?.ie || null;
       let nireJucesp = null;
       let totalProtestos = null;
       let bureauConsultedAt = null;
@@ -589,13 +642,20 @@ export const RegistrationForm = ({ onSuccess }) => {
           if (!bureauRes) {
             bureauRes = await executarAuditoriaBureau({
               cpf_cnpj: documentNumber,
-              razao_social_nome: fullName
+              razao_social_nome: fullName,
+              uf: state || 'SP'
             });
           }
 
           if (bureauRes) {
             if (bureauRes.docJucespUrl) docJucespUrl = bureauRes.docJucespUrl;
             if (bureauRes.docCenprotUrl) docCenprotUrl = bureauRes.docCenprotUrl;
+            if (bureauRes.docSintegraUrl || bureauRes.docIeUrl) {
+              docSintegraUrl = bureauRes.docSintegraUrl || bureauRes.docIeUrl;
+            }
+            if (bureauRes.inscricaoEstadual || bureauRes.data?.sintegra?.ie) {
+              sintegraIe = bureauRes.inscricaoEstadual || bureauRes.data?.sintegra?.ie;
+            }
             if (bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp) {
               nireJucesp = bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp;
             }
@@ -613,6 +673,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
+      const hasIe = Boolean(sintegraIe && sintegraIe !== 'ISENTO' && sintegraIe !== 'ISENTA' && sintegraIe !== '-');
+
       // Dados estruturados para tabela novo_cliente.data_new_cliente em Português BR
       const payload = {
         tipo_pessoa: personType,
@@ -624,10 +686,10 @@ export const RegistrationForm = ({ onSuccess }) => {
         full_name: fullName,
         nome_fantasia: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
         trade_name: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
-        possui_ie: false,
-        has_ie: false,
-        numero_ie: null,
-        ie_number: null,
+        possui_ie: hasIe,
+        has_ie: hasIe,
+        numero_ie: sintegraIe || null,
+        ie_number: sintegraIe || null,
         telefone: phone,
         phone: phone,
         segmento: segment,
@@ -673,7 +735,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         doc_crmv_url: docCrmvUrl,
         doc_comprovante_endereco_url: docAddressUrl,
         doc_address_url: docAddressUrl,
-        doc_ie_url: null,
+        doc_ie_url: docSintegraUrl,
+        doc_sintegra_url: docSintegraUrl,
         doc_jucesp_url: docJucespUrl,
         doc_cenprot_url: docCenprotUrl,
         nire_jucesp: nireJucesp,
@@ -692,10 +755,12 @@ export const RegistrationForm = ({ onSuccess }) => {
       // Sincronização e garantia de persistência dos documentos de Bureau no painel ADM
       const createdClientId = result.client?.id;
       if (personType === 'PJ' && createdClientId) {
-        if (docJucespUrl || docCenprotUrl || nireJucesp || totalProtestos !== null || bureauConsultedAt) {
+        if (docJucespUrl || docCenprotUrl || docSintegraUrl || nireJucesp || totalProtestos !== null || bureauConsultedAt) {
           updateClientData(createdClientId, {
             doc_jucesp_url: docJucespUrl,
             doc_cenprot_url: docCenprotUrl,
+            doc_ie_url: docSintegraUrl,
+            doc_sintegra_url: docSintegraUrl,
             nire_jucesp: nireJucesp,
             total_protestos: totalProtestos,
             bureau_consulted_at: bureauConsultedAt || new Date().toISOString()
@@ -707,7 +772,8 @@ export const RegistrationForm = ({ onSuccess }) => {
           executarAuditoriaBureau({
             id: createdClientId,
             cpf_cnpj: documentNumber,
-            razao_social_nome: fullName
+            razao_social_nome: fullName,
+            uf: state || 'SP'
           }).catch(err => console.warn('Execução em background do bureau:', err));
         }
       }
