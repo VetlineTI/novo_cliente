@@ -42,6 +42,7 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
   const isHtml = !isPdf && (
     fileName?.toLowerCase().endsWith('.html') || 
     url?.toLowerCase().includes('.html') || 
+    url?.startsWith('data:text/html') ||
     type === 'html'
   );
   const isImage = !isPdf && !isHtml && (
