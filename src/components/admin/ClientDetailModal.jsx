@@ -327,7 +327,7 @@ export const ClientDetailModal = ({
         id: 'bureau_certidoes',
         name: 'Certidões & Bureau',
         icon: Search,
-        badge: (client.doc_receita_url || client.doc_cenprot_url) ? 'Consultado ✓' : 'Disponível',
+        badge: (client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url) ? 'Consultado ✓' : 'Disponível',
         hasDocs: Boolean(client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url),
         docs: [
           ...(client.doc_receita_url ? [
@@ -1024,11 +1024,17 @@ export const ClientDetailModal = ({
                         </div>
 
                         {/* Status resumidos dos serviços principais */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                           <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
                             <span className="text-[10px] text-slate-400 block font-medium">Receita Federal (Oficial)</span>
                             <span className={`font-bold truncate block text-[11px] ${client.doc_receita_url ? 'text-emerald-400' : 'text-slate-300'}`}>
                               {client.doc_receita_url ? 'Cartão CNPJ & Sócios ✓' : 'Disponível'}
+                            </span>
+                          </div>
+                          <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+                            <span className="text-[10px] text-slate-400 block font-medium">JUCESP (Gov.br)</span>
+                            <span className={`font-bold truncate block text-[11px] ${client.doc_jucesp_url ? 'text-emerald-400' : 'text-slate-300'}`}>
+                              {client.nire_jucesp ? `NIRE: ${client.nire_jucesp} ✓` : (client.doc_jucesp_url ? 'Ficha Anexada ✓' : 'Disponível')}
                             </span>
                           </div>
                           <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
@@ -1067,12 +1073,12 @@ export const ClientDetailModal = ({
                           {isAuditingBureau ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Consultando Receita Federal & Protestos...</span>
+                              <span>Consultando Bureau (Receita, JUCESP & Protestos)...</span>
                             </>
                           ) : (
                             <>
                               <Search className="w-3.5 h-3.5" />
-                              <span>{client.doc_receita_url || client.doc_cenprot_url ? 'Reconsultar Receita Federal & Protestos' : 'Consultar Receita Federal & Protestos Agora'}</span>
+                              <span>{client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar Bureau Completo' : 'Consultar Bureau Completo (Receita, JUCESP & Protestos)'}</span>
                             </>
                           )}
                         </button>

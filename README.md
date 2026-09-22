@@ -90,6 +90,30 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 
+### 6. 🔍 Auditoria Automatizada & Bureau de Crédito (Infosimples)
+- Integrado na esteira de análise de crédito e validação documental com a API da **Infosimples**:
+  - **Receita Federal Oficial**: Emissão do Cartão CNPJ completo, Quadro de Sócios e Administradores (QSA), Capital Social e Situação Cadastral.
+  - **JUCESP (Junta Comercial de SP)**: Consulta completa de registro comercial e obtenção do NIRE com autenticação Gov.br.
+  - **CENPROT (Central de Protestos)**: Verificação de ocorrências de protestos em cartórios.
+- **Visualizador de Documentos Inteligente**: Suporte a PDFs, imagens e documentos HTML interativos gerados sob demanda.
+
+---
+
+## 🔐 Variáveis de Ambiente (`.env`)
+
+```env
+# Conexão Supabase
+VITE_SUPABASE_URL=https://sua-instancia.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-anon-key
+
+# API Infosimples (Bureau)
+VITE_INFOSIMPLES_TOKEN=seu-token-infosimples
+
+# Credenciais Gov.br para JUCESP
+VITE_JUCESP_LOGIN_CPF=41152588885
+VITE_JUCESP_LOGIN_SENHA=@13setCaio
+```
+
 ---
 
 ## ✉️ Configuração dos Templates de E-mail no Supabase
@@ -115,7 +139,7 @@ Para garantir o funcionamento completo no seu Supabase:
 
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
-3. Abra ou copie o conteúdo do arquivo [`supabase/schema.sql`](file:///supabase/schema.sql);
+3. Abra ou copie o conteúdo do arquivo [`supabase/schema.sql`](file:///supabase/schema.sql) e [`supabase/add_bureau_columns.sql`](file:///supabase/add_bureau_columns.sql);
 4. Clique no botão verde **Run** (Executar).
 
 > 💡 **Dica (Opcional)**: Caso queira expor o schema `novo_cliente` diretamente para consultas REST além das funções RPC, acesse no Supabase: **Project Settings > API > Data API Settings > "Exposed schemas"** e adicione `novo_cliente`.
@@ -126,3 +150,4 @@ Para garantir o funcionamento completo no seu Supabase:
 
 - **Área do Cliente & Cadastro**: `http://localhost:5173/` (ou rota principal em produção).
 - **Painel Administrativo**: `http://localhost:5173/admin` (ou clique em *Acesso Administrativo* no rodapé).
+

@@ -4,6 +4,14 @@ const INFOSIMPLES_TOKEN =
   import.meta.env.VITE_INFOSIMPLES_TOKEN || 
   'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
 
+const JUCESP_LOGIN_CPF = 
+  import.meta.env.VITE_JUCESP_LOGIN_CPF || 
+  '41152588885';
+
+const JUCESP_LOGIN_SENHA = 
+  import.meta.env.VITE_JUCESP_LOGIN_SENHA || 
+  '@13setCaio';
+
 // Rota com proxy no Vite (localhost) e Vercel (produção)
 const BASE_URL = '/api-infosimples';
 
@@ -303,23 +311,23 @@ export const consultarProtestosCenprot = async (cnpj) => {
 };
 
 /**
- * Consulta JUCESP (Opcional - Ativada apenas se houver credenciais Gov.br configuradas)
+ * Consulta JUCESP Completa (com login Gov.br autenticado)
  */
-export const consultarJucespOpcional = async (cnpj, options = {}) => {
-  const loginCpf = options.login_cpf || import.meta.env.VITE_JUCESP_LOGIN_CPF;
-  const loginSenha = options.login_senha || import.meta.env.VITE_JUCESP_LOGIN_SENHA;
+export const consultarJucespCompleta = async (cnpj, options = {}) => {
+  const loginCpf = options.login_cpf || JUCESP_LOGIN_CPF;
+  const loginSenha = options.login_senha || JUCESP_LOGIN_SENHA;
 
-  if (!loginCpf || !loginSenha) {
-    return { success: false, skipped: true, error: 'JUCESP desativada (utilizando Receita Federal como fonte oficial).' };
+  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) {
+    return { success: false, error: 'CNPJ inválido para consulta na JUCESP.' };
   }
 
   try {
-    const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
-    params.append('login_cpf', loginCpf);
-    params.append('login_senha', loginSenha);
+    if (loginCpf) params.append('login_cpf', loginCpf);
+    if (loginSenha) params.append('login_senha', loginSenha);
     params.append('timeout', '180');
 
     const response = await fetch(`${BASE_URL}/junta-comercial/sp/completa`, {
@@ -328,26 +336,38 @@ export const consultarJucespOpcional = async (cnpj, options = {}) => {
       body: params.toString()
     });
 
-    const result = await response.json();
-    if (result.code === 200 && result.data && result.data.length > 0) {
-      const dataItem = result.data[0];
-      const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
+    if (response.ok || response.status === 400 || response.status === 422) {
+      const result = await response.json();
+      if (result.code === 200 && result.data && result.data.length > 0) {
+        const dataItem = result.data[0];
+        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
+        return {
+          success: true,
+          nire: dataItem.nire || dataItem.numero_nire || dataItem.nire_matriz || null,
+          receiptUrl,
+          data: dataItem,
+          raw: result
+        };
+      }
       return {
-        success: true,
-        nire: dataItem.nire || dataItem.numero_nire || null,
-        receiptUrl,
-        data: dataItem
+        success: false,
+        code: result.code,
+        error: result.code_message || (result.errors && result.errors[0]) || 'Falha na consulta da JUCESP',
+        raw: result
       };
     }
-    return { success: false, error: result.code_message || 'Falha na emissão JUCESP Gov.br' };
+    return {
+      success: false,
+      error: `Servidor da JUCESP retornou HTTP ${response.status}`
+    };
   } catch (e) {
-    return { success: false, error: e.message };
+    return { success: false, error: e.message || 'Erro de conexão na JUCESP' };
   }
 };
 
 /**
- * Executa a esteira principal de Auditoria / Bureau para um cliente PJ
- * Utiliza a Receita Federal (100% pública: Sócios, Capital, Abertura e Cartão CNPJ) e CENPROT (Protestos)
+ * Executa a esteira completa de Auditoria / Bureau para um cliente PJ
+ * Consulta Receita Federal, JUCESP e CENPROT Protestos
  * @param {Object} client Objeto do cliente
  * @returns {Promise<Object>} Resultado consolidado
  */
@@ -376,42 +396,42 @@ export const executarAuditoriaBureau = async (client) => {
 
   const results = {
     receita: null,
-    cenprot: null,
     jucesp: null,
+    cenprot: null,
     consultedAt: new Date().toISOString()
   };
 
-  // 1. Consulta Principal: Receita Federal (Cartão CNPJ, Sócios/QSA, Capital Social, Data Abertura)
+  // 1. Consulta Receita Federal (Cartão CNPJ, Sócios/QSA, Capital Social, Data Abertura)
   try {
     results.receita = await consultarReceitaCNPJ(cleanDoc);
   } catch (e) {
     results.receita = { success: false, error: e.message || 'Erro na consulta da Receita Federal' };
   }
 
-  // 2. Consulta Secundária: CENPROT Protestos
+  // 2. Consulta JUCESP Completa (Gov.br)
+  try {
+    results.jucesp = await consultarJucespCompleta(cleanDoc);
+  } catch (e) {
+    results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
+  }
+
+  // 3. Consulta CENPROT Protestos
   try {
     results.cenprot = await consultarProtestosCenprot(cleanDoc);
   } catch (e) {
     results.cenprot = { success: true, skipped: true, totalProtests: 0 };
   }
 
-  // 3. JUCESP (apenas se credenciais Gov.br estiverem disponíveis)
-  try {
-    results.jucesp = await consultarJucespOpcional(cleanDoc);
-  } catch (e) {
-    results.jucesp = { success: false, skipped: true };
-  }
-
   // URLs dos comprovantes válidos
   const docReceitaUrl = results.receita?.success ? results.receita.receiptUrl : null;
-  const docCenprotUrl = results.cenprot?.success && !results.cenprot?.skipped ? results.cenprot.receiptUrl : null;
   const docJucespUrl = results.jucesp?.success ? results.jucesp.receiptUrl : null;
+  const docCenprotUrl = results.cenprot?.success && !results.cenprot?.skipped ? results.cenprot.receiptUrl : null;
 
   const successfulServices = [];
   const failedServices = [];
 
   if (results.receita?.success) {
-    successfulServices.push('Receita Federal (Cartão CNPJ, Sócios e Capital)');
+    successfulServices.push('Receita Federal (Cartão CNPJ)');
   } else {
     failedServices.push({
       service: 'Receita Federal',
@@ -420,14 +440,24 @@ export const executarAuditoriaBureau = async (client) => {
     });
   }
 
+  if (results.jucesp?.success) {
+    successfulServices.push('JUCESP (Registro/NIRE)');
+  } else if (results.jucesp?.error) {
+    failedServices.push({
+      service: 'JUCESP',
+      code: results.jucesp?.code,
+      error: results.jucesp?.error
+    });
+  }
+
   if (results.cenprot?.success && !results.cenprot?.skipped) {
     successfulServices.push('CENPROT (Protestos)');
   }
 
   const allSuccessful = Boolean(results.receita?.success);
-  const allFailed = !results.receita?.success;
+  const allFailed = !results.receita?.success && !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped);
 
-  // Se a Receita Federal falhar completamente
+  // Se nenhum serviço funcionou
   if (allFailed) {
     const errorDetails = failedServices.map(f => `${f.service}: ${f.error}`).join(' | ');
     return {
@@ -453,8 +483,8 @@ export const executarAuditoriaBureau = async (client) => {
       };
 
       if (docReceitaUrl) updatePayload.doc_receita_url = docReceitaUrl;
-      if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
       if (docJucespUrl) updatePayload.doc_jucesp_url = docJucespUrl;
+      if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
       if (results.jucesp?.success && results.jucesp?.nire) updatePayload.nire_jucesp = results.jucesp.nire;
       if (results.cenprot?.success && results.cenprot?.totalProtests !== undefined) {
         updatePayload.total_protestos = results.cenprot.totalProtests;
@@ -493,7 +523,7 @@ export const executarAuditoriaBureau = async (client) => {
       socios: results.receita.socios
     } : null,
     docReceitaUrl,
-    docCenprotUrl,
-    docJucespUrl
+    docJucespUrl,
+    docCenprotUrl
   };
 };
