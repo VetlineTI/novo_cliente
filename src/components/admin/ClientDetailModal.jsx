@@ -156,38 +156,55 @@ export const ClientDetailModal = ({
   const bucketName = 'novos_clientes';
   const clientStoragePath = `${bucketName}/${cleanDoc}`;
 
-  // Executa consulta no Bureau da Infosimples sob demanda
+  // Executa consulta no Bureau da Infosimples sob demanda com tratamento real de erros
   const handleRunBureauAudit = async () => {
     setIsAuditingBureau(true);
     setBureauFeedback(null);
     try {
       const res = await executarAuditoriaBureau(client);
-      if (res.success) {
+      
+      if (res.allSuccessful) {
         setBureauFeedback({
           type: 'success',
-          message: 'Consulta finalizada com sucesso! Comprovantes anexados.'
+          message: '✓ Auditoria 100% concluída! Cartão CNPJ (Receita), JUCESP e Protestos (CENPROT) foram consultados e anexados com sucesso.'
         });
-        if (onUpdateClient) {
-          onUpdateClient({
-            ...client,
-            doc_receita_url: res.docReceitaUrl || client.doc_receita_url,
-            doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
-            doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
-            nire_jucesp: res.data?.jucesp?.nire || client.nire_jucesp,
-            total_protestos: res.data?.cenprot?.totalProtests ?? client.total_protestos,
-            bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
-          });
-        }
+      } else if (res.isPartial) {
+        const succList = (res.successfulServices || []).join(', ');
+        const failList = (res.failedServices || []).map(f => `${f.service} (${f.error})`).join('; ');
+        setBureauFeedback({
+          type: 'warning',
+          message: `⚠ Auditoria parcial: ${succList} foram obtidos. Falhas: ${failList}.`
+        });
       } else {
+        const failList = (res.failedServices || []).map(f => `${f.service}: ${f.error}`).join(' | ') || res.error || 'Erro desconhecido';
         setBureauFeedback({
           type: 'error',
-          message: res.error || 'Erro ao realizar consulta no Bureau.'
+          message: `✕ Falha no Bureau: ${failList}`
+        });
+      }
+
+      if (res.dbSaveSuccess === false) {
+        setBureauFeedback({
+          type: 'error',
+          message: `✕ Documentos obtidos na API, mas erro ao salvar no banco de dados: ${res.dbSaveError}`
+        });
+      }
+
+      if (res.successfulServices && res.successfulServices.length > 0 && onUpdateClient) {
+        onUpdateClient({
+          ...client,
+          doc_receita_url: res.docReceitaUrl || client.doc_receita_url,
+          doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
+          doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
+          nire_jucesp: res.data?.jucesp?.nire || client.nire_jucesp,
+          total_protestos: res.data?.cenprot?.totalProtests ?? client.total_protestos,
+          bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
         });
       }
     } catch (err) {
       setBureauFeedback({
         type: 'error',
-        message: err.message || 'Falha na comunicação com a API Infosimples.'
+        message: `✕ Falha na comunicação com a API: ${err.message || 'Erro inesperado'}`
       });
     } finally {
       setIsAuditingBureau(false);
@@ -1002,35 +1019,43 @@ export const ClientDetailModal = ({
                           )}
                         </div>
 
-                        {/* Status resumidos */}
-                        <div className="grid grid-cols-2 gap-2 text-xs">
+                        {/* Status resumidos dos 3 serviços */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                           <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700">
-                            <span className="text-[10px] text-slate-400 block">JUCESP (SP)</span>
-                            <span className="font-bold text-slate-200 truncate block text-[11px]">
+                            <span className="text-[10px] text-slate-400 block font-medium">Receita Federal</span>
+                            <span className={`font-bold truncate block text-[11px] ${client.doc_receita_url ? 'text-emerald-400' : 'text-slate-300'}`}>
+                              {client.doc_receita_url ? 'Cartão CNPJ ✓' : 'Disponível'}
+                            </span>
+                          </div>
+                          <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700">
+                            <span className="text-[10px] text-slate-400 block font-medium">JUCESP (SP)</span>
+                            <span className={`font-bold truncate block text-[11px] ${client.nire_jucesp || client.doc_jucesp_url ? 'text-emerald-400' : 'text-slate-300'}`}>
                               {client.nire_jucesp ? `NIRE: ${client.nire_jucesp}` : (client.doc_jucesp_url ? 'Registrada ✓' : 'Disponível')}
                             </span>
                           </div>
                           <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700">
-                            <span className="text-[10px] text-slate-400 block">CENPROT (Protestos)</span>
+                            <span className="text-[10px] text-slate-400 block font-medium">CENPROT (Protestos)</span>
                             <span className={`font-bold truncate block text-[11px] ${
                               client.total_protestos === 0 
                                 ? 'text-emerald-400' 
-                                : (client.total_protestos > 0 ? 'text-amber-400' : 'text-slate-300')
+                                : (client.total_protestos > 0 ? 'text-amber-400' : (client.doc_cenprot_url ? 'text-emerald-400' : 'text-slate-300'))
                             }`}>
                               {client.total_protestos !== null && client.total_protestos !== undefined 
                                 ? (client.total_protestos === 0 ? '0 Protestos ✓' : `${client.total_protestos} Protesto(s)`)
-                                : (client.doc_cenprot_url ? 'Consultado' : 'Disponível')}
+                                : (client.doc_cenprot_url ? 'Consultado ✓' : 'Disponível')}
                             </span>
                           </div>
                         </div>
 
                         {bureauFeedback && (
-                          <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                          <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${
                             bureauFeedback.type === 'success' 
-                              ? 'bg-emerald-950/80 border border-emerald-700/60 text-emerald-300' 
-                              : 'bg-red-950/80 border border-red-700/60 text-red-300'
+                              ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200' 
+                              : (bureauFeedback.type === 'warning'
+                                  ? 'bg-amber-950/90 border-amber-600 text-amber-200'
+                                  : 'bg-red-950/90 border-red-600 text-red-200')
                           }`}>
-                            <span>{bureauFeedback.message}</span>
+                            <span className="flex-1">{bureauFeedback.message}</span>
                           </div>
                         )}
 
@@ -1044,12 +1069,12 @@ export const ClientDetailModal = ({
                           {isAuditingBureau ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Consultando JUCESP & CENPROT...</span>
+                              <span>Consultando Bureau (Receita, JUCESP, CENPROT)...</span>
                             </>
                           ) : (
                             <>
                               <Search className="w-3.5 h-3.5" />
-                              <span>{client.doc_jucesp_url || client.doc_cenprot_url ? 'Reconsultar Bureau (Infosimples)' : 'Consultar JUCESP & CENPROT Agora'}</span>
+                              <span>{client.doc_receita_url || client.doc_jucesp_url || client.doc_cenprot_url ? 'Reconsultar Bureau (Infosimples)' : 'Consultar JUCESP & CENPROT Agora'}</span>
                             </>
                           )}
                         </button>

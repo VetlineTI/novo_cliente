@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
 
 const INFOSIMPLES_TOKEN = 
   import.meta.env.VITE_INFOSIMPLES_TOKEN || 
@@ -14,7 +14,7 @@ const BASE_URL = '/api-infosimples';
 export const consultarReceitaCNPJ = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || cleanCnpj.length !== 14) {
-    return { success: false, error: 'CNPJ inválido' };
+    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
   try {
@@ -28,6 +28,13 @@ export const consultarReceitaCNPJ = async (cnpj) => {
       })
     });
 
+    if (!response.ok && response.status !== 400 && response.status !== 422) {
+      return {
+        success: false,
+        error: `Servidor da Receita Federal retornou HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+
     const result = await response.json();
     if (result.code === 200 && result.data && result.data.length > 0) {
       const dataItem = result.data[0];
@@ -40,13 +47,15 @@ export const consultarReceitaCNPJ = async (cnpj) => {
       };
     }
 
+    const errMessage = result.code_message || (result.errors && result.errors[0]) || 'Falha na consulta da Receita Federal';
     return {
       success: false,
-      error: result.code_message || result.errors?.[0] || 'Falha na consulta da Receita Federal',
+      code: result.code,
+      error: errMessage,
       raw: result
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message || 'Erro de conexão na consulta da Receita Federal' };
   }
 };
 
@@ -57,7 +66,7 @@ export const consultarReceitaCNPJ = async (cnpj) => {
 export const consultarJucespNire = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || cleanCnpj.length !== 14) {
-    return { success: false, error: 'CNPJ inválido' };
+    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
   try {
@@ -70,6 +79,13 @@ export const consultarJucespNire = async (cnpj) => {
         timeout: 120
       })
     });
+
+    if (!response.ok && response.status !== 400 && response.status !== 422) {
+      return {
+        success: false,
+        error: `Servidor da JUCESP retornou HTTP ${response.status}: ${response.statusText}`
+      };
+    }
 
     const result = await response.json();
     if (result.code === 200 && result.data && result.data.length > 0) {
@@ -84,13 +100,15 @@ export const consultarJucespNire = async (cnpj) => {
       };
     }
 
+    const errMessage = result.code_message || (result.errors && result.errors[0]) || 'Registro não localizado na JUCESP';
     return {
       success: false,
-      error: result.code_message || result.errors?.[0] || 'Registro não localizado na JUCESP',
+      code: result.code,
+      error: errMessage,
       raw: result
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message || 'Erro de conexão na consulta da JUCESP' };
   }
 };
 
@@ -152,6 +170,7 @@ export const consultarJucespFichaSimplificada = async (cnpj, options = {}) => {
     const fallback = await consultarJucespNire(cleanCnpj);
     return fallback.success ? fallback : {
       success: false,
+      code: result.code,
       error: result.code_message || result.errors?.[0] || 'Falha ao emitir ficha simplificada na JUCESP',
       raw: result
     };
@@ -180,6 +199,13 @@ export const consultarProtestosCenprot = async (cnpj) => {
       })
     });
 
+    if (!response.ok && response.status !== 400 && response.status !== 422) {
+      return {
+        success: false,
+        error: `Servidor do CENPROT retornou HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+
     const result = await response.json();
     if (result.code === 200 && result.data) {
       const dataItem = result.data[0] || {};
@@ -194,31 +220,47 @@ export const consultarProtestosCenprot = async (cnpj) => {
       };
     }
 
+    const errMessage = result.code_message || (result.errors && result.errors[0]) || 'Consulta CENPROT indisponível no momento';
     return {
       success: false,
-      error: result.code_message || result.errors?.[0] || 'Consulta CENPROT temporariamente indisponível',
+      code: result.code,
+      error: errMessage,
       raw: result
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message || 'Erro de conexão no CENPROT' };
   }
 };
 
 /**
  * Executa a esteira completa de Auditoria / Bureau para um cliente PJ
  * Consulta Receita Federal, JUCESP e Protestos, salva comprovantes no Storage
- * e atualiza o cadastro do cliente no Supabase
+ * e atualiza o cadastro do cliente no Supabase com validação real de erros
  * @param {Object} client Objeto do cliente
- * @returns {Promise<Object>} Resultado consolidado
+ * @returns {Promise<Object>} Resultado detalhado consolidado
  */
 export const executarAuditoriaBureau = async (client) => {
-  if (!client || !client.cpf_cnpj && !client.document_number) {
-    return { success: false, error: 'Dados do cliente inválidos' };
+  if (!client || (!client.cpf_cnpj && !client.document_number)) {
+    return { 
+      success: false, 
+      allFailed: true,
+      error: 'Dados do cliente inválidos ou CNPJ não informado.',
+      failedServices: [{ service: 'Geral', error: 'CNPJ não informado' }] 
+    };
   }
 
   const rawDoc = client.cpf_cnpj || client.document_number;
   const cleanDoc = String(rawDoc).replace(/\D/g, '');
   const clientId = client.id;
+
+  if (cleanDoc.length !== 14) {
+    return { 
+      success: false, 
+      allFailed: true,
+      error: 'CNPJ deve conter exatamente 14 dígitos numéricos.',
+      failedServices: [{ service: 'Geral', error: 'CNPJ com menos de 14 dígitos' }]
+    };
+  }
 
   const results = {
     receita: null,
@@ -229,35 +271,87 @@ export const executarAuditoriaBureau = async (client) => {
 
   // 1. Consulta Receita Federal
   try {
-    const resReceita = await consultarReceitaCNPJ(cleanDoc);
-    results.receita = resReceita;
+    results.receita = await consultarReceitaCNPJ(cleanDoc);
   } catch (e) {
-    results.receita = { success: false, error: e.message };
+    results.receita = { success: false, error: e.message || 'Erro na consulta da Receita Federal' };
   }
 
   // 2. Consulta JUCESP
   try {
-    const resJucesp = await consultarJucespNire(cleanDoc);
-    results.jucesp = resJucesp;
+    results.jucesp = await consultarJucespNire(cleanDoc);
   } catch (e) {
-    results.jucesp = { success: false, error: e.message };
+    results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
   }
 
   // 3. Consulta CENPROT Protestos
   try {
-    const resCenprot = await consultarProtestosCenprot(cleanDoc);
-    results.cenprot = resCenprot;
+    results.cenprot = await consultarProtestosCenprot(cleanDoc);
   } catch (e) {
-    results.cenprot = { success: false, error: e.message };
+    results.cenprot = { success: false, error: e.message || 'Erro na consulta do CENPROT' };
   }
 
-  // Prepara as URLs dos comprovantes
-  const docReceitaUrl = results.receita?.receiptUrl || null;
-  const docJucespUrl = results.jucesp?.receiptUrl || null;
-  const docCenprotUrl = results.cenprot?.receiptUrl || null;
+  // URLs dos comprovantes válidos
+  const docReceitaUrl = results.receita?.success ? results.receita.receiptUrl : null;
+  const docJucespUrl = results.jucesp?.success ? results.jucesp.receiptUrl : null;
+  const docCenprotUrl = results.cenprot?.success ? results.cenprot.receiptUrl : null;
 
-  // Atualiza no Supabase se houver clientId e Supabase configurado
-  if (isSupabaseConfigured && supabase && clientId) {
+  const successfulServices = [];
+  const failedServices = [];
+
+  if (results.receita?.success) {
+    successfulServices.push('Receita Federal (Cartão CNPJ)');
+  } else {
+    failedServices.push({
+      service: 'Receita Federal',
+      code: results.receita?.code,
+      error: results.receita?.error || 'Falha na consulta'
+    });
+  }
+
+  if (results.jucesp?.success) {
+    successfulServices.push('JUCESP (Registro/NIRE)');
+  } else {
+    failedServices.push({
+      service: 'JUCESP',
+      code: results.jucesp?.code,
+      error: results.jucesp?.error || 'Registro não localizado'
+    });
+  }
+
+  if (results.cenprot?.success) {
+    successfulServices.push('CENPROT (Protestos)');
+  } else {
+    failedServices.push({
+      service: 'CENPROT Protestos',
+      code: results.cenprot?.code,
+      error: results.cenprot?.error || 'Indisponível no momento'
+    });
+  }
+
+  const allSuccessful = successfulServices.length === 3;
+  const allFailed = successfulServices.length === 0;
+  const isPartial = successfulServices.length > 0 && failedServices.length > 0;
+
+  // Se TODOS os serviços falharam
+  if (allFailed) {
+    const errorDetails = failedServices.map(f => `${f.service}: ${f.error}`).join(' | ');
+    return {
+      success: false,
+      allSuccessful: false,
+      isPartial: false,
+      allFailed: true,
+      error: `Nenhum serviço do Bureau pôde ser consultado: ${errorDetails}`,
+      failedServices,
+      successfulServices,
+      data: results
+    };
+  }
+
+  // Salva no banco de dados o que tiver sido obtido com sucesso
+  let dbSaveSuccess = true;
+  let dbSaveError = null;
+
+  if (clientId) {
     try {
       const updatePayload = {
         bureau_consulted_at: results.consultedAt
@@ -266,23 +360,32 @@ export const executarAuditoriaBureau = async (client) => {
       if (docReceitaUrl) updatePayload.doc_receita_url = docReceitaUrl;
       if (docJucespUrl) updatePayload.doc_jucesp_url = docJucespUrl;
       if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
-      if (results.jucesp?.nire) updatePayload.nire_jucesp = results.jucesp.nire;
-      if (results.cenprot?.totalProtests !== undefined) {
+      if (results.jucesp?.success && results.jucesp?.nire) updatePayload.nire_jucesp = results.jucesp.nire;
+      if (results.cenprot?.success && results.cenprot?.totalProtests !== undefined) {
         updatePayload.total_protestos = results.cenprot.totalProtests;
       }
 
-      await supabase
-        .schema('novo_cliente')
-        .from('data_new_client')
-        .update(updatePayload)
-        .eq('id', clientId);
+      const saveRes = await updateClientData(clientId, updatePayload);
+      if (!saveRes?.success) {
+        dbSaveSuccess = false;
+        dbSaveError = saveRes?.error || 'Erro ao persistir dados do bureau no banco';
+      }
     } catch (dbErr) {
-      console.warn('Erro ao atualizar dados do bureau no Supabase:', dbErr);
+      dbSaveSuccess = false;
+      dbSaveError = dbErr.message;
+      console.warn('Erro ao atualizar dados do bureau:', dbErr);
     }
   }
 
   return {
-    success: true,
+    success: dbSaveSuccess,
+    allSuccessful: allSuccessful && dbSaveSuccess,
+    isPartial: isPartial || !dbSaveSuccess,
+    allFailed: false,
+    successfulServices,
+    failedServices,
+    dbSaveSuccess,
+    dbSaveError,
     data: results,
     docReceitaUrl,
     docJucespUrl,

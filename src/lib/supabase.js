@@ -563,6 +563,8 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
   const ptPayload = toPortuguesePayload(dataToUpdate);
 
   if (isSupabaseConfigured && supabase) {
+    let lastError = null;
+
     // 1. Método Principal: Atualização via RPC update_novo_cliente
     try {
       const { data: rpcData, error: rpcError } = await supabase.rpc('update_novo_cliente', {
@@ -575,7 +577,12 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         updateLocalClientFull(clientId, normalized);
         return { success: true, data: normalized };
       }
-    } catch (errRpc) {}
+      if (rpcError) {
+        lastError = rpcError.message;
+      }
+    } catch (errRpc) {
+      lastError = errRpc.message;
+    }
 
     // 2. Método Secundário: Atualização direta no schema novo_cliente
     try {
@@ -587,6 +594,7 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         .select();
 
       if (res.error) {
+        lastError = res.error.message;
         res = await supabase
           .schema('novo_cliente')
           .from('data_new_client')
@@ -600,10 +608,21 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         updateLocalClientFull(clientId, normalized);
         return { success: true, data: normalized };
       }
-    } catch (errCustom) {}
+      if (res.error) {
+        lastError = res.error.message;
+      }
+    } catch (errCustom) {
+      lastError = errCustom.message;
+    }
+
+    // Se o Supabase estiver configurado e ambas as tentativas falharem, retorna o erro real
+    return {
+      success: false,
+      error: `Erro ao atualizar no banco de dados: ${lastError || 'Operação não pôde ser completada'}`
+    };
   }
 
-  // Atualização no LocalStorage
+  // Modo Local/Demo apenas quando o Supabase não está configurado
   const updatedClient = updateLocalClientFull(clientId, normalizeClientRecord({ id: clientId, ...ptPayload }));
   return { success: true, data: updatedClient };
 };

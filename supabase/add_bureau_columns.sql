@@ -1,9 +1,16 @@
 -- ==============================================================================
--- MIGRAÇÃO: ADICIONAR COLUNAS DE AUDITORIA & BUREAU NA TABELA NOVO_CLIENTE.DATA_NEW_CLIENTE
+-- MIGRAÇÃO E CORREÇÃO DE AUDITORIA & BUREAU NO SCHEMA NOVO_CLIENTE
+-- Elimina erros PGRST203 (ambiguidade de funções sobrecarregadas)
+-- Adiciona colunas de bureau na tabela física novo_cliente.data_new_cliente
+-- Recria VIEW novo_cliente.data_new_client e funções RPC de insert/update
 -- Executar no SQL Editor do Supabase Dashboard
 -- ==============================================================================
 
--- 1. Adiciona as colunas na tabela física real: data_new_cliente
+-- 1. Garante a existência do schema
+CREATE SCHEMA IF NOT EXISTS novo_cliente;
+GRANT USAGE ON SCHEMA novo_cliente TO anon, authenticated, service_role;
+
+-- 2. Adiciona as novas colunas de Auditoria/Bureau na tabela física
 ALTER TABLE novo_cliente.data_new_cliente 
 ADD COLUMN IF NOT EXISTS doc_receita_url TEXT,
 ADD COLUMN IF NOT EXISTS doc_jucesp_url TEXT,
@@ -12,11 +19,84 @@ ADD COLUMN IF NOT EXISTS nire_jucesp TEXT,
 ADD COLUMN IF NOT EXISTS total_protestos INTEGER,
 ADD COLUMN IF NOT EXISTS bureau_consulted_at TIMESTAMPTZ;
 
--- 2. Recria a VIEW de compatibilidade para incluir as novas colunas
-CREATE OR REPLACE VIEW novo_cliente.data_new_client AS
+-- 3. Recria a VIEW de compatibilidade (DROP VIEW prévio para evitar conflitos de schema)
+DROP VIEW IF EXISTS novo_cliente.data_new_client CASCADE;
+CREATE VIEW novo_cliente.data_new_client AS
 SELECT * FROM novo_cliente.data_new_cliente;
 
--- 3. Atualiza a função RPC update_novo_cliente para aceitar as novas colunas
+-- 4. ELIMINAÇÃO DE FUNÇÕES SOBRECARREGADAS DUPLICADAS (Corrige Erro 400 PGRST203)
+DROP FUNCTION IF EXISTS public.get_novo_cliente_clients(VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS public.get_novo_cliente_clients(TEXT, TEXT);
+DROP FUNCTION IF EXISTS public.get_novo_cliente_by_user_or_email(UUID, VARCHAR);
+DROP FUNCTION IF EXISTS public.get_novo_cliente_by_user_or_email(UUID, TEXT);
+DROP FUNCTION IF EXISTS public.update_novo_cliente(UUID, JSONB);
+DROP FUNCTION IF EXISTS public.insert_novo_cliente(JSONB);
+
+-- 5. Recriação da Função RPC: get_novo_cliente_clients (com assinatura única TEXT, TEXT)
+CREATE OR REPLACE FUNCTION public.get_novo_cliente_clients(
+    p_status TEXT DEFAULT NULL,
+    p_search TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public, novo_cliente, auth, extensions
+AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_result
+    FROM (
+        SELECT *
+        FROM novo_cliente.data_new_cliente
+        WHERE 
+            (p_status IS NULL OR p_status = '' OR p_status = 'todos' OR status = p_status)
+            AND (
+                p_search IS NULL OR p_search = '' OR
+                razao_social_nome ILIKE '%' || p_search || '%' OR
+                nome_fantasia ILIKE '%' || p_search || '%' OR
+                cpf_cnpj ILIKE '%' || regexp_replace(p_search, '\D', '', 'g') || '%' OR
+                email ILIKE '%' || p_search || '%' OR
+                telefone ILIKE '%' || regexp_replace(p_search, '\D', '', 'g') || '%' OR
+                cidade ILIKE '%' || p_search || '%' OR
+                logradouro ILIKE '%' || p_search || '%' OR
+                cep ILIKE '%' || regexp_replace(p_search, '\D', '', 'g') || '%' OR
+                entrega_cidade ILIKE '%' || p_search || '%'
+            )
+        ORDER BY criado_em DESC
+    ) t;
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 6. Recriação da Função RPC: get_novo_cliente_by_user_or_email (assinatura única UUID, TEXT)
+CREATE OR REPLACE FUNCTION public.get_novo_cliente_by_user_or_email(
+    p_user_id UUID DEFAULT NULL,
+    p_email TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public, novo_cliente, auth, extensions
+AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    SELECT to_jsonb(t) INTO v_result
+    FROM (
+        SELECT *
+        FROM novo_cliente.data_new_cliente
+        WHERE 
+            (p_user_id IS NOT NULL AND auth_user_id = p_user_id)
+            OR (p_email IS NOT NULL AND LOWER(email) = LOWER(p_email))
+        ORDER BY criado_em DESC
+        LIMIT 1
+    ) t;
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 7. Recriação da Função RPC: update_novo_cliente (com todas as colunas de bureau)
 CREATE OR REPLACE FUNCTION public.update_novo_cliente(
     p_client_id UUID,
     p_payload JSONB
@@ -85,7 +165,131 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 4. Concessão de permissões
+-- 8. Recriação da Função RPC: insert_novo_cliente (com suporte às novas colunas de bureau)
+CREATE OR REPLACE FUNCTION public.insert_novo_cliente(client_payload JSONB)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public, novo_cliente, auth, extensions
+AS $$
+DECLARE
+    new_record JSONB;
+    v_clean_doc VARCHAR(20);
+    v_clean_phone VARCHAR(30);
+    v_clean_cep VARCHAR(15);
+    v_clean_del_cep VARCHAR(15);
+    v_auth_uuid UUID := NULL;
+BEGIN
+    v_clean_doc := regexp_replace(COALESCE(client_payload->>'cpf_cnpj', client_payload->>'document_number', ''), '\D', '', 'g');
+    v_clean_phone := regexp_replace(COALESCE(client_payload->>'telefone', client_payload->>'phone', ''), '\D', '', 'g');
+    v_clean_cep := NULLIF(regexp_replace(COALESCE(client_payload->>'cep', client_payload->>'zipcode', ''), '\D', '', 'g'), '');
+    v_clean_del_cep := NULLIF(regexp_replace(COALESCE(client_payload->>'entrega_cep', client_payload->>'delivery_zipcode', ''), '\D', '', 'g'), '');
+
+    IF client_payload->>'auth_user_id' IS NOT NULL AND client_payload->>'auth_user_id' ~ '^[0-9a-fA-F-]{36}$' THEN
+        v_auth_uuid := (client_payload->>'auth_user_id')::uuid;
+    END IF;
+
+    INSERT INTO novo_cliente.data_new_cliente (
+        tipo_pessoa,
+        cpf_cnpj,
+        razao_social_nome,
+        nome_fantasia,
+        possui_ie,
+        numero_ie,
+        telefone,
+        segmento,
+        email,
+        cep,
+        logradouro,
+        numero,
+        bairro,
+        complemento,
+        cidade,
+        uf,
+        endereco_entrega_diferente,
+        entrega_cep,
+        entrega_logradouro,
+        entrega_numero,
+        entrega_bairro,
+        entrega_complemento,
+        entrega_cidade,
+        entrega_uf,
+        cd_vend,
+        tab_pre,
+        tp_ped,
+        storage_bucket,
+        doc_ie_url,
+        doc_contrato_social_url,
+        doc_comprovante_endereco_url,
+        doc_identificacao_url,
+        doc_crmv_url,
+        doc_receita_url,
+        doc_jucesp_url,
+        doc_cenprot_url,
+        nire_jucesp,
+        total_protestos,
+        bureau_consulted_at,
+        status,
+        termos_aceitos,
+        observacoes,
+        auth_user_id
+    ) VALUES (
+        COALESCE(client_payload->>'tipo_pessoa', client_payload->>'person_type', 'PJ'),
+        v_clean_doc,
+        COALESCE(client_payload->>'razao_social_nome', client_payload->>'full_name', ''),
+        COALESCE(client_payload->>'nome_fantasia', client_payload->>'trade_name', NULL),
+        COALESCE((client_payload->>'possui_ie')::boolean, (client_payload->>'has_ie')::boolean, false),
+        COALESCE(client_payload->>'numero_ie', client_payload->>'ie_number', NULL),
+        v_clean_phone,
+        COALESCE(client_payload->>'segmento', client_payload->>'segment', ''),
+        COALESCE(client_payload->>'email', ''),
+        v_clean_cep,
+        COALESCE(client_payload->>'logradouro', client_payload->>'street', NULL),
+        COALESCE(client_payload->>'numero', client_payload->>'number', NULL),
+        COALESCE(client_payload->>'bairro', client_payload->>'neighborhood', NULL),
+        COALESCE(client_payload->>'complemento', client_payload->>'complement', NULL),
+        COALESCE(client_payload->>'cidade', client_payload->>'city', NULL),
+        COALESCE(client_payload->>'uf', client_payload->>'state', NULL),
+        COALESCE((client_payload->>'endereco_entrega_diferente')::boolean, (client_payload->>'has_different_delivery_address')::boolean, false),
+        v_clean_del_cep,
+        COALESCE(client_payload->>'entrega_logradouro', client_payload->>'delivery_street', NULL),
+        COALESCE(client_payload->>'entrega_numero', client_payload->>'delivery_number', NULL),
+        COALESCE(client_payload->>'entrega_bairro', client_payload->>'delivery_neighborhood', NULL),
+        COALESCE(client_payload->>'entrega_complemento', client_payload->>'delivery_complement', NULL),
+        COALESCE(client_payload->>'entrega_cidade', client_payload->>'delivery_city', NULL),
+        COALESCE(client_payload->>'entrega_uf', client_payload->>'delivery_state', NULL),
+        COALESCE(client_payload->>'cd_vend', 'ATENA'),
+        COALESCE(client_payload->>'tab_pre', 'VTL01'),
+        COALESCE(client_payload->>'tp_ped', 'VTL01'),
+        COALESCE(client_payload->>'storage_bucket', 'novos_clientes'),
+        client_payload->>'doc_ie_url',
+        COALESCE(client_payload->>'doc_contrato_social_url', client_payload->>'doc_contract_url', NULL),
+        COALESCE(client_payload->>'doc_comprovante_endereco_url', client_payload->>'doc_address_url', NULL),
+        COALESCE(client_payload->>'doc_identificacao_url', client_payload->>'doc_photo_id_url', NULL),
+        client_payload->>'doc_crmv_url',
+        client_payload->>'doc_receita_url',
+        client_payload->>'doc_jucesp_url',
+        client_payload->>'doc_cenprot_url',
+        client_payload->>'nire_jucesp',
+        (client_payload->>'total_protestos')::integer,
+        (client_payload->>'bureau_consulted_at')::timestamptz,
+        COALESCE(client_payload->>'status', 'pendente'),
+        COALESCE((client_payload->>'termos_aceitos')::boolean, (client_payload->>'terms_accepted')::boolean, true),
+        COALESCE(client_payload->>'observacoes', client_payload->>'notes', NULL),
+        v_auth_uuid
+    )
+    RETURNING to_jsonb(novo_cliente.data_new_cliente.*) INTO new_record;
+
+    RETURN new_record;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 9. Concessão de permissões de acesso
 GRANT ALL ON TABLE novo_cliente.data_new_cliente TO authenticated, anon, service_role;
 GRANT SELECT ON novo_cliente.data_new_client TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.get_novo_cliente_clients(TEXT, TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_novo_cliente_by_user_or_email(UUID, TEXT) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.update_novo_cliente(UUID, JSONB) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;
+
+-- 10. Recarrega o cache do PostgREST imediatamente
+NOTIFY pgrst, 'reload schema';
