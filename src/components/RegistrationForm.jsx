@@ -27,6 +27,7 @@ import { TermsModal } from './TermsModal';
 import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
+import { executarAuditoriaBureau } from '../lib/infosimples';
 import { 
   maskCPF, 
   maskCNPJ, 
@@ -501,6 +502,36 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
+      // Se for PJ, dispara automaticamente a consulta no Bureau (Receita, JUCESP, Protestos)
+      let docReceitaUrl = null;
+      let docJucespUrl = null;
+      let docCenprotUrl = null;
+      let nireJucesp = null;
+      let totalProtestos = null;
+      let bureauConsultedAt = null;
+
+      if (personType === 'PJ' && documentNumber) {
+        try {
+          const bureauRes = await executarAuditoriaBureau({
+            cpf_cnpj: documentNumber,
+            razao_social_nome: fullName
+          });
+
+          if (bureauRes.docReceitaUrl) docReceitaUrl = bureauRes.docReceitaUrl;
+          if (bureauRes.docJucespUrl) docJucespUrl = bureauRes.docJucespUrl;
+          if (bureauRes.docCenprotUrl) docCenprotUrl = bureauRes.docCenprotUrl;
+          if (bureauRes.data?.jucesp?.nire) nireJucesp = bureauRes.data.jucesp.nire;
+          if (bureauRes.data?.cenprot?.totalProtests !== undefined && bureauRes.data?.cenprot?.totalProtests !== null) {
+            totalProtestos = bureauRes.data.cenprot.totalProtests;
+          }
+          if (bureauRes.successfulServices && bureauRes.successfulServices.length > 0) {
+            bureauConsultedAt = new Date().toISOString();
+          }
+        } catch (bureauErr) {
+          console.warn('Auditoria automática de bureau:', bureauErr);
+        }
+      }
+
       // Dados estruturados para tabela novo_cliente.data_new_cliente em Português BR
       const payload = {
         tipo_pessoa: personType,
@@ -562,6 +593,12 @@ export const RegistrationForm = ({ onSuccess }) => {
         doc_comprovante_endereco_url: docAddressUrl,
         doc_address_url: docAddressUrl,
         doc_ie_url: null,
+        doc_receita_url: docReceitaUrl,
+        doc_jucesp_url: docJucespUrl,
+        doc_cenprot_url: docCenprotUrl,
+        nire_jucesp: nireJucesp,
+        total_protestos: totalProtestos,
+        bureau_consulted_at: bureauConsultedAt,
         termos_aceitos: true,
         terms_accepted: true,
       };
