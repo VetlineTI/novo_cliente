@@ -71,7 +71,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP Ficha Simplificada e CENPROT Protestos). |
-| `src/lib/directd.js` | Módulo de integração com a API Direct Data (CadastroPessoaJuridicaPlus) para obtenção de dados cadastrais e comprovante. |
+| `src/lib/directd.js` | Módulo de integração com a API Direct Data: `CadastroPessoaJuridicaPlus` e `ProtestosOnline` (IEPTB / CENPROT Nacional com certidão e comprovantes). |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |

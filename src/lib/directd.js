@@ -1,5 +1,7 @@
-// Integração com a API Direct Data (DirectD) - Cadastro Pessoa Jurídica Plus
-// Endpoint Oficial: https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus
+// Integração com a API Direct Data (DirectD)
+// Endpoints Oficiais: 
+// 1. Cadastro PJ Plus: https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus
+// 2. Protestos Online (IEPTB / CENPROT Nacional): https://apiv3.directd.com.br/api/ProtestosOnline
 
 const DIRECTD_TOKEN =
   import.meta.env.VITE_DIRECTD_TOKEN ||
@@ -8,7 +10,7 @@ const DIRECTD_TOKEN =
 const BASE_URL = '/api-directd';
 
 /**
- * Gera um comprovante HTML estilizado com os dados consolidados da Direct Data
+ * Gera um comprovante HTML estilizado com os dados cadastrais da Direct Data
  * @param {Object} retorno Dados da empresa
  * @param {Object} metaDados Metadados da consulta
  * @returns {string} Data URI com HTML formatado
@@ -149,6 +151,133 @@ export const generateDirectDReceiptHtml = (retorno = {}, metaDados = {}) => {
 };
 
 /**
+ * Gera um comprovante / certidão digital estilizado da Consulta de Protestos (IEPTB / CENPROT)
+ * @param {Object} retorno Dados da consulta de protesto
+ * @param {Object} metaDados Metadados da consulta
+ * @param {string} documento Documento consultado
+ * @returns {string} Data URI com HTML formatado
+ */
+export const generateProtestosDirectDHtml = (retorno = {}, metaDados = {}, documento = '') => {
+  const doc = retorno.documentoConsultado || documento || '';
+  const totalProtestos = retorno.numeroTotalProtestos ?? 0;
+  const constamProtestos = retorno.constamProtestos ?? (totalProtestos > 0);
+  const valorTotal = retorno.valorTotalProtestos || 'R$ 0,00';
+  const observacoes = retorno.observacoes || (constamProtestos ? 'Constam protestos registrados' : 'Não constam protestos');
+  const protestosList = Array.isArray(retorno.protestos) ? retorno.protestos : [];
+
+  let cartoriosRows = '';
+  if (protestosList.length > 0) {
+    protestosList.forEach(p => {
+      const uf = p.estado || '-';
+      (p.cartorios || []).forEach(c => {
+        cartoriosRows += `<tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">${uf}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#1e293b;">${c.cidade || '-'}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#b91c1c;">${c.numeroProtestos || 0}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${c.valorTotalProtestosCartorio || 'R$ 0,00'}</td>
+        </tr>`;
+      });
+    });
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Certidão de Protestos - IEPTB / CENPROT - ${doc}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; font-size: 12px; }
+    .card { max-width: 820px; margin: 0 auto; background: #ffffff; border: 2px solid #0f172a; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
+    .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+    .title { font-size: 15px; font-weight: bold; color: #0f172a; text-transform: uppercase; margin: 0; }
+    .subtitle { font-size: 11px; color: #475569; margin-top: 4px; }
+    .status-box { padding: 16px; border-radius: 8px; text-align: center; margin: 16px 0; }
+    .status-ok { background: #dcfce7; border: 2px solid #16a34a; color: #166534; }
+    .status-warning { background: #fee2e2; border: 2px solid #dc2626; color: #991b1b; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; margin-top: 12px; }
+    .box { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; background: #ffffff; }
+    .label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; display: block; margin-bottom: 2px; }
+    .val { font-size: 12px; font-weight: 600; color: #0f172a; }
+    .col-12 { grid-column: span 12; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { background: #f1f5f9; padding: 8px 10px; border: 1px solid #cbd5e1; font-size: 10px; text-align: left; color: #475569; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">Central Nacional de Serviços dos Cartórios de Protesto (IEPTB / CENPROT)</div>
+      <div class="subtitle">Consulta Unificada de Títulos Protestados em Todo o Território Nacional • UID: ${metaDados.consultaUid || '-'}</div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-6">
+        <span class="label">Documento Consultado</span>
+        <span class="val" style="font-size: 13px;">${doc}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">Data / Hora da Consulta</span>
+        <span class="val">${metaDados.data || new Date().toLocaleString('pt-BR')}</span>
+      </div>
+    </div>
+
+    <div class="status-box ${constamProtestos ? 'status-warning' : 'status-ok'}">
+      <div style="font-size: 16px; font-weight: bold; margin-bottom: 4px;">
+        ${constamProtestos ? `⚠ CONSTAM ${totalProtestos} PROTESTO(S) ATIVO(S)` : '✓ NADA CONSTA (0 PROTESTOS)'}
+      </div>
+      <div style="font-size: 12px;">
+        ${constamProtestos ? `Valor Total de Títulos Protestados: ${valorTotal}` : 'Não foram localizados registros de protestos ativos para este documento nos cartórios consultados.'}
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-4">
+        <span class="label">Total de Protestos</span>
+        <span class="val" style="color: ${constamProtestos ? '#dc2626' : '#16a34a'};">${totalProtestos}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Valor Total</span>
+        <span class="val">${valorTotal}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Situação</span>
+        <span class="val">${observacoes}</span>
+      </div>
+    </div>
+
+    ${cartoriosRows ? `
+      <div style="margin-top: 16px;">
+        <span class="label" style="font-size: 11px; margin-bottom: 6px;">Detalhamento por Estado e Cartório:</span>
+        <table>
+          <thead>
+            <tr>
+              <th>UF</th>
+              <th>Cidade / Comarca</th>
+              <th style="text-align: center;">Qtd Protestos</th>
+              <th style="text-align: right;">Valor no Cartório</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${cartoriosRows}
+          </tbody>
+        </table>
+      </div>
+    ` : ''}
+
+    <div style="margin-top:20px;text-align:center;font-size:10px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:8px;">
+      Consulta oficial processada via Direct Data / Base IEPTB Nacional • Validação do Sistema Vetline em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+};
+
+/**
  * Consulta de Pessoa Jurídica na Direct Data (CadastroPessoaJuridicaPlus)
  * @param {string} cnpj CNPJ para consulta
  * @returns {Promise<Object>} Resultado padronizado
@@ -206,6 +335,70 @@ export const consultarDirectDataPJ = async (cnpj) => {
     return {
       success: false,
       error: `Erro ao conectar com Direct Data: ${err.message || 'Erro inesperado'}`
+    };
+  }
+};
+
+/**
+ * Consulta de Protestos no IEPTB / CENPROT Nacional via Direct Data (ProtestosOnline)
+ * @param {string} documento CPF ou CNPJ
+ * @returns {Promise<Object>} Resultado padronizado
+ */
+export const consultarDirectDataProtestos = async (documento) => {
+  const cleanDoc = String(documento || '').replace(/\D/g, '');
+  if (!cleanDoc || (cleanDoc.length !== 11 && cleanDoc.length !== 14)) {
+    return { success: false, error: 'Documento inválido para consulta de protestos.' };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (cleanDoc.length === 14) {
+      params.append('CNPJ', cleanDoc);
+    } else {
+      params.append('CPF', cleanDoc);
+    }
+    params.append('TOKEN', DIRECTD_TOKEN);
+    params.append('gerarComprovante', 'true');
+
+    const response = await fetch(`${BASE_URL}/ProtestosOnline?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Vetline-App/1.0'
+      }
+    });
+
+    const result = await response.json();
+    const meta = result.metaDados || {};
+    const retorno = result.retorno || {};
+
+    if (response.ok && meta.resultadoId === 1 && retorno) {
+      const totalProtests = retorno.numeroTotalProtestos ?? 0;
+      const receiptUrl = meta.urlComprovante || generateProtestosDirectDHtml(retorno, meta, cleanDoc);
+
+      return {
+        success: true,
+        totalProtests,
+        valorTotalProtestos: retorno.valorTotalProtestos || 'R$ 0,00',
+        constamProtestos: retorno.constamProtestos ?? (totalProtests > 0),
+        observacoes: retorno.observacoes || (totalProtests === 0 ? 'Não constam protestos' : 'Constam protestos'),
+        data: retorno,
+        metaDados: meta,
+        receiptUrl,
+        raw: result
+      };
+    }
+
+    return {
+      success: false,
+      code: meta.resultadoId || response.status,
+      error: meta.mensagem || meta.resultado || 'Falha na consulta de protestos Direct Data',
+      raw: result
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Erro ao conectar com API de Protestos: ${err.message || 'Erro inesperado'}`
     };
   }
 };

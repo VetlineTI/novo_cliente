@@ -262,19 +262,42 @@ export const consultarReceitaCNPJ = async (cnpj) => {
   };
 };
 
+import { consultarDirectDataPJ, consultarDirectDataProtestos } from './directd';
+
 /**
- * Consulta de Protestos no CENPROT-SP / IEPTB
+ * Consulta de Protestos em Cartórios (IEPTB / CENPROT Nacional)
+ * Fonte Principal: Direct Data (ProtestosOnline) com fallback para Infosimples
  */
 export const consultarProtestosCenprot = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
-  if (!cleanCnpj || cleanCnpj.length !== 14) {
-    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
+  if (!cleanCnpj || (cleanCnpj.length !== 14 && cleanCnpj.length !== 11)) {
+    return { success: false, error: 'Documento inválido para consulta de protestos.' };
+  }
+
+  // 1. Consulta Principal Oficial via Direct Data (ProtestosOnline - IEPTB Nacional)
+  try {
+    const directRes = await consultarDirectDataProtestos(cleanCnpj);
+    if (directRes.success) {
+      return {
+        success: true,
+        source: 'directd',
+        totalProtests: directRes.totalProtests,
+        valorTotalProtestos: directRes.valorTotalProtestos,
+        constamProtestos: directRes.constamProtestos,
+        data: directRes.data,
+        receiptUrl: directRes.receiptUrl,
+        raw: directRes.raw
+      };
+    }
+    console.warn('Tentando fallback de protestos:', directRes.error);
+  } catch (dErr) {
+    console.warn('Erro na consulta de protestos Direct Data:', dErr);
   }
 
   let lastError = null;
   let lastCode = null;
 
-  // 1. Tenta CENPROT-SP Oficial (Cartórios de Protesto de SP)
+  // 2. Fallback: CENPROT-SP Oficial (Infosimples)
   try {
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
@@ -297,6 +320,7 @@ export const consultarProtestosCenprot = async (cnpj) => {
         const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : (Array.isArray(result.data) && result.data.length === 0 ? 0 : 0));
         return {
           success: true,
+          source: 'infosimples',
           totalProtests,
           data: dataItem,
           receiptUrl,
@@ -307,11 +331,11 @@ export const consultarProtestosCenprot = async (cnpj) => {
       lastError = result.code_message || (result.errors && result.errors[0]) || null;
     }
   } catch (err) {
-    console.warn('Erro na consulta CENPROT-SP:', err);
+    console.warn('Erro no fallback CENPROT-SP:', err);
     lastError = err.message;
   }
 
-  // 2. Fallback: IEPTB Nacional (Central Nacional de Protestos)
+  // 3. Fallback: IEPTB Nacional (Infosimples)
   try {
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
@@ -334,6 +358,7 @@ export const consultarProtestosCenprot = async (cnpj) => {
         const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : (Array.isArray(result.data) && result.data.length === 0 ? 0 : 0));
         return {
           success: true,
+          source: 'infosimples',
           totalProtests,
           data: dataItem,
           receiptUrl,
@@ -351,11 +376,9 @@ export const consultarProtestosCenprot = async (cnpj) => {
   return {
     success: false,
     code: lastCode,
-    error: lastError || 'Central de Protestos (CENPROT/IEPTB) temporariamente instável na fonte de origem.'
+    error: lastError || 'Central de Protestos (IEPTB / CENPROT) temporariamente indisponível na fonte de origem.'
   };
 };
-
-import { consultarDirectDataPJ } from './directd';
 
 /**
  * Consulta Cadastral PJ / JUCESP
