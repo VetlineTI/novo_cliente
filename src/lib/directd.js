@@ -559,7 +559,7 @@ export const consultarDirectDataSintegra = async (cnpj, uf = 'SP') => {
       const ie = retorno.ie || null;
       const situacaoCadastral = retorno.situacaoCadastral || 'Habilitado';
       const situacaoCNPJ = retorno.situacaoCNPJ || 'Sem restrição';
-      const isHabilitado = String(situacaoCadastral).trim().toLowerCase() === 'habilitado';
+      const isHabilitado = ['habilitado', 'ativo', 'ativa'].includes(String(situacaoCadastral).trim().toLowerCase());
       const receiptUrl = meta.urlComprovante || generateSintegraDirectDHtml(retorno, meta, cleanCnpj);
 
       return {

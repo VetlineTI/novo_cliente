@@ -548,21 +548,22 @@ export const RegistrationForm = ({ onSuccess }) => {
           sintegraRes = await consultarSintegra(cleanCnpj, ufState);
         }
 
+        const sitClean = String(sintegraRes?.situacaoCadastral || '').trim().toLowerCase();
         const isHabilitado = Boolean(
           sintegraRes &&
           sintegraRes.success &&
-          String(sintegraRes.situacaoCadastral || '').trim().toLowerCase() === 'habilitado'
+          ['habilitado', 'ativo', 'ativa'].includes(sitClean)
         );
 
         if (!isHabilitado) {
           const sitDesc = sintegraRes?.situacaoCadastral || sintegraRes?.error || 'Não Habilitado';
           setPartnerMismatchData({
             title: 'Cadastro Impedido - SINTEGRA',
-            subtitle: 'Situação Cadastral no SINTEGRA diferente de "Habilitado"',
+            subtitle: 'Situação Cadastral Estadual Não Habilitada / Ativa',
             reasons: [
               `Situação Cadastral no SINTEGRA: "${sitDesc}".`,
-              'O cadastro como Pessoa Jurídica (PJ) só é permitido quando a Situação Cadastral no SINTEGRA constar estritamente como "Habilitado".',
-              `Qualquer situação diferente de "Habilitado" impede a conclusão do cadastro no estado de ${sintegraRes?.uf || ufState}.`
+              'O cadastro como Pessoa Jurídica (PJ) exige que a Situação Cadastral no SINTEGRA conste como "Habilitado" ou "Ativo".',
+              `A situação atual ("${sitDesc}") impede a conclusão do cadastro no estado de ${sintegraRes?.uf || ufState}.`
             ],
             authorizedPartners: [],
             buttonText: 'Revisar Dados do Formulário'
