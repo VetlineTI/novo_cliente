@@ -271,6 +271,7 @@ export const consultarProtestosCenprot = async (cnpj) => {
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
+  // 1. Tenta CENPROT-SP
   try {
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
@@ -285,7 +286,7 @@ export const consultarProtestosCenprot = async (cnpj) => {
 
     if (response.ok || response.status === 400 || response.status === 422) {
       const result = await response.json();
-      if (result.code === 200 && result.data) {
+      if (result.code === 200 && result.data && result.data.length > 0) {
         const dataItem = result.data[0] || {};
         const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
         const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : 0);
@@ -298,15 +299,45 @@ export const consultarProtestosCenprot = async (cnpj) => {
         };
       }
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn('Erro na consulta CENPROT-SP:', err);
+  }
 
-  // Se o serviço de protestos estiver temporariamente pausado, não quebra a esteira
+  // 2. Fallback: IEPTB Nacional
+  try {
+    const params = new URLSearchParams();
+    params.append('token', INFOSIMPLES_TOKEN);
+    params.append('cnpj', cleanCnpj);
+    params.append('timeout', '120');
+
+    const response = await fetch(`${BASE_URL}/ieptb/protestos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    if (response.ok || response.status === 400 || response.status === 422) {
+      const result = await response.json();
+      if (result.code === 200 && result.data && result.data.length > 0) {
+        const dataItem = result.data[0] || {};
+        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
+        const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : 0);
+        return {
+          success: true,
+          totalProtests,
+          data: dataItem,
+          receiptUrl,
+          raw: result
+        };
+      }
+    }
+  } catch (ieptbErr) {
+    console.warn('Erro no fallback IEPTB:', ieptbErr);
+  }
+
   return {
-    success: true,
-    skipped: true,
-    totalProtests: 0,
-    receiptUrl: null,
-    notes: 'Central de Protestos temporariamente indisponível'
+    success: false,
+    error: 'Central de Protestos (CENPROT/IEPTB) temporariamente instável na fonte de origem.'
   };
 };
 
