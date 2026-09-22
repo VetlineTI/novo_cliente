@@ -18,14 +18,15 @@ export const consultarReceitaCNPJ = async (cnpj) => {
   }
 
   try {
+    const params = new URLSearchParams();
+    params.append('token', INFOSIMPLES_TOKEN);
+    params.append('cnpj', cleanCnpj);
+    params.append('timeout', '120');
+
     const response = await fetch(`${BASE_URL}/receita-federal/cnpj`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: INFOSIMPLES_TOKEN,
-        cnpj: cleanCnpj,
-        timeout: 120
-      })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
     });
 
     if (!response.ok && response.status !== 400 && response.status !== 422) {
@@ -78,14 +79,15 @@ export const consultarProtestosCenprot = async (cnpj) => {
   }
 
   try {
+    const params = new URLSearchParams();
+    params.append('token', INFOSIMPLES_TOKEN);
+    params.append('cnpj', cleanCnpj);
+    params.append('timeout', '120');
+
     const response = await fetch(`${BASE_URL}/cenprot-sp/protestos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: INFOSIMPLES_TOKEN,
-        cnpj: cleanCnpj,
-        timeout: 120
-      })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
     });
 
     if (!response.ok && response.status !== 400 && response.status !== 422) {
@@ -134,16 +136,17 @@ export const consultarJucespOpcional = async (cnpj, options = {}) => {
 
   try {
     const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+    const params = new URLSearchParams();
+    params.append('token', INFOSIMPLES_TOKEN);
+    params.append('cnpj', cleanCnpj);
+    params.append('login_cpf', loginCpf);
+    params.append('login_senha', loginSenha);
+    params.append('timeout', '180');
+
     const response = await fetch(`${BASE_URL}/junta-comercial/sp/completa`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: INFOSIMPLES_TOKEN,
-        cnpj: cleanCnpj,
-        login_cpf: loginCpf,
-        login_senha: loginSenha,
-        timeout: 180
-      })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
     });
 
     const result = await response.json();

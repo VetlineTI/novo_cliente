@@ -168,6 +168,11 @@ export const ClientDetailModal = ({
           type: 'success',
           message: '✓ Auditoria concluída! Cartão CNPJ (Receita Federal) e Consulta de Protestos (CENPROT) foram consultados e anexados com sucesso.'
         });
+      } else if (res.receitaDetails && res.docReceitaUrl) {
+        setBureauFeedback({
+          type: 'success',
+          message: '✓ Receita Federal Oficial consultada com sucesso! Cartão CNPJ, Quadro de Sócios e Capital Social anexados.'
+        });
       } else if (res.isPartial) {
         const succList = (res.successfulServices || []).join(', ');
         const failList = (res.failedServices || []).map(f => `${f.service} (${f.error})`).join('; ');
@@ -191,8 +196,7 @@ export const ClientDetailModal = ({
       }
 
       if (res.successfulServices && res.successfulServices.length > 0 && onUpdateClient) {
-        onUpdateClient({
-          ...client,
+        await onUpdateClient(client.id, {
           doc_receita_url: res.docReceitaUrl || client.doc_receita_url,
           doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
           doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
