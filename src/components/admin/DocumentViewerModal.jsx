@@ -39,12 +39,17 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
   const { title, url, fileName, type, verificationBadge, category, notes } = activeDoc;
 
   const isPdf = fileName?.toLowerCase().endsWith('.pdf') || url?.toLowerCase().includes('.pdf') || type === 'pdf';
-  const isImage = !isPdf && (
-    fileName?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif)$/) ||
+  const isHtml = !isPdf && (
+    fileName?.toLowerCase().endsWith('.html') || 
+    url?.toLowerCase().includes('.html') || 
+    type === 'html'
+  );
+  const isImage = !isPdf && !isHtml && (
+    fileName?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|svg)$/) ||
     url?.startsWith('data:image') ||
     url?.includes('photo-') ||
     type === 'image' ||
-    true // Padrão se não for PDF
+    true // Padrão se não for PDF nem HTML
   );
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
@@ -162,12 +167,15 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
         {/* Área Central de Visualização */}
         <div className="flex-1 bg-slate-950 flex items-center justify-center overflow-auto p-4 relative select-none">
           {url ? (
-            isPdf ? (
-              <iframe
-                src={`${url}#toolbar=1&navpanes=0`}
-                title={title || 'Documento PDF'}
-                className="w-full h-full rounded-lg border border-slate-800 bg-white"
-              />
+            isPdf || isHtml ? (
+              <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
+                <iframe
+                  src={isPdf ? `${url}#toolbar=1&navpanes=0` : url}
+                  title={title || 'Documento'}
+                  sandbox={isHtml ? "allow-same-origin allow-popups" : undefined}
+                  className="w-full flex-1 border-0 bg-white"
+                />
+              </div>
             ) : (
               <div className="flex items-center justify-center min-w-full min-h-full transition-transform duration-200">
                 <img

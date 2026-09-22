@@ -61,23 +61,29 @@ export const consultarReceitaCNPJ = async (cnpj) => {
 
 /**
  * Consulta NIRE e dados básicos da empresa na JUCESP (Junta Comercial de SP)
- * (Consulta pública - não exige login Gov.br)
+ * (Consulta pública com validação estrita de correspondência de Razão Social)
  */
-export const consultarJucespNire = async (cnpj) => {
+export const consultarJucespNire = async (cnpj, companyName = '') => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || cleanCnpj.length !== 14) {
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
   try {
+    const payload = {
+      token: INFOSIMPLES_TOKEN,
+      cnpj: cleanCnpj,
+      timeout: 120
+    };
+
+    if (companyName && companyName.trim()) {
+      payload.nome = companyName.trim();
+    }
+
     const response = await fetch(`${BASE_URL}/junta-comercial/sp/nire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: INFOSIMPLES_TOKEN,
-        cnpj: cleanCnpj,
-        timeout: 120
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok && response.status !== 400 && response.status !== 422) {
@@ -88,14 +94,40 @@ export const consultarJucespNire = async (cnpj) => {
     }
 
     const result = await response.json();
-    if (result.code === 200 && result.data && result.data.length > 0) {
-      const dataItem = result.data[0];
-      const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
+    if (result.code === 200 && result.data && Array.isArray(result.data) && result.data.length > 0) {
+      // Valida se algum registro realmente corresponde à empresa consultada
+      let matchedItem = null;
+      
+      if (companyName && companyName.trim()) {
+        const cleanSearchName = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        matchedItem = result.data.find(item => {
+          if (!item.nome) return false;
+          const cleanItemName = item.nome.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cleanItemName.includes(cleanSearchName) || cleanSearchName.includes(cleanItemName);
+        });
+      }
+
+      // Se só houver 1 resultado retornado ou se encontrou correspondência exata
+      if (!matchedItem && result.data.length === 1 && result.data[0].nire) {
+        matchedItem = result.data[0];
+      }
+
+      if (matchedItem) {
+        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || matchedItem.site_receipt || null;
+        return {
+          success: true,
+          nire: matchedItem.nire || matchedItem.numero_nire || null,
+          data: matchedItem,
+          receiptUrl,
+          raw: result
+        };
+      }
+
+      // Se a JUCESP retornou a lista genérica sem correspondência
       return {
-        success: true,
-        nire: dataItem.nire || dataItem.numero_nire || null,
-        data: dataItem,
-        receiptUrl,
+        success: false,
+        code: 404,
+        error: 'Empresa não localizada na busca pública da JUCESP. O portal estadual exige login Gov.br para emissão da Ficha Cadastral Oficial.',
         raw: result
       };
     }
@@ -278,7 +310,8 @@ export const executarAuditoriaBureau = async (client) => {
 
   // 2. Consulta JUCESP
   try {
-    results.jucesp = await consultarJucespNire(cleanDoc);
+    const companyName = client.razao_social_nome || client.full_name || results.receita?.data?.razao_social || '';
+    results.jucesp = await consultarJucespNire(cleanDoc, companyName);
   } catch (e) {
     results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
   }
