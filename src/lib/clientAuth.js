@@ -248,6 +248,25 @@ export const registerClientWithAuth = async (clientData, password) => {
     ...payloadToSave
   };
 
+  // Garante a persistência dos documentos de Bureau (JUCESP/CENPROT) na tabela do banco
+  if (savedClient.id && (clientData.doc_jucesp_url || clientData.doc_cenprot_url || clientData.nire_jucesp || clientData.total_protestos !== undefined)) {
+    try {
+      await updateClientData(savedClient.id, {
+        doc_jucesp_url: clientData.doc_jucesp_url,
+        doc_cenprot_url: clientData.doc_cenprot_url,
+        nire_jucesp: clientData.nire_jucesp,
+        total_protestos: clientData.total_protestos,
+        bureau_consulted_at: clientData.bureau_consulted_at || new Date().toISOString()
+      });
+      if (clientData.doc_jucesp_url) savedClient.doc_jucesp_url = clientData.doc_jucesp_url;
+      if (clientData.doc_cenprot_url) savedClient.doc_cenprot_url = clientData.doc_cenprot_url;
+      if (clientData.nire_jucesp) savedClient.nire_jucesp = clientData.nire_jucesp;
+      if (clientData.total_protestos !== undefined) savedClient.total_protestos = clientData.total_protestos;
+    } catch (bureauSyncErr) {
+      console.warn('Sincronização de bureau pós-cadastro:', bureauSyncErr);
+    }
+  }
+
   // Salva no registro local de contas para contingência/fallback
   try {
     const rawAccs = localStorage.getItem(CLIENT_ACCOUNTS_LOCAL_KEY) || '[]';
