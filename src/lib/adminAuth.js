@@ -148,13 +148,6 @@ export const loginAdmin = async (email, password, rememberMe = true) => {
         storage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(userSession));
 
         return { success: true, user: userSession };
-      } else if (authError) {
-        if (authError.message?.includes('Email not confirmed')) {
-          return {
-            success: false,
-            error: 'E-mail não confirmado no Supabase. Confirme o cadastro ou desative a confirmação de e-mail no painel do Supabase.'
-          };
-        }
       }
     } catch (err) {}
   }

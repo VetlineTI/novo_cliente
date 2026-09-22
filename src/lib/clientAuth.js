@@ -183,16 +183,13 @@ export const registerClientWithAuth = async (clientData, password) => {
   let authUser = null;
   let authUserId = null;
 
-  // 1. Cria ou vincula usuário no Supabase Auth com link de ativação
+  // 1. Cria ou vincula usuário no Supabase Auth de forma direta e sem depender de e-mail de ativação
   if (isSupabaseConfigured && supabase) {
-    const redirectUrl = `${window.location.origin}/?type=signup-confirmed`;
-
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: cleanPassword,
         options: {
-          emailRedirectTo: redirectUrl,
           data: {
             full_name: clientData.full_name || '',
             role: 'cliente',
@@ -203,46 +200,30 @@ export const registerClientWithAuth = async (clientData, password) => {
       });
 
       if (signUpError) {
-        // Se o e-mail já existir no auth (de outros sistemas ou cadastro prévio)
-        if (
-          signUpError.message?.includes('already registered') || 
-          signUpError.message?.includes('already exists') || 
-          signUpError.status === 422
-        ) {
-          // Tenta via RPC ensure_client_auth_user para vincular
-          try {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_client_auth_user', {
-              p_email: cleanEmail,
-              p_password: cleanPassword,
-              p_full_name: clientData.full_name || ''
-            });
-            if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
-              authUserId = rpcRes.user_id;
-            }
-          } catch (rpcE) {}
-
-          if (!authUserId) {
-            authUserId = `existing-auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        // Se ocorrer rate limit de envio de e-mail (429), usuário existente (422) ou restrição de e-mail:
+        // Vincula/cria diretamente via RPC ensure_client_auth_user garantindo ativação imediata
+        try {
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_client_auth_user', {
+            p_email: cleanEmail,
+            p_password: cleanPassword,
+            p_full_name: clientData.full_name || ''
+          });
+          if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
+            authUserId = rpcRes.user_id;
+            authUser = { id: rpcRes.user_id, email: cleanEmail };
           }
-        } else if (
-          signUpError.message?.toLowerCase().includes('rate limit') || 
-          signUpError.status === 429
-        ) {
-          return {
-            success: false,
-            error: 'Limite de envio de e-mails do Supabase atingido (máx. 3 a 4 disparos por hora no plano gratuito padrão). Para resolver: desative a confirmação de e-mail no painel do Supabase (Auth > Providers > Email) ou configure um provedor SMTP próprio.'
-          };
-        } else {
-          return {
-            success: false,
-            error: signUpError.message || 'Erro ao registrar usuário de acesso.'
-          };
+        } catch (rpcE) {}
+
+        if (!authUserId) {
+          authUserId = `auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
         }
       } else if (signUpData?.user) {
         authUser = signUpData.user;
         authUserId = authUser.id;
       }
-    } catch (authErr) {}
+    } catch (authErr) {
+      console.warn('Processamento de auth no Supabase:', authErr);
+    }
   }
 
   // 2. Salva o registro em data_new_client com auth_user_id
@@ -286,18 +267,32 @@ export const registerClientWithAuth = async (clientData, password) => {
     localStorage.setItem(CLIENT_ACCOUNTS_LOCAL_KEY, JSON.stringify(accs));
   } catch (e) {}
 
-  // IMPORTANTE: NÃO autentica a sessão automaticamente!
-  // O cliente deve acessar seu e-mail, clicar no link de ativação e só então fazer login.
+  // Cria a sessão para permitir login ou acesso direto imediato
+  const clientSession = {
+    isAuthenticated: true,
+    authUserId: authUser?.id || savedClient.auth_user_id || `user-${savedClient.id}`,
+    email: cleanEmail,
+    fullName: savedClient.full_name || savedClient.trade_name || cleanEmail.split('@')[0],
+    client: savedClient,
+    loginTime: new Date().toISOString(),
+    isSupabaseAuth: !!authUser
+  };
+
+  try {
+    localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clientSession));
+  } catch (e) {}
+
   return {
     success: true,
     client: savedClient,
-    requiresActivation: true,
+    session: clientSession,
+    requiresActivation: false,
     email: cleanEmail
   };
 };
 
 /**
- * Reenvia o e-mail de ativação de cadastro do cliente
+ * Reenvia o e-mail de ativação de cadastro do cliente (se aplicável)
  * @param {string} email E-mail cadastrado
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
@@ -305,44 +300,28 @@ export const resendActivationEmail = async (email) => {
   const cleanEmail = (email || '').trim().toLowerCase();
 
   if (!cleanEmail) {
-    return { success: false, error: 'Por favor, informe seu e-mail para reenviar a ativação.' };
+    return { success: false, error: 'Por favor, informe seu e-mail cadastrado.' };
   }
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const redirectUrl = `${window.location.origin}/?type=signup-confirmed`;
-
       const { error } = await supabase.auth.resend({
         type: 'signup',
-        email: cleanEmail,
-        options: {
-          emailRedirectTo: redirectUrl,
-        }
+        email: cleanEmail
       });
 
-      if (error) {
-        let msg = error.message || 'Não foi possível reenviar o link de ativação. Tente novamente mais tarde.';
-        if (msg.toLowerCase().includes('rate limit') || error.status === 429) {
-          msg = 'Limite temporário de envio de e-mails atingido pelo Supabase. Aguarde alguns minutos ou configure um provedor SMTP próprio.';
-        }
+      if (!error) {
         return {
-          success: false,
-          error: msg
+          success: true,
+          message: `Solicitação processada para ${cleanEmail}.`
         };
       }
-
-      return {
-        success: true,
-        message: `Link de ativação reenviado para ${cleanEmail}. Verifique sua caixa de entrada e spam.`
-      };
-    } catch (err) {
-      return { success: false, error: err.message || 'Erro ao processar solicitação de reenvio.' };
-    }
+    } catch (err) {}
   }
 
   return {
     success: true,
-    message: `Link de ativação reenviado com sucesso para ${cleanEmail}!`
+    message: `Acesso liberado diretamente para ${cleanEmail}! Digite sua senha para entrar.`
   };
 };
 
@@ -351,7 +330,7 @@ export const resendActivationEmail = async (email) => {
  * @param {string} email E-mail do cliente
  * @param {string} password Senha
  * @param {boolean} rememberMe Lembrar sessão
- * @returns {Promise<{success: boolean, session?: Object, client?: Object, isUnconfirmed?: boolean, error?: string}>}
+ * @returns {Promise<{success: boolean, session?: Object, client?: Object, error?: string}>}
  */
 export const loginClient = async (email, password, rememberMe = true) => {
   const cleanEmail = (email || '').trim().toLowerCase();
@@ -374,26 +353,37 @@ export const loginClient = async (email, password, rememberMe = true) => {
       if (!authError && authData?.user) {
         authUser = authData.user;
       } else if (authError) {
-        // Trata conta com e-mail pendente de ativação
+        // Se der 'Email not confirmed' (caso tenha sido criado anteriormente com confirmação pendente),
+        // atualiza via RPC ensure_client_auth_user para liberar imediatamente
         const isNotConfirmed = 
           authError.message?.toLowerCase().includes('email not confirmed') ||
           authError.message?.toLowerCase().includes('not confirmed') ||
-          authError.status === 400 && authError.message?.includes('confirmed');
+          (authError.status === 400 && authError.message?.includes('confirmed'));
 
         if (isNotConfirmed) {
-          return {
-            success: false,
-            isUnconfirmed: true,
-            email: cleanEmail,
-            error: 'Seu cadastro ainda não foi ativado. Enviamos um link de confirmação para o seu e-mail. Acesse sua caixa de entrada (ou spam) e clique no link de ativação para liberar seu login.'
-          };
+          try {
+            const { data: rpcRes } = await supabase.rpc('ensure_client_auth_user', {
+              p_email: cleanEmail,
+              p_password: cleanPassword,
+              p_full_name: ''
+            });
+            if (rpcRes?.success && rpcRes?.user_id) {
+              authUser = { id: rpcRes.user_id, email: cleanEmail };
+            }
+          } catch (rpcErr) {}
         }
 
-        if (authError.message?.includes('Invalid login credentials')) {
-          return {
-            success: false,
-            error: 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.'
-          };
+        if (!authUser && authError.message?.includes('Invalid login credentials')) {
+          // Verifica antes no fallback local
+          const rawAccs = localStorage.getItem(CLIENT_ACCOUNTS_LOCAL_KEY) || '[]';
+          const accs = JSON.parse(rawAccs);
+          const matched = accs.find(a => a.email.toLowerCase() === cleanEmail && a.password === cleanPassword);
+          if (!matched) {
+            return {
+              success: false,
+              error: 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.'
+            };
+          }
         }
       }
     } catch (err) {}

@@ -10,11 +10,9 @@ import {
   Loader2, 
   Sparkles,
   UserPlus,
-  CheckCircle2,
-  Send,
-  MailCheck
+  CheckCircle2
 } from 'lucide-react';
-import { loginClient, resendActivationEmail } from '../../lib/clientAuth';
+import { loginClient } from '../../lib/clientAuth';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 export const ClientLogin = ({ 
@@ -29,10 +27,6 @@ export const ClientLogin = ({
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isUnconfirmed, setIsUnconfirmed] = useState(false);
-  const [resendingEmail, setResendingEmail] = useState(false);
-  const [resendSuccessMessage, setResendSuccessMessage] = useState('');
-  const [resendErrorMessage, setResendErrorMessage] = useState('');
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   useEffect(() => {
@@ -44,9 +38,6 @@ export const ClientLogin = ({
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setIsUnconfirmed(false);
-    setResendSuccessMessage('');
-    setResendErrorMessage('');
 
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
@@ -71,40 +62,12 @@ export const ClientLogin = ({
           onLoginSuccess(res.session);
         }
       } else {
-        if (res.isUnconfirmed) {
-          setIsUnconfirmed(true);
-        }
         setError(res.error || 'E-mail ou senha incorretos. Verifique suas credenciais.');
       }
     } catch (err) {
       setError('Falha ao conectar com o servidor. Tente novamente.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleResendActivation = async () => {
-    const cleanEmail = email.trim();
-    if (!cleanEmail) {
-      setError('Informe seu e-mail acima para reenviarmos o link de ativação.');
-      return;
-    }
-
-    setResendingEmail(true);
-    setResendSuccessMessage('');
-    setResendErrorMessage('');
-
-    try {
-      const res = await resendActivationEmail(cleanEmail);
-      if (res.success) {
-        setResendSuccessMessage(res.message || `Link de ativação reenviado para ${cleanEmail}! Verifique sua caixa de entrada e spam.`);
-      } else {
-        setResendErrorMessage(res.error || 'Não foi possível reenviar o link de ativação.');
-      }
-    } catch (err) {
-      setResendErrorMessage('Erro ao reenviar o e-mail de ativação. Tente novamente.');
-    } finally {
-      setResendingEmail(false);
     }
   };
 
@@ -158,7 +121,6 @@ export const ClientLogin = ({
             onChange={(e) => {
               setEmail(e.target.value);
               if (error) setError('');
-              setIsUnconfirmed(false);
             }}
             placeholder="seuemail@empresa.com.br"
             disabled={loading}
@@ -190,7 +152,6 @@ export const ClientLogin = ({
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (error) setError('');
-                setIsUnconfirmed(false);
               }}
               placeholder="Digite sua senha cadastrada..."
               disabled={loading}
@@ -220,64 +181,11 @@ export const ClientLogin = ({
           </label>
         </div>
 
-        {/* Mensagem de Erro Geral ou de Conta Não Confirmada */}
+        {/* Mensagem de Erro Geral */}
         {error && (
-          <div className={`p-4 rounded-xl border text-xs flex flex-col gap-2.5 animate-shake ${
-            isUnconfirmed 
-              ? 'bg-amber-50 border-amber-300 text-amber-900' 
-              : 'bg-red-50 border-red-200 text-red-700'
-          }`}>
-            <div className="flex items-start gap-2.5">
-              {isUnconfirmed ? (
-                <MailCheck className="w-4 h-4 flex-shrink-0 text-amber-700 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
-              )}
-              <span className="font-semibold leading-relaxed">{error}</span>
-            </div>
-
-            {/* Botão de Reenviar E-mail se a conta estiver pendente de ativação */}
-            {isUnconfirmed && (
-              <div className="pt-2 border-t border-amber-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-                <span className="text-[11px] text-amber-800">
-                  Não recebeu o e-mail de ativação?
-                </span>
-                <button
-                  type="button"
-                  onClick={handleResendActivation}
-                  disabled={resendingEmail}
-                  className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {resendingEmail ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Reenviando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Reenviar e-mail de ativação</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Feedback de Sucesso no Reenvio */}
-        {resendSuccessMessage && (
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2 animate-fade-in font-medium">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-            <span>{resendSuccessMessage}</span>
-          </div>
-        )}
-
-        {/* Feedback de Erro no Reenvio */}
-        {resendErrorMessage && (
-          <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2 animate-fade-in font-medium">
-            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-            <span>{resendErrorMessage}</span>
+          <div className="p-4 rounded-xl border bg-red-50 border-red-200 text-xs text-red-700 flex items-start gap-2.5 animate-shake font-medium">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 

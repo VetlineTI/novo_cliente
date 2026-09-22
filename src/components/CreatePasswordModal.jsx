@@ -112,7 +112,7 @@ export const CreatePasswordModal = ({
               Acesso à Área do Cliente
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Confirme seu <strong>e-mail de login</strong> e defina sua <strong>senha</strong>. Um link de ativação será enviado para este e-mail para liberar seu acesso.
+              Confirme seu <strong>e-mail de login</strong> e crie sua <strong>senha de acesso</strong>. Você poderá acompanhar o status do credenciamento e gerenciar seus dados a qualquer momento.
             </p>
           </div>
         </div>

@@ -11,13 +11,12 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
   - **Aba "Já sou cliente"**: Formulário de login direto com e-mail e senha cadastrados no Supabase Auth, permitindo acesso imediato à Área do Cliente.
   - **Aba "Ainda não sou"**: Formulário completo de credenciamento e apresentação institucional da Vetline.
 
-### 2. 🛡️ Confirmação de E-mail & Ativação de Conta no Supabase Auth
+### 2. 🛡️ Criação de Senha & Acesso Imediato à Área do Cliente
 - Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
 - O usuário confirma o **e-mail para login** e define sua **senha de acesso**.
-- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com `emailRedirectTo: `${window.location.origin}/?type=signup-confirmed`` e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
-- **Ativação Obrigatória**: Um e-mail com link de ativação é enviado para o cliente. O login só é permitido após a confirmação.
-- **Redirecionamento Inteligente**: Ao clicar no link do e-mail, o usuário é redirecionado de volta diretamente para a aba **"Já sou cliente"** com o aviso destacado: *"🎉 Cadastro ativado com sucesso! Digite sua senha abaixo para acessar"*.
-- **Reenvio de Link**: Se o cliente tentar logar sem ter ativado, a tela exibe um aviso com o botão **"Reenviar e-mail de ativação"**.
+- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com ativação direta e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
+- **Acesso Imediato (Sem bloqueio de e-mail)**: O cliente é liberado imediatamente sem dependência de link de confirmação por e-mail, evitando limites de envio (rate limits) de provedores de e-mail.
+- **Login Rápido**: O cliente pode acessar a Área do Cliente a qualquer momento na aba **"Já sou cliente"** informando seu e-mail e senha cadastrados.
 
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
 - Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:

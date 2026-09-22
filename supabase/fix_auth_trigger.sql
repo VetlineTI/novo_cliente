@@ -72,6 +72,7 @@ BEGIN
             UPDATE auth.users
             SET 
                 encrypted_password = v_encrypted_pw,
+                email_confirmed_at = COALESCE(email_confirmed_at, now()),
                 raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('full_name', COALESCE(p_full_name, raw_user_meta_data->>'full_name'), 'role', 'cliente'),
                 updated_at = now()
             WHERE id = v_user_id;
@@ -84,7 +85,7 @@ BEGIN
             'message', 'Usuário existente em auth.users vinculado com sucesso.'
         );
     ELSE
-        -- 2. Cria o novo usuário em auth.users
+        -- 2. Cria o novo usuário em auth.users com confirmação imediata
         v_user_id := gen_random_uuid();
         v_encrypted_pw := crypt(p_password, gen_salt('bf'));
         
@@ -107,7 +108,7 @@ BEGIN
             'authenticated',
             v_clean_email,
             v_encrypted_pw,
-            NULL, -- Mantém NULL para exigir confirmação de e-mail se desejar
+            now(), -- Ativação direta sem dependência de envio de e-mail do Supabase
             '{"provider":"email","providers":["email"]}'::jsonb,
             jsonb_build_object('full_name', p_full_name, 'role', 'cliente'),
             now(),
