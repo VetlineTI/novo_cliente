@@ -236,7 +236,7 @@ export const CreatePasswordModal = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Criando conta e enviando dados...</span>
+                  <span>Emitindo Ficha JUCESP e enviando cadastro...</span>
                 </>
               ) : (
                 <>

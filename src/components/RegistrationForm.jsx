@@ -502,7 +502,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Se for PJ, dispara automaticamente a consulta no Bureau (JUCESP & Protestos CENPROT)
+      // Se for PJ, dispara automaticamente a consulta no Bureau (JUCESP Ficha Simplificada & CENPROT)
       let docJucespUrl = null;
       let docCenprotUrl = null;
       let nireJucesp = null;
@@ -518,7 +518,9 @@ export const RegistrationForm = ({ onSuccess }) => {
 
           if (bureauRes.docJucespUrl) docJucespUrl = bureauRes.docJucespUrl;
           if (bureauRes.docCenprotUrl) docCenprotUrl = bureauRes.docCenprotUrl;
-          if (bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp) nireJucesp = bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp;
+          if (bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp) {
+            nireJucesp = bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp;
+          }
           if (bureauRes.data?.cenprot?.totalProtests !== undefined && bureauRes.data?.cenprot?.totalProtests !== null) {
             totalProtestos = bureauRes.data.cenprot.totalProtests;
           } else if (bureauRes.totalProtestos !== undefined && bureauRes.totalProtestos !== null) {
@@ -528,7 +530,7 @@ export const RegistrationForm = ({ onSuccess }) => {
             bureauConsultedAt = new Date().toISOString();
           }
         } catch (bureauErr) {
-          console.warn('Auditoria automática de bureau:', bureauErr);
+          console.warn('Auditoria automática de bureau na submissão:', bureauErr);
         }
       }
 
@@ -606,6 +608,16 @@ export const RegistrationForm = ({ onSuccess }) => {
 
       if (!result.success) {
         throw new Error(result.error || 'Erro ao registrar cadastro e criar senha.');
+      }
+
+      // Se por qualquer motivo a JUCESP não foi obtida antes da criação, executa atualização garantida com o ID
+      const createdClientId = result.client?.id;
+      if (personType === 'PJ' && documentNumber && createdClientId && !docJucespUrl) {
+        executarAuditoriaBureau({
+          id: createdClientId,
+          cpf_cnpj: documentNumber,
+          razao_social_nome: fullName
+        }).catch(err => console.warn('Execução em background do bureau:', err));
       }
 
       // Atualiza o e-mail no formulário caso tenha sido ajustado na modal
