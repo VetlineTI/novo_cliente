@@ -593,7 +593,6 @@ export const RegistrationForm = ({ onSuccess }) => {
         doc_comprovante_endereco_url: docAddressUrl,
         doc_address_url: docAddressUrl,
         doc_ie_url: null,
-        doc_receita_url: docReceitaUrl,
         doc_jucesp_url: docJucespUrl,
         doc_cenprot_url: docCenprotUrl,
         nire_jucesp: nireJucesp,
