@@ -271,12 +271,17 @@ export const consultarProtestosCenprot = async (cnpj) => {
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
-  // 1. Tenta CENPROT-SP
+  let lastError = null;
+  let lastCode = null;
+
+  // 1. Tenta CENPROT-SP Oficial (Cartórios de Protesto de SP)
   try {
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
-    params.append('timeout', '120');
+    params.append('cpf_cnpj', cleanCnpj);
+    params.append('documento', cleanCnpj);
+    params.append('timeout', '180');
 
     const response = await fetch(`${BASE_URL}/cenprot-sp/protestos`, {
       method: 'POST',
@@ -286,10 +291,10 @@ export const consultarProtestosCenprot = async (cnpj) => {
 
     if (response.ok || response.status === 400 || response.status === 422) {
       const result = await response.json();
-      if (result.code === 200 && result.data && result.data.length > 0) {
-        const dataItem = result.data[0] || {};
+      if (result.code === 200) {
+        const dataItem = (result.data && result.data[0]) || {};
         const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
-        const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : 0);
+        const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : (Array.isArray(result.data) && result.data.length === 0 ? 0 : 0));
         return {
           success: true,
           totalProtests,
@@ -298,17 +303,22 @@ export const consultarProtestosCenprot = async (cnpj) => {
           raw: result
         };
       }
+      lastCode = result.code;
+      lastError = result.code_message || (result.errors && result.errors[0]) || null;
     }
   } catch (err) {
     console.warn('Erro na consulta CENPROT-SP:', err);
+    lastError = err.message;
   }
 
-  // 2. Fallback: IEPTB Nacional
+  // 2. Fallback: IEPTB Nacional (Central Nacional de Protestos)
   try {
     const params = new URLSearchParams();
     params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
-    params.append('timeout', '120');
+    params.append('cpf_cnpj', cleanCnpj);
+    params.append('documento', cleanCnpj);
+    params.append('timeout', '180');
 
     const response = await fetch(`${BASE_URL}/ieptb/protestos`, {
       method: 'POST',
@@ -318,10 +328,10 @@ export const consultarProtestosCenprot = async (cnpj) => {
 
     if (response.ok || response.status === 400 || response.status === 422) {
       const result = await response.json();
-      if (result.code === 200 && result.data && result.data.length > 0) {
-        const dataItem = result.data[0] || {};
+      if (result.code === 200) {
+        const dataItem = (result.data && result.data[0]) || {};
         const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
-        const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : 0);
+        const totalProtests = dataItem.total_protestos ?? dataItem.quantidade_protestos ?? (dataItem.protestos ? dataItem.protestos.length : (Array.isArray(result.data) && result.data.length === 0 ? 0 : 0));
         return {
           success: true,
           totalProtests,
@@ -330,14 +340,18 @@ export const consultarProtestosCenprot = async (cnpj) => {
           raw: result
         };
       }
+      lastCode = result.code;
+      lastError = result.code_message || (result.errors && result.errors[0]) || lastError;
     }
   } catch (ieptbErr) {
     console.warn('Erro no fallback IEPTB:', ieptbErr);
+    lastError = ieptbErr.message || lastError;
   }
 
   return {
     success: false,
-    error: 'Central de Protestos (CENPROT/IEPTB) temporariamente instável na fonte de origem.'
+    code: lastCode,
+    error: lastError || 'Central de Protestos (CENPROT/IEPTB) temporariamente instável na fonte de origem.'
   };
 };
 
