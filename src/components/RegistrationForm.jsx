@@ -26,8 +26,10 @@ import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
 import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
+import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { executarAuditoriaBureau } from '../lib/infosimples';
+import { validatePartnerDocument } from '../utils/documentValidator';
 import { 
   maskCPF, 
   maskCNPJ, 
@@ -109,6 +111,9 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showSegmentModal, setShowSegmentModal] = useState(false);
+  const [partnerMismatchData, setPartnerMismatchData] = useState(null);
+  const [showPartnerMismatchModal, setShowPartnerMismatchModal] = useState(false);
+  const [isValidatingPartnerDoc, setIsValidatingPartnerDoc] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
@@ -262,52 +267,66 @@ export const RegistrationForm = ({ onSuccess }) => {
     const val = maskCEP(e.target.value);
     setZipcode(val);
     setMainCepError('');
-    if (errors.zipcode) setErrors((prev) => ({ ...prev, zipcode: null }));
+    if (errors.zipcode) {
+      setErrors((prev) => ({ ...prev, zipcode: null }));
+    }
 
     const clean = unmask(val);
     if (clean.length === 8) {
       setLoadingMainCep(true);
-      const res = await fetchAddressByCEP(clean);
+      const data = await fetchAddressByCEP(clean);
       setLoadingMainCep(false);
-      if (res) {
-        setStreet(res.street || '');
-        setNeighborhood(res.neighborhood || '');
-        setCity(res.city || '');
-        setState(res.state || '');
+      if (data) {
+        setStreet(data.street || '');
+        setNeighborhood(data.neighborhood || '');
+        setCity(data.city || '');
+        setState(data.state || '');
         setErrors((prev) => ({
           ...prev,
           street: null,
           neighborhood: null,
           city: null,
-          state: null
+          state: null,
         }));
       } else {
-        setMainCepError('CEP não encontrado. Preencha o endereço manualmente.');
+        setMainCepError('CEP não encontrado.');
       }
     }
   };
 
-  // Busca automática do CEP de Entrega
-  const handleCepChange = async (e) => {
+  // Busca automática do CEP de entrega divergente
+  const handleDeliveryCepChange = async (e) => {
     const val = maskCEP(e.target.value);
     setDeliveryCep(val);
     setCepError('');
+    if (errors.deliveryCep) {
+      setErrors((prev) => ({ ...prev, deliveryCep: null }));
+    }
 
     const clean = unmask(val);
     if (clean.length === 8) {
       setLoadingCep(true);
-      const res = await fetchAddressByCEP(clean);
+      const data = await fetchAddressByCEP(clean);
       setLoadingCep(false);
-      if (res) {
-        setDeliveryStreet(res.street || '');
-        setDeliveryNeighborhood(res.neighborhood || '');
-        setDeliveryCity(res.city || '');
-        setDeliveryState(res.state || '');
+      if (data) {
+        setDeliveryStreet(data.street || '');
+        setDeliveryNeighborhood(data.neighborhood || '');
+        setDeliveryCity(data.city || '');
+        setDeliveryState(data.state || '');
+        setErrors((prev) => ({
+          ...prev,
+          deliveryStreet: null,
+          deliveryNeighborhood: null,
+          deliveryCity: null,
+          deliveryState: null,
+        }));
       } else {
-        setCepError('CEP não encontrado. Preencha o endereço manualmente.');
+        setCepError('CEP de entrega não encontrado.');
       }
     }
   };
+
+  const handleCepChange = handleDeliveryCepChange;
 
   // Limpar todos os campos de endereço principal
   const handleClearMainAddress = () => {
@@ -350,7 +369,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     }));
   };
 
-  // Validação dos campos antes de enviar
+  // Validação completa dos campos do formulário antes de abrir modal de senha
   const validateForm = () => {
     const newErrors = {};
 
@@ -361,38 +380,42 @@ export const RegistrationForm = ({ onSuccess }) => {
 
     // 2. CPF / CNPJ
     const cleanDoc = unmask(documentNumber);
-    if (!cleanDoc) {
-      newErrors.documentNumber = personType === 'PJ' ? 'Informe o CNPJ.' : 'Informe o CPF.';
-    } else if (personType === 'PJ' && !isValidCNPJ(cleanDoc)) {
-      newErrors.documentNumber = 'CNPJ inválido.';
-    } else if (personType === 'PF' && !isValidCPF(cleanDoc)) {
-      newErrors.documentNumber = 'CPF inválido.';
+    if (personType === 'PJ') {
+      if (!cleanDoc || cleanDoc.length !== 14 || !isValidCNPJ(cleanDoc)) {
+        newErrors.documentNumber = 'Informe um CNPJ válido.';
+      }
+    } else {
+      if (!cleanDoc || cleanDoc.length !== 11 || !isValidCPF(cleanDoc)) {
+        newErrors.documentNumber = 'Informe um CPF válido.';
+      }
     }
 
-    // 3. Razão Social ou Nome
+    // 3. Razão Social / Nome Completo
     if (!fullName.trim()) {
-      newErrors.fullName = personType === 'PJ' ? 'Informe a Razão Social.' : 'Informe seu Nome Completo.';
+      newErrors.fullName = personType === 'PJ' ? 'Informe a Razão Social.' : 'Informe o Nome Completo.';
     }
 
-    // 4. Telefone
+    // 4. Telefone / Celular
     const cleanPhone = unmask(phone);
-    if (!cleanPhone || cleanPhone.length < 10) {
-      newErrors.phone = 'Informe um telefone/WhatsApp válido.';
+    if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 11) {
+      newErrors.phone = 'Informe um telefone/celular válido com DDD.';
     }
 
     // 5. Segmento
-    if (!segment) {
-      newErrors.segment = 'Selecione o segmento de atuação.';
+    if (!segment.trim()) {
+      newErrors.segment = 'Selecione o segmento da sua empresa / atuação.';
     }
 
     // 6. E-mail
-    if (!email.trim() || !isValidEmail(email)) {
+    if (!email.trim()) {
+      newErrors.email = 'Informe o e-mail de faturamento / contato.';
+    } else if (!isValidEmail(email)) {
       newErrors.email = 'Informe um e-mail válido.';
     }
 
-    // 7. Atendimento por Vendedor
+    // 7. Vendedor / Atendimento
     if (hasSalesperson && !selectedSalespersonCode) {
-      newErrors.salesperson = 'Selecione o vendedor que realizou o atendimento ou marque "Não".';
+      newErrors.selectedSalesperson = 'Selecione o vendedor que realizou o atendimento.';
     }
 
     // 8. Endereço Principal / Cadastral (Obrigatório para PF e PJ)
@@ -445,7 +468,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     } else {
       // PF: Comprovante de Endereço e CRMV -> OS 2 SÃO OBRIGATÓRIOS
       if (!docCRMV) {
-        newErrors.docCRMV = 'O anexo do CRMV (Carteira Profissional) é obrigatório.';
+        newErrors.docCRMV = 'O anexo do CRMV é obrigatório para Pessoa Física.';
       }
       if (!docAddress) {
         newErrors.docAddress = 'O anexo do Comprovante de Endereço é obrigatório.';
@@ -462,7 +485,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   };
 
   // Validação e abertura da modal de criação de senha
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
 
@@ -475,7 +498,38 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Abre a modal para o cliente criar sua senha de acesso
+    // Validação antecipada do documento do sócio contra o QSA (antes de permitir criar senha)
+    if (personType === 'PJ' && docPartnerPhoto) {
+      setIsValidatingPartnerDoc(true);
+      try {
+        let partners = cnpjInfo?.socios || [];
+        if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
+          partners = bureauAuditResultRef.current.data.socios;
+        }
+        if (partners.length === 0 && bureauAuditPromiseRef.current) {
+          const bRes = await bureauAuditPromiseRef.current;
+          if (bRes?.data?.socios) {
+            partners = bRes.data.socios;
+          }
+        }
+
+        if (partners.length > 0) {
+          const partnerCheck = await validatePartnerDocument(docPartnerPhoto, partners);
+          if (!partnerCheck.isValid) {
+            setPartnerMismatchData(partnerCheck);
+            setShowPartnerMismatchModal(true);
+            setIsValidatingPartnerDoc(false);
+            return;
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Erro ao validar sócio antecipadamente:', checkErr);
+      } finally {
+        setIsValidatingPartnerDoc(false);
+      }
+    }
+
+    // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
     setShowPasswordModal(true);
   };
 
@@ -1595,14 +1649,19 @@ export const RegistrationForm = ({ onSuccess }) => {
         {/* ========================================================================= */}
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isValidatingPartnerDoc}
           style={{ backgroundColor: '#1d5b79', color: '#ffffff' }}
           className="w-full py-4 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] active:scale-[0.99] !text-white font-bold text-base sm:text-lg tracking-wide shadow-lg shadow-[#1d5b79]/30 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
         >
-          {isSubmitting ? (
+          {isValidatingPartnerDoc ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin text-white" />
-              <span className="text-white">Enviando dados e documentos...</span>
+              <span className="text-white font-bold">Validando documento e sócios...</span>
+            </>
+          ) : isSubmitting ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin text-white" />
+              <span className="text-white font-bold">Enviando dados e documentos...</span>
             </>
           ) : (
             <span className="text-white font-bold">Enviar cadastro</span>
@@ -1635,6 +1694,21 @@ export const RegistrationForm = ({ onSuccess }) => {
         onSelectSegment={(val) => {
           setSegment(val);
           if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+        }}
+      />
+
+      {/* Modal de Alerta de Divergência de Sócio no QSA */}
+      <PartnerMismatchModal
+        isOpen={showPartnerMismatchModal}
+        onClose={() => setShowPartnerMismatchModal(false)}
+        reasons={partnerMismatchData?.reasons || []}
+        authorizedPartners={partnerMismatchData?.authorizedPartners || []}
+        onReupload={() => {
+          setShowPartnerMismatchModal(false);
+          const uploadEls = document.querySelectorAll('input[type="file"]');
+          if (uploadEls && uploadEls.length > 0) {
+            uploadEls[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }}
       />
     </div>

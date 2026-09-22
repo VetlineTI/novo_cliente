@@ -78,6 +78,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações e aviso de ativação por e-mail. |
 | `src/components/SuccessModal.jsx` | Modal de confirmação com orientações de verificação do e-mail de ativação e botão para ir ao login. |
 | `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
+| `src/components/PartnerMismatchModal.jsx` | Modal de alerta de divergência societária (QSA) com motivos de não aprovação e botão para reenviar documentos. |
 | `src/components/SegmentHelpModal.jsx` | Modal com guia descritivo e tabela de identificação de todos os segmentos de atuação. |
 | `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |
 | `src/components/client/ClientPortalAuth.jsx` | Tela principal com as abas **"Já sou cliente"** e **"Ainda não sou"**. |

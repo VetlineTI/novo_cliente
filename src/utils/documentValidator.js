@@ -341,3 +341,160 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     };
   }
 }
+
+/**
+ * Validação rigorosa do documento com foto do sócio (RG/CNH) contra o Quadro Societário (QSA)
+ * @param {File} file Arquivo do documento com foto (RG ou CNH)
+ * @param {Array} partnersList Lista de sócios obtidos da Direct Data / Receita Federal
+ * @returns {Promise<{isValid: boolean, isVerified: boolean, matchedPartner?: object, reasons: string[], authorizedPartners: string[], extractedInfo?: object}>}
+ */
+export async function validatePartnerDocument(file, partnersList = []) {
+  if (!file) {
+    return {
+      isValid: false,
+      isVerified: false,
+      reasons: ['Nenhum documento com foto do sócio foi anexado.'],
+      authorizedPartners: (partnersList || []).map(p => p.nome || p.nome_socio).filter(Boolean)
+    };
+  }
+
+  const authorizedPartners = (partnersList || []).map(p => ({
+    nome: p.nome || p.nome_socio || '',
+    documento: unmask(p.documento || p.cpf || ''),
+    cargo: p.cargo || p.qualificacao_socio || 'Sócio'
+  })).filter(p => p.nome.trim().length > 0);
+
+  // Se não houver lista de sócios cadastrados (ex: MEI sem QSA público), permite prosseguir
+  if (authorizedPartners.length === 0) {
+    return {
+      isValid: true,
+      isVerified: false,
+      reasons: [],
+      authorizedPartners: []
+    };
+  }
+
+  try {
+    const { Tesseract, jsQR, pdfjs } = await loadLibraries();
+
+    let extractedText = '';
+    let qrData = null;
+    let canvasForOCR = null;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      const pdfResult = await processPDF(file, pdfjs, jsQR);
+      extractedText = pdfResult.directText || '';
+      qrData = pdfResult.qrData;
+      canvasForOCR = pdfResult.canvas;
+    } else {
+      const imgResult = await imageToCanvas(file);
+      canvasForOCR = imgResult.canvas;
+      if (jsQR) {
+        qrData = scanQRCodeFromCanvas(canvasForOCR, jsQR);
+      }
+    }
+
+    // Se o texto direto for curto (ex: foto ou scan), roda OCR com Tesseract
+    if (extractedText.length < 50 && canvasForOCR) {
+      const ocrResult = await Tesseract.recognize(canvasForOCR, 'por', {
+        logger: () => {}
+      });
+      extractedText += ' ' + (ocrResult?.data?.text || '');
+    }
+
+    const fullRawText = `${extractedText} ${qrData || ''}`;
+    const normalizedText = fullRawText
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    // Extrai todos os CPFs de 11 dígitos encontrados no texto / QR Code
+    const foundCpfs = [];
+    const cpfMatches = fullRawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g) || [];
+    cpfMatches.forEach(m => foundCpfs.push(unmask(m)));
+
+    if (qrData) {
+      const qrCpfMatches = qrData.match(/\b\d{11}\b/g) || [];
+      qrCpfMatches.forEach(c => foundCpfs.push(unmask(c)));
+    }
+
+    // 1. Cruzamento prioritário por CPF (exato)
+    let matchedByCpf = null;
+    for (const partner of authorizedPartners) {
+      if (partner.documento && partner.documento.length === 11) {
+        if (foundCpfs.includes(partner.documento) || unmask(normalizedText).includes(partner.documento)) {
+          matchedByCpf = partner;
+          break;
+        }
+      }
+    }
+
+    if (matchedByCpf) {
+      return {
+        isValid: true,
+        isVerified: true,
+        matchType: 'CPF',
+        matchedPartner: matchedByCpf,
+        reasons: [],
+        authorizedPartners: authorizedPartners.map(p => p.nome)
+      };
+    }
+
+    // 2. Cruzamento por Nome Completo do Sócio
+    let matchedByName = null;
+    for (const partner of authorizedPartners) {
+      const cleanPartnerName = partner.nome
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+      const nameTokens = cleanPartnerName.split(/\s+/).filter(t => t.length > 2);
+      const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
+
+      const hasFirst = nameTokens.length > 0 && normalizedText.includes(nameTokens[0]);
+      const hasLast = nameTokens.length > 1 && normalizedText.includes(nameTokens[nameTokens.length - 1]);
+
+      if ((hasFirst && hasLast) || matchedTokens.length >= Math.max(2, Math.ceil(nameTokens.length * 0.65))) {
+        matchedByName = partner;
+        break;
+      }
+    }
+
+    if (matchedByName) {
+      return {
+        isValid: true,
+        isVerified: true,
+        matchType: 'NAME',
+        matchedPartner: matchedByName,
+        reasons: [],
+        authorizedPartners: authorizedPartners.map(p => p.nome)
+      };
+    }
+
+    // Se o documento é legível, mas NÃO pertence a nenhum sócio da empresa
+    const reasons = [
+      'O documento de identificação anexado (RG/CNH) não pertence a nenhum dos sócios registrados no Quadro Societário (QSA) deste CNPJ.',
+      'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
+    ];
+
+    return {
+      isValid: false,
+      isVerified: false,
+      reasons,
+      authorizedPartners: authorizedPartners.map(p => p.nome),
+      extractedInfo: {
+        cpfsFound: foundCpfs.slice(0, 3)
+      }
+    };
+  } catch (err) {
+    console.warn('Falha técnica no cruzamento de sócio:', err);
+    return {
+      isValid: true,
+      isVerified: false,
+      reasons: [],
+      authorizedPartners: authorizedPartners.map(p => p.nome)
+    };
+  }
+}
