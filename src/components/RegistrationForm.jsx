@@ -502,8 +502,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Se for PJ, dispara automaticamente a consulta no Bureau (Receita, JUCESP, Protestos)
-      let docReceitaUrl = null;
+      // Se for PJ, dispara automaticamente a consulta no Bureau (JUCESP & Protestos CENPROT)
       let docJucespUrl = null;
       let docCenprotUrl = null;
       let nireJucesp = null;
@@ -517,12 +516,13 @@ export const RegistrationForm = ({ onSuccess }) => {
             razao_social_nome: fullName
           });
 
-          if (bureauRes.docReceitaUrl) docReceitaUrl = bureauRes.docReceitaUrl;
           if (bureauRes.docJucespUrl) docJucespUrl = bureauRes.docJucespUrl;
           if (bureauRes.docCenprotUrl) docCenprotUrl = bureauRes.docCenprotUrl;
-          if (bureauRes.data?.jucesp?.nire) nireJucesp = bureauRes.data.jucesp.nire;
+          if (bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp) nireJucesp = bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp;
           if (bureauRes.data?.cenprot?.totalProtests !== undefined && bureauRes.data?.cenprot?.totalProtests !== null) {
             totalProtestos = bureauRes.data.cenprot.totalProtests;
+          } else if (bureauRes.totalProtestos !== undefined && bureauRes.totalProtestos !== null) {
+            totalProtestos = bureauRes.totalProtestos;
           }
           if (bureauRes.successfulServices && bureauRes.successfulServices.length > 0) {
             bureauConsultedAt = new Date().toISOString();

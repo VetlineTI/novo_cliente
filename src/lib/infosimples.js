@@ -311,9 +311,10 @@ export const consultarProtestosCenprot = async (cnpj) => {
 };
 
 /**
- * Consulta JUCESP Completa (com login Gov.br autenticado)
+ * Consulta JUCESP - Ficha Cadastral Simplificada Oficial (com login Gov.br autenticado)
+ * Endpoint oficial da Infosimples: /junta-comercial/sp/ficha
  */
-export const consultarJucespCompleta = async (cnpj, options = {}) => {
+export const consultarJucespSimplificada = async (cnpj, options = {}) => {
   const loginCpf = options.login_cpf || JUCESP_LOGIN_CPF;
   const loginSenha = options.login_senha || JUCESP_LOGIN_SENHA;
 
@@ -330,7 +331,7 @@ export const consultarJucespCompleta = async (cnpj, options = {}) => {
     if (loginSenha) params.append('login_senha', loginSenha);
     params.append('timeout', '180');
 
-    const response = await fetch(`${BASE_URL}/junta-comercial/sp/completa`, {
+    const response = await fetch(`${BASE_URL}/junta-comercial/sp/ficha`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString()
@@ -341,9 +342,10 @@ export const consultarJucespCompleta = async (cnpj, options = {}) => {
       if (result.code === 200 && result.data && result.data.length > 0) {
         const dataItem = result.data[0];
         const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
+        const nire = dataItem.nire || dataItem.empresa?.nire || dataItem.numero_nire || null;
         return {
           success: true,
-          nire: dataItem.nire || dataItem.numero_nire || dataItem.nire_matriz || null,
+          nire,
           receiptUrl,
           data: dataItem,
           raw: result
@@ -365,9 +367,12 @@ export const consultarJucespCompleta = async (cnpj, options = {}) => {
   }
 };
 
+// Mantém compatibilidade com chamadas anteriores
+export const consultarJucespCompleta = consultarJucespSimplificada;
+
 /**
- * Executa a esteira completa de Auditoria / Bureau para um cliente PJ
- * Consulta Receita Federal, JUCESP e CENPROT Protestos
+ * Executa a esteira de Auditoria / Bureau para um cliente PJ
+ * Consulta apenas JUCESP (Ficha Cadastral Simplificada) e CENPROT (Protestos)
  * @param {Object} client Objeto do cliente
  * @returns {Promise<Object>} Resultado consolidado
  */
@@ -395,27 +400,19 @@ export const executarAuditoriaBureau = async (client) => {
   }
 
   const results = {
-    receita: null,
     jucesp: null,
     cenprot: null,
     consultedAt: new Date().toISOString()
   };
 
-  // 1. Consulta Receita Federal (Cartão CNPJ, Sócios/QSA, Capital Social, Data Abertura)
+  // 1. Consulta JUCESP Ficha Cadastral Simplificada (Gov.br)
   try {
-    results.receita = await consultarReceitaCNPJ(cleanDoc);
-  } catch (e) {
-    results.receita = { success: false, error: e.message || 'Erro na consulta da Receita Federal' };
-  }
-
-  // 2. Consulta JUCESP Completa (Gov.br)
-  try {
-    results.jucesp = await consultarJucespCompleta(cleanDoc);
+    results.jucesp = await consultarJucespSimplificada(cleanDoc);
   } catch (e) {
     results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
   }
 
-  // 3. Consulta CENPROT Protestos
+  // 2. Consulta CENPROT Protestos
   try {
     results.cenprot = await consultarProtestosCenprot(cleanDoc);
   } catch (e) {
@@ -423,25 +420,16 @@ export const executarAuditoriaBureau = async (client) => {
   }
 
   // URLs dos comprovantes válidos
-  const docReceitaUrl = results.receita?.success ? results.receita.receiptUrl : null;
   const docJucespUrl = results.jucesp?.success ? results.jucesp.receiptUrl : null;
   const docCenprotUrl = results.cenprot?.success && !results.cenprot?.skipped ? results.cenprot.receiptUrl : null;
+  const nireJucesp = results.jucesp?.nire || null;
+  const totalProtestos = results.cenprot?.totalProtests ?? null;
 
   const successfulServices = [];
   const failedServices = [];
 
-  if (results.receita?.success) {
-    successfulServices.push('Receita Federal (Cartão CNPJ)');
-  } else {
-    failedServices.push({
-      service: 'Receita Federal',
-      code: results.receita?.code,
-      error: results.receita?.error || 'Falha na consulta'
-    });
-  }
-
   if (results.jucesp?.success) {
-    successfulServices.push('JUCESP (Registro/NIRE)');
+    successfulServices.push('JUCESP (Ficha Simplificada)');
   } else if (results.jucesp?.error) {
     failedServices.push({
       service: 'JUCESP',
@@ -452,10 +440,17 @@ export const executarAuditoriaBureau = async (client) => {
 
   if (results.cenprot?.success && !results.cenprot?.skipped) {
     successfulServices.push('CENPROT (Protestos)');
+  } else if (results.cenprot?.error) {
+    failedServices.push({
+      service: 'CENPROT',
+      code: results.cenprot?.code,
+      error: results.cenprot?.error
+    });
   }
 
-  const allSuccessful = Boolean(results.receita?.success);
-  const allFailed = !results.receita?.success && !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped);
+  const allSuccessful = Boolean(results.jucesp?.success && (results.cenprot?.success || results.cenprot?.skipped));
+  const isPartial = Boolean(results.jucesp?.success || (results.cenprot?.success && !results.cenprot?.skipped));
+  const allFailed = !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped);
 
   // Se nenhum serviço funcionou
   if (allFailed) {
@@ -472,7 +467,7 @@ export const executarAuditoriaBureau = async (client) => {
     };
   }
 
-  // Salva no banco de dados
+  // Salva no banco de dados Supabase se clientId estiver presente
   let dbSaveSuccess = true;
   let dbSaveError = null;
 
@@ -482,12 +477,11 @@ export const executarAuditoriaBureau = async (client) => {
         bureau_consulted_at: results.consultedAt
       };
 
-      if (docReceitaUrl) updatePayload.doc_receita_url = docReceitaUrl;
       if (docJucespUrl) updatePayload.doc_jucesp_url = docJucespUrl;
       if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
-      if (results.jucesp?.success && results.jucesp?.nire) updatePayload.nire_jucesp = results.jucesp.nire;
-      if (results.cenprot?.success && results.cenprot?.totalProtests !== undefined) {
-        updatePayload.total_protestos = results.cenprot.totalProtests;
+      if (nireJucesp) updatePayload.nire_jucesp = nireJucesp;
+      if (totalProtestos !== null && totalProtestos !== undefined) {
+        updatePayload.total_protestos = totalProtestos;
       }
 
       const saveRes = await updateClientData(clientId, updatePayload);
@@ -504,25 +498,16 @@ export const executarAuditoriaBureau = async (client) => {
 
   return {
     success: true,
-    allSuccessful: true,
-    isPartial: false,
+    allSuccessful,
+    isPartial,
     allFailed: false,
     successfulServices,
     failedServices,
     dbSaveSuccess,
     dbSaveError,
     data: results,
-    receitaDetails: results.receita?.success ? {
-      razaoSocial: results.receita.razaoSocial,
-      nomeFantasia: results.receita.nomeFantasia,
-      dataAbertura: results.receita.dataAbertura,
-      capitalSocial: results.receita.capitalSocial,
-      naturezaJuridica: results.receita.naturezaJuridica,
-      situacaoCadastral: results.receita.situacaoCadastral,
-      porte: results.receita.porte,
-      socios: results.receita.socios
-    } : null,
-    docReceitaUrl,
+    nireJucesp,
+    totalProtestos,
     docJucespUrl,
     docCenprotUrl
   };

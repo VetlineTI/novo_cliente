@@ -166,12 +166,7 @@ export const ClientDetailModal = ({
       if (res.allSuccessful) {
         setBureauFeedback({
           type: 'success',
-          message: '✓ Auditoria concluída! Cartão CNPJ (Receita Federal) e Consulta de Protestos (CENPROT) foram consultados e anexados com sucesso.'
-        });
-      } else if (res.receitaDetails && res.docReceitaUrl) {
-        setBureauFeedback({
-          type: 'success',
-          message: '✓ Receita Federal Oficial consultada com sucesso! Cartão CNPJ, Quadro de Sócios e Capital Social anexados.'
+          message: '✓ Auditoria concluída! Ficha Cadastral JUCESP e Consulta de Protestos (CENPROT) foram consultadas e anexadas com sucesso.'
         });
       } else if (res.isPartial) {
         const succList = (res.successfulServices || []).join(', ');
@@ -197,11 +192,10 @@ export const ClientDetailModal = ({
 
       if (res.successfulServices && res.successfulServices.length > 0 && onUpdateClient) {
         await onUpdateClient(client.id, {
-          doc_receita_url: res.docReceitaUrl || client.doc_receita_url,
           doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
           doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
-          nire_jucesp: res.data?.jucesp?.nire || client.nire_jucesp,
-          total_protestos: res.data?.cenprot?.totalProtests ?? client.total_protestos,
+          nire_jucesp: res.data?.jucesp?.nire || res.nireJucesp || client.nire_jucesp,
+          total_protestos: res.data?.cenprot?.totalProtests ?? res.totalProtestos ?? client.total_protestos,
           bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
         });
       }
@@ -327,26 +321,26 @@ export const ClientDetailModal = ({
         id: 'bureau_certidoes',
         name: 'Certidões & Bureau',
         icon: Search,
-        badge: (client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url) ? 'Consultado ✓' : 'Disponível',
-        hasDocs: Boolean(client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url),
+        badge: (client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url) ? 'Consultado ✓' : 'Disponível',
+        hasDocs: Boolean(client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url),
         docs: [
-          ...(client.doc_receita_url ? [
+          ...(client.doc_jucesp_url ? [
             {
-              id: 'doc_receita',
-              title: 'Cartão CNPJ Oficial - Receita Federal (Infosimples)',
-              category: 'Receita Federal',
-              fileName: `cartao_cnpj_${cleanDoc}.html`,
+              id: 'doc_jucesp',
+              title: 'Ficha Cadastral Simplificada JUCESP',
+              category: 'Junta Comercial',
+              fileName: `jucesp_${cleanDoc}.pdf`,
               bucket: bucketName,
-              path: `${clientStoragePath}/receita_federal/`,
-              url: client.doc_receita_url,
-              verificationBadge: 'Receita Federal Ativa',
-              notes: `Comprovante oficial emitido via Receita Federal (Infosimples)`
+              path: `${clientStoragePath}/jucesp/`,
+              url: client.doc_jucesp_url,
+              verificationBadge: client.nire_jucesp ? `NIRE: ${client.nire_jucesp}` : 'JUCESP',
+              notes: `Ficha Cadastral Simplificada oficial da JUCESP`
             }
           ] : []),
           ...(client.doc_cenprot_url ? [
             {
               id: 'doc_cenprot',
-              title: 'Certidão / Consulta de Protestos CENPROT (Infosimples)',
+              title: 'Certidão / Consulta de Protestos CENPROT',
               category: 'Protestos',
               fileName: `cenprot_${cleanDoc}.pdf`,
               bucket: bucketName,
@@ -355,20 +349,20 @@ export const ClientDetailModal = ({
               verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined 
                 ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta)' : `${client.total_protestos} Protesto(s)`)
                 : 'Consulta CENPROT',
-              notes: `Consulta à Central de Protestos de Títulos`
+              notes: `Consulta à Central de Protestos de Títulos (SP)`
             }
           ] : []),
-          ...(client.doc_jucesp_url ? [
+          ...(client.doc_receita_url ? [
             {
-              id: 'doc_jucesp',
-              title: 'Ficha Cadastral JUCESP',
-              category: 'Junta Comercial',
-              fileName: `jucesp_${cleanDoc}.pdf`,
+              id: 'doc_receita',
+              title: 'Cartão CNPJ Oficial - Receita Federal',
+              category: 'Receita Federal',
+              fileName: `cartao_cnpj_${cleanDoc}.html`,
               bucket: bucketName,
-              path: `${clientStoragePath}/jucesp/`,
-              url: client.doc_jucesp_url,
-              verificationBadge: client.nire_jucesp ? `NIRE: ${client.nire_jucesp}` : 'JUCESP',
-              notes: `Registro na Junta Comercial`
+              path: `${clientStoragePath}/receita_federal/`,
+              url: client.doc_receita_url,
+              verificationBadge: 'Receita Federal Ativa',
+              notes: `Comprovante de inscrição cadastral`
             }
           ] : [])
         ]
@@ -1024,15 +1018,9 @@ export const ClientDetailModal = ({
                         </div>
 
                         {/* Status resumidos dos serviços principais */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                           <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
-                            <span className="text-[10px] text-slate-400 block font-medium">Receita Federal (Oficial)</span>
-                            <span className={`font-bold truncate block text-[11px] ${client.doc_receita_url ? 'text-emerald-400' : 'text-slate-300'}`}>
-                              {client.doc_receita_url ? 'Cartão CNPJ & Sócios ✓' : 'Disponível'}
-                            </span>
-                          </div>
-                          <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
-                            <span className="text-[10px] text-slate-400 block font-medium">JUCESP (Gov.br)</span>
+                            <span className="text-[10px] text-slate-400 block font-medium">JUCESP (Ficha Simplificada)</span>
                             <span className={`font-bold truncate block text-[11px] ${client.doc_jucesp_url ? 'text-emerald-400' : 'text-slate-300'}`}>
                               {client.nire_jucesp ? `NIRE: ${client.nire_jucesp} ✓` : (client.doc_jucesp_url ? 'Ficha Anexada ✓' : 'Disponível')}
                             </span>
@@ -1073,12 +1061,12 @@ export const ClientDetailModal = ({
                           {isAuditingBureau ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Consultando Bureau (Receita, JUCESP & Protestos)...</span>
+                              <span>Consultando JUCESP & CENPROT...</span>
                             </>
                           ) : (
                             <>
                               <Search className="w-3.5 h-3.5" />
-                              <span>{client.doc_receita_url || client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar Bureau Completo' : 'Consultar Bureau Completo (Receita, JUCESP & Protestos)'}</span>
+                              <span>{client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar Bureau (JUCESP & CENPROT)' : 'Consultar Bureau (JUCESP & CENPROT)'}</span>
                             </>
                           )}
                         </button>

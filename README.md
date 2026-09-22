@@ -63,12 +63,13 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
+| `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
-| `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP, CENPROT e Receita Federal). |
+| `src/lib/infosimples.js` | Módulo de integração com a API da Infosimples para auditoria de bureau (JUCESP Ficha Simplificada e CENPROT Protestos). |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio e acionamento de criação de senha. |
@@ -90,12 +91,11 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 
-### 6. 🔍 Auditoria Automatizada & Bureau de Crédito (Infosimples)
+### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Infosimples)
 - Integrado na esteira de análise de crédito e validação documental com a API da **Infosimples**:
-  - **Receita Federal Oficial**: Emissão do Cartão CNPJ completo, Quadro de Sócios e Administradores (QSA), Capital Social e Situação Cadastral.
-  - **JUCESP (Junta Comercial de SP)**: Consulta completa de registro comercial e obtenção do NIRE com autenticação Gov.br.
-  - **CENPROT (Central de Protestos)**: Verificação de ocorrências de protestos em cartórios.
-- **Visualizador de Documentos Inteligente**: Suporte a PDFs, imagens e documentos HTML interativos gerados sob demanda.
+  - **JUCESP (Ficha Cadastral Simplificada)**: Consulta oficial na Junta Comercial de SP via Gov.br (`/junta-comercial/sp/ficha`), obtendo NIRE, capital, objeto social e comprovante em PDF oficial.
+  - **CENPROT (Central de Protestos)**: Verificação de ocorrências de protestos em cartórios de SP (`/cenprot-sp/protestos`).
+- **Proxy Seguro Serverless**: Função `api/infosimples.js` para garantir execução rápida e segura no Vercel sem bloqueios de CORS ou WAF.
 
 ---
 

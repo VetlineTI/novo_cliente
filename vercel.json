@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api-infosimples/(.*)",
-      "destination": "https://api.infosimples.com/api/v2/consultas/$1"
+      "destination": "/api/infosimples?service=$1"
     },
     {
       "source": "/(.*)",
