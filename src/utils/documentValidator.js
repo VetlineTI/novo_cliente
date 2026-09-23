@@ -243,13 +243,12 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     // 4. CRUZAMENTO DE SÓCIOS E TITULARES (PJ / QSA) OU CPF (PF)
     // =========================================================================
     let partnerMatchedName = null;
-    let partnerMatchedByCpf = false;
-    let nameHit = false;
 
     // Constrói lista de pessoas autorizadas para PJ
     let authorizedPartners = (expectedPartners || []).map(p => ({
       nome: p.nome || p.nome_socio || '',
-      documento: unmask(p.documento || p.cpf || p.cpfRepresentante || ''),
+      documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
+      cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
       cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
     })).filter(p => p.nome && p.nome.trim().length > 0);
 
@@ -260,6 +259,7 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
         authorizedPartners.push({
           nome: ownerFromRazao,
           documento: '',
+          cpf_cnpj_socio: '',
           cargo: 'Titular / Responsável Legal'
         });
       }
@@ -278,44 +278,17 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
 
     // A) Cruzamento para Pessoa Jurídica (Sócio na CNH/RG)
     if (category === 'IDENTIFICATION' && (cleanExpectedDoc?.length === 14 || authorizedPartners.length > 0)) {
-      // 1. Busca por CPF do sócio
       for (const partner of authorizedPartners) {
-        if (partner.documento && partner.documento.length === 11) {
-          if (foundCpfs.includes(partner.documento) || unmask(normalizedText).includes(partner.documento)) {
-            partnerMatchedName = partner.nome;
-            partnerMatchedByCpf = true;
-            break;
-          }
-        }
-      }
+        const matchRes = matchPartnerWithDocument(partner, {
+          foundCpfs,
+          fullRawText,
+          normalizedText,
+          qrData
+        });
 
-      // 2. Busca por Nome do Sócio
-      if (!partnerMatchedName) {
-        const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
-        for (const partner of authorizedPartners) {
-          const cleanPartnerName = partner.nome
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .trim();
-
-          if (cleanPartnerName.length > 5 && normalizedText.includes(cleanPartnerName)) {
-            partnerMatchedName = partner.nome;
-            break;
-          }
-
-          const nameTokens = cleanPartnerName.split(/\s+/).filter(t => t.length > 2 && !stopwords.has(t));
-          if (nameTokens.length >= 2) {
-            const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
-            const hasFirst = normalizedText.includes(nameTokens[0]);
-            const hasLast = normalizedText.includes(nameTokens[nameTokens.length - 1]);
-            const matchRatio = matchedTokens.length / nameTokens.length;
-
-            if ((hasFirst && hasLast && matchedTokens.length >= 2) || matchRatio >= 0.75) {
-              partnerMatchedName = partner.nome;
-              break;
-            }
-          }
+        if (matchRes.matched) {
+          partnerMatchedName = matchRes.partnerName;
+          break;
         }
       }
 
@@ -578,6 +551,102 @@ export function extractOwnerFromRazaoSocial(razaoSocial) {
  * @param {string} expectedCompanyName Razão Social da empresa para identificação de titular
  * @returns {Promise<{isValid: boolean, isVerified: boolean, matchedPartner?: object, reasons: string[], authorizedPartners: string[], extractedInfo?: object}>}
  */
+/**
+ * Cruzamento inteligente de um sócio com os dados extraídos do documento (CNH/RG)
+ * Suporta máscaras parciais oficiais da Receita Federal (ex: ***570869**) e tokens de nome
+ * @param {object} partner 
+ * @param {object} context 
+ * @returns {{matched: boolean, matchType?: string, partnerName?: string, matchedPartner?: object}}
+ */
+export function matchPartnerWithDocument(partner, { foundCpfs = [], fullRawText = '', normalizedText = '', qrData = '' }) {
+  if (!partner) return { matched: false };
+
+  const rawDoc = partner.documento || partner.cpf_cnpj_socio || partner.cnpj_cpf_do_socio || partner.cpf_socio || partner.cpf || partner.cpfRepresentante || '';
+  const partnerDocDigits = unmask(rawDoc);
+  const partnerName = String(partner.nome || partner.nome_socio || '').trim();
+  const cleanPartnerName = partnerName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  // 1. CHECAGEM POR CPF (Suporta Máscara LGPD da Receita Federal: ex ***570869** e CPF de 11 dígitos)
+  if (partnerDocDigits) {
+    // Caso A: CPF completo de 11 dígitos
+    if (partnerDocDigits.length === 11) {
+      if (foundCpfs.includes(partnerDocDigits) || unmask(normalizedText).includes(partnerDocDigits)) {
+        return { matched: true, matchType: 'CPF_EXACT', partnerName, matchedPartner: partner };
+      }
+    }
+    // Caso B: Padrão Oficial LGPD da Receita Federal (6 dígitos do meio: ex 570869 de ***570869**)
+    else if (partnerDocDigits.length === 6) {
+      // Checa contra todos os CPFs de 11 dígitos extraídos da CNH / QR Code
+      for (const extractedCpf of foundCpfs) {
+        if (extractedCpf.length === 11) {
+          // Posição canônica na CNH/RG: XXX.570.869-XX (substring índice 3 a 9)
+          if (extractedCpf.substring(3, 9) === partnerDocDigits || extractedCpf.includes(partnerDocDigits)) {
+            return { matched: true, matchType: 'CPF_LGPD_MASK', partnerName, matchedPartner: partner };
+          }
+        }
+      }
+      // Checa se os 6 dígitos aparecem no texto bruto da CNH / documento
+      if (unmask(fullRawText).includes(partnerDocDigits)) {
+        return { matched: true, matchType: 'CPF_LGPD_TEXT', partnerName, matchedPartner: partner };
+      }
+    }
+    // Caso C: Outras máscaras parciais (>= 4 dígitos)
+    else if (partnerDocDigits.length >= 4) {
+      for (const extractedCpf of foundCpfs) {
+        if (extractedCpf.includes(partnerDocDigits)) {
+          return { matched: true, matchType: 'CPF_PARTIAL', partnerName, matchedPartner: partner };
+        }
+      }
+      if (unmask(fullRawText).includes(partnerDocDigits)) {
+        return { matched: true, matchType: 'CPF_PARTIAL_TEXT', partnerName, matchedPartner: partner };
+      }
+    }
+  }
+
+  // 2. CHECAGEM POR NOME DO SÓCIO
+  if (cleanPartnerName.length > 3) {
+    // Se o nome completo estiver contido no texto
+    if (normalizedText.includes(cleanPartnerName)) {
+      return { matched: true, matchType: 'NAME_FULL', partnerName, matchedPartner: partner };
+    }
+
+    const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
+    const nameTokens = cleanPartnerName
+      .split(/\s+/)
+      .filter(t => t.length > 2 && !stopwords.has(t));
+
+    if (nameTokens.length >= 2) {
+      const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
+      const matchCount = matchedTokens.length;
+      const matchRatio = matchCount / nameTokens.length;
+
+      // Se pelo menos 2 tokens significativos baterem (ex: "domingos" e "soares", ou "domingos" e "silva")
+      // OU se a proporção for >= 50%
+      if (matchCount >= 2 || matchRatio >= 0.5) {
+        return { matched: true, matchType: 'NAME_TOKENS', partnerName, matchedPartner: partner };
+      }
+    } else if (nameTokens.length === 1 && nameTokens[0].length >= 4) {
+      if (normalizedText.includes(nameTokens[0])) {
+        return { matched: true, matchType: 'NAME_SINGLE_TOKEN', partnerName, matchedPartner: partner };
+      }
+    }
+  }
+
+  return { matched: false };
+}
+
+/**
+ * Validação rigorosa do documento com foto do sócio (RG/CNH) contra o Quadro Societário (QSA)
+ * @param {File} file Arquivo do documento com foto (RG ou CNH)
+ * @param {Array} partnersList Lista de sócios obtidos da Direct Data / Receita Federal
+ * @param {string} expectedCnpj CNPJ esperado para evitar anexo de CNPJ de terceiros
+ * @param {string} expectedCompanyName Razão Social da empresa para identificação de titular
+ * @returns {Promise<{isValid: boolean, isVerified: boolean, matchedPartner?: object, reasons: string[], authorizedPartners: string[], extractedInfo?: object}>}
+ */
 export async function validatePartnerDocument(file, partnersList = [], expectedCnpj = '', expectedCompanyName = '') {
   if (!file) {
     return {
@@ -591,9 +660,10 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
   const cleanExpectedCnpj = unmask(expectedCnpj);
   let authorizedPartners = (partnersList || []).map(p => ({
     nome: p.nome || p.nome_socio || '',
-    documento: unmask(p.documento || p.cpf || ''),
-    cargo: p.cargo || p.qualificacao_socio || 'Sócio'
-  })).filter(p => p.nome.trim().length > 0);
+    documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
+    cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
+    cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
+  })).filter(p => p.nome && p.nome.trim().length > 0);
 
   // Se não houver sócios no QSA (ex: MEI ou Empresário Individual), extrai o nome do titular da Razão Social
   if (authorizedPartners.length === 0 && expectedCompanyName) {
@@ -602,6 +672,7 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
       authorizedPartners.push({
         nome: ownerFromRazao,
         documento: '',
+        cpf_cnpj_socio: '',
         cargo: 'Titular / Responsável Legal'
       });
     }
@@ -678,71 +749,31 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
       });
     }
 
-    // 2. Cruzamento prioritário por CPF (exato)
-    let matchedByCpf = null;
-    for (const partner of authorizedPartners) {
-      if (partner.documento && partner.documento.length === 11) {
-        if (foundCpfs.includes(partner.documento) || unmask(normalizedText).includes(partner.documento)) {
-          matchedByCpf = partner;
-          break;
-        }
-      }
-    }
-
-    if (matchedByCpf) {
-      return {
-        isValid: true,
-        isVerified: true,
-        matchType: 'CPF',
-        matchedPartner: matchedByCpf,
-        reasons: [],
-        authorizedPartners: authorizedPartners.map(p => p.nome)
-      };
-    }
-
-    // 3. Cruzamento rigoroso por Nome Completo do Sócio
-    const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
-    let matchedByName = null;
+    // 2. Cruzamento inteligente de sócio (CPF completo, Máscara LGPD ***570869** e Tokens do Nome)
+    let matchedPartnerObj = null;
+    let matchResultType = null;
 
     for (const partner of authorizedPartners) {
-      const cleanPartnerName = partner.nome
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim();
+      const matchRes = matchPartnerWithDocument(partner, {
+        foundCpfs,
+        fullRawText,
+        normalizedText,
+        qrData
+      });
 
-      // Verifica correspondência do nome completo
-      if (cleanPartnerName.length > 5 && normalizedText.includes(cleanPartnerName)) {
-        matchedByName = partner;
+      if (matchRes.matched) {
+        matchedPartnerObj = matchRes.matchedPartner || partner;
+        matchResultType = matchRes.matchType;
         break;
       }
-
-      // Tokens significativos (sem preposições)
-      const nameTokens = cleanPartnerName
-        .split(/\s+/)
-        .filter(t => t.length > 2 && !stopwords.has(t));
-
-      if (nameTokens.length >= 2) {
-        const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
-        const matchRatio = matchedTokens.length / nameTokens.length;
-
-        // Requer que o primeiro nome e o último sobrenome estejam presentes, ou mais de 75% dos tokens
-        const hasFirst = normalizedText.includes(nameTokens[0]);
-        const hasLast = normalizedText.includes(nameTokens[nameTokens.length - 1]);
-
-        if ((hasFirst && hasLast && matchedTokens.length >= 2) || matchRatio >= 0.75) {
-          matchedByName = partner;
-          break;
-        }
-      }
     }
 
-    if (matchedByName) {
+    if (matchedPartnerObj) {
       return {
         isValid: true,
         isVerified: true,
-        matchType: 'NAME',
-        matchedPartner: matchedByName,
+        matchType: matchResultType || 'VERIFIED',
+        matchedPartner: matchedPartnerObj,
         reasons: [],
         authorizedPartners: authorizedPartners.map(p => p.nome)
       };

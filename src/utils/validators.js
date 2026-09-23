@@ -111,9 +111,11 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           dataAbertura: data.data_inicio_atividade || '',
           cnaeDescricao: data.cnae_fiscal_descricao || '',
           suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
-          socios: (data.qsa || []).map(s => ({
-            nome: s.nome_socio || s.nome_do_socio || '',
-            qualificacao: s.qualificacao_socio || s.qualificacao_do_socio || '',
+          socios: (data.qsa || data.socios || []).map(s => ({
+            nome: s.nome || s.nome_socio || s.nome_do_socio || '',
+            qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',
+            cpf_cnpj_socio: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
+            documento: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
             cpfRepresentante: s.cpf_representante_legal || ''
           })),
           endereco: {
@@ -148,9 +150,11 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           dataAbertura: data.data_inicio_atividade || '',
           cnaeDescricao: data.cnae_fiscal_descricao || '',
           suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
-          socios: (data.qsa || []).map(s => ({
-            nome: s.nome_socio || '',
-            qualificacao: s.qualificacao_socio || '',
+          socios: (data.qsa || data.socios || []).map(s => ({
+            nome: s.nome || s.nome_socio || s.nome_do_socio || '',
+            qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',
+            cpf_cnpj_socio: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
+            documento: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
             cpfRepresentante: s.cpf_representante_legal || ''
           })),
           endereco: {
@@ -187,9 +191,11 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           dataAbertura: est.data_inicio_atividade || '',
           cnaeDescricao: est.atividade_principal?.descricao || '',
           suggestedSegment: mapSegment(est.atividade_principal?.descricao),
-          socios: (data.socios || []).map(s => ({
-            nome: s.nome || '',
-            qualificacao: s.qualificacao_socio?.descricao || '',
+          socios: (data.socios || data.qsa || []).map(s => ({
+            nome: s.nome || s.nome_socio || s.nome_do_socio || '',
+            qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',
+            cpf_cnpj_socio: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
+            documento: s.cpf_cnpj_socio || s.cnpj_cpf_do_socio || s.cpf_socio || s.cpf_representante_legal || s.cpf || s.documento || '',
             cpfRepresentante: s.cpf_representante_legal || ''
           })),
           endereco: {
