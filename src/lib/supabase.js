@@ -260,6 +260,7 @@ export const normalizeClientRecord = (c) => {
     doc_comprovante_endereco_url,
     doc_address_url: doc_comprovante_endereco_url,
     doc_identificacao_url,
+    doc_photo_id_url: doc_identificacao_url,
     doc_crmv_url,
     doc_receita_url: c.doc_receita_url || null,
     doc_jucesp_url: c.doc_jucesp_url || null,

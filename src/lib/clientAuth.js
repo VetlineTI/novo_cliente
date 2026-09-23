@@ -535,7 +535,7 @@ export const reuploadClientDocument = async (clientId, file, folder, clientDocum
     // 3. Atualiza sessão local
     const currentSession = getClientSession();
     if (currentSession) {
-      currentSession.client = { ...currentSession.client, [fieldName]: uploadedUrl };
+      currentSession.client = normalizeClientRecord({ ...currentSession.client, [fieldName]: uploadedUrl });
       saveClientSession(currentSession, true);
     }
 

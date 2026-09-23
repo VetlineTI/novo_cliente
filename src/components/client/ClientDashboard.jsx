@@ -303,23 +303,28 @@ export const ClientDashboard = ({ onLogout }) => {
     (client.document_number && client.document_number.replace(/\D/g, '').length === 11);
 
   // Lista de documentos exibidos estritamente conforme o tipo de pessoa
+  const partnerPhotoUrl = client.doc_photo_id_url || client.doc_identificacao_url;
+  const contractUrl = client.doc_contract_url || client.doc_contrato_social_url;
+  const addressUrl = client.doc_address_url || client.doc_comprovante_endereco_url;
+  const crmvUrl = client.doc_crmv_url;
+
   const documentCards = isPF ? [
     {
       id: 'doc_crmv',
       fieldName: 'doc_crmv_url',
       title: 'CRMV (Carteira Profissional do Médico Veterinário)',
       folder: 'crmv',
-      url: client.doc_crmv_url || client.doc_photo_id_url,
+      url: crmvUrl || partnerPhotoUrl,
       required: true,
       requiredBadge: 'Obrigatório',
       desc: 'Carteira Profissional do Médico Veterinário ativa emitida pelo CRMV.'
     },
     {
       id: 'doc_address',
-      fieldName: 'doc_address_url',
+      fieldName: 'doc_comprovante_endereco_url',
       title: 'Comprovante de Endereço (Recente)',
       folder: 'comprovante_endereco',
-      url: client.doc_address_url,
+      url: addressUrl,
       required: true,
       requiredBadge: 'Obrigatório',
       desc: 'Comprovante de residência recente (água, luz, telefone ou internet) emitido em até 90 dias.'
@@ -327,22 +332,22 @@ export const ClientDashboard = ({ onLogout }) => {
   ] : [
     {
       id: 'doc_contract',
-      fieldName: 'doc_contract_url',
+      fieldName: 'doc_contrato_social_url',
       title: 'Contrato Social ou Doc. Constitutivo',
       folder: 'contrato_social',
-      url: client.doc_contract_url,
-      required: !client.doc_photo_id_url,
-      requiredBadge: client.doc_contract_url ? 'Anexado' : (!client.doc_photo_id_url ? 'Obrigatório (mínimo 1)' : 'Opcional'),
+      url: contractUrl,
+      required: !partnerPhotoUrl,
+      requiredBadge: contractUrl ? 'Anexado' : (!partnerPhotoUrl ? 'Obrigatório (mínimo 1)' : 'Opcional'),
       desc: 'Contrato Social consolidado, estatuto ou requerimento de empresário registrado na Junta Comercial.'
     },
     {
       id: 'doc_photo_id',
-      fieldName: 'doc_photo_id_url',
+      fieldName: 'doc_identificacao_url',
       title: 'Documento com Foto de um dos Sócios (RG/CNH)',
       folder: 'documento_socios',
-      url: client.doc_photo_id_url,
-      required: !client.doc_contract_url,
-      requiredBadge: client.doc_photo_id_url ? 'Anexado' : (!client.doc_contract_url ? 'Obrigatório (mínimo 1)' : 'Opcional'),
+      url: partnerPhotoUrl,
+      required: !contractUrl,
+      requiredBadge: partnerPhotoUrl ? 'Anexado' : (!contractUrl ? 'Obrigatório (mínimo 1)' : 'Opcional'),
       desc: 'RG, CNH ou documento oficial com foto de um dos sócios administradores da empresa.'
     }
   ];
