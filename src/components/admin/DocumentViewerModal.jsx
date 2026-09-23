@@ -78,6 +78,22 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
     // 1. Se for Data URI de HTML
     const decoded = getDecodedHtml(url);
     if (decoded) {
+      // Se por acaso a string decodificada for um binário de PDF
+      if (decoded.startsWith('%PDF')) {
+        try {
+          const rawBytes = url.substring(url.indexOf(',') + 1);
+          const binaryStr = decodeURIComponent(rawBytes);
+          const len = binaryStr.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
+          const objUrl = URL.createObjectURL(pdfBlob);
+          if (isMounted) setBlobPdfUrl(objUrl);
+          return;
+        } catch (e) {}
+      }
       setInlineHtml(decoded);
       return;
     }
@@ -87,15 +103,30 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
       setIsLoading(true);
       fetch(url)
         .then(async (res) => {
-          const contentType = res.headers.get('content-type') || '';
-          if (contentType.includes('text/html') || url.includes('.html') || fileName?.toLowerCase().endsWith('.html')) {
-            const text = await res.text();
-            if (isMounted) setInlineHtml(text);
-          } else if (contentType.includes('pdf') || url.toLowerCase().includes('.pdf') || fileName?.toLowerCase().endsWith('.pdf')) {
-            const blob = await res.blob();
+          const blob = await res.blob();
+          const headBuffer = await blob.slice(0, 8).arrayBuffer();
+          const headStr = new TextDecoder().decode(headBuffer);
+
+          if (headStr.startsWith('%PDF')) {
             const pdfBlob = new Blob([blob], { type: 'application/pdf' });
             const objUrl = URL.createObjectURL(pdfBlob);
-            if (isMounted) setBlobPdfUrl(objUrl);
+            if (isMounted) {
+              setBlobPdfUrl(objUrl);
+              setInlineHtml(null);
+            }
+          } else {
+            const text = await blob.text();
+            if (text.startsWith('%PDF')) {
+              const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+              const objUrl = URL.createObjectURL(pdfBlob);
+              if (isMounted) {
+                setBlobPdfUrl(objUrl);
+                setInlineHtml(null);
+              }
+            } else if (isMounted) {
+              setInlineHtml(text);
+              setBlobPdfUrl(null);
+            }
           }
         })
         .catch((err) => {

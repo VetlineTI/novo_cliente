@@ -356,7 +356,7 @@ export const ClientDetailModal = ({
               id: 'doc_sintegra_bureau',
               title: 'Comprovante Oficial SINTEGRA / CADESP (SEFAZ)',
               category: 'Fiscal / SEFAZ',
-              fileName: `sintegra_${cleanDoc}.html`,
+              fileName: `sintegra_${cleanDoc}.pdf`,
               bucket: bucketName,
               path: `${clientStoragePath}/sintegra/`,
               url: client.doc_ie_url || client.doc_sintegra_url,
