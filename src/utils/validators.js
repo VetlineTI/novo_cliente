@@ -1,4 +1,5 @@
-import { unmask, maskPhone } from './masks';
+import { unmask, maskPhone, maskCEP } from './masks';
+import { consultarDirectDataReceitaPJParticipacaoSocietaria } from '../lib/directd';
 
 /**
  * Validação real de CPF (Algoritmo Módulo 11)
@@ -78,7 +79,7 @@ export const isValidEmail = (email) => {
 };
 
 /**
- * Consulta de CNPJ com redundância multi-provedor (Minha Receita, BrasilAPI e CNPJ.ws)
+ * Consulta de CNPJ com redundância multi-provedor (Direct Data Oficial, Minha Receita, BrasilAPI e CNPJ.ws)
  * Evita falhas por CORS / Rate Limit 429 e garante preenchimento automático contínuo
  * @param {string} cnpj 
  * @returns {Promise<Object|null>} Dados completos da empresa ou null
@@ -96,6 +97,44 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     if (desc.includes('distribui') || desc.includes('atacad')) return 'Distribuidora / Revenda';
     return '';
   };
+
+  // Provedor 0: Direct Data Oficial (Sem bloqueio de 3 req/min, dados completos do QSA e Comprovante)
+  try {
+    const directRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(clean);
+    if (directRes && directRes.success && (directRes.razaoSocial || directRes.data)) {
+      const d = directRes.data || {};
+      return {
+        razaoSocial: directRes.razaoSocial || d.nomeEmpresarial || d.razaoSocial || '',
+        nomeFantasia: directRes.nomeFantasia || d.nomeFantasia || '',
+        situacaoCadastral: directRes.situacaoCadastral || d.situacaoCadastral || 'ATIVA',
+        isAtiva: (directRes.situacaoCadastral || d.situacaoCadastral || '').toUpperCase().includes('ATIVA'),
+        dataAbertura: directRes.dataAbertura || d.dataAbertura || d.dataFundacao || '',
+        cnaeDescricao: d.atividadeEconomicaPrincipal || d.cnaeDescricao || '',
+        suggestedSegment: mapSegment(d.atividadeEconomicaPrincipal || d.cnaeDescricao),
+        socios: (directRes.socios || []).map(s => ({
+          nome: s.nome || s.nomeEntidade || '',
+          qualificacao: s.qualificacao || 'Sócio',
+          cpf_cnpj_socio: s.documento || '',
+          documento: s.documento || '',
+          cpfRepresentante: ''
+        })),
+        endereco: {
+          cep: d.cep ? maskCEP(d.cep) : '',
+          logradouro: `${d.descricaoTipoLogradouro || ''} ${d.logradouro || ''}`.trim(),
+          numero: d.numero || '',
+          complemento: d.complemento || '',
+          bairro: d.bairroDistrito || d.bairro || '',
+          municipio: d.municipio || '',
+          uf: (d.uf || '').trim().toUpperCase()
+        },
+        telefone: d.telefone ? maskPhone(d.telefone) : '',
+        email: d.enderecoEletronico ? String(d.enderecoEletronico).toLowerCase() : '',
+        receiptUrl: directRes.receiptUrl || ''
+      };
+    }
+  } catch (err) {
+    console.warn('Tentando próximo provedor de CNPJ (Minha Receita)...', err);
+  }
 
   // Provedor 1: Minha Receita (Base oficial aberta, sem bloqueio de CORS / 429)
   try {

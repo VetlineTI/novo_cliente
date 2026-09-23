@@ -505,13 +505,13 @@ export const consultarDirectDataReceitaPJParticipacaoSocietaria = async (cnpj) =
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
-  try {
+  const tryFetch = async (baseUrl) => {
     const params = new URLSearchParams();
     params.append('CNPJ', cleanCnpj);
     params.append('TOKEN', DIRECTD_TOKEN);
     params.append('gerarComprovante', 'true');
 
-    const response = await fetch(`${BASE_URL}/ReceitaPJParticipacaoSocietaria?${params.toString()}`, {
+    const response = await fetch(`${baseUrl}/ReceitaPJParticipacaoSocietaria?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -519,17 +519,33 @@ export const consultarDirectDataReceitaPJParticipacaoSocietaria = async (cnpj) =
       }
     });
 
-    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.json();
+  };
+
+  try {
+    let result;
+    try {
+      result = await tryFetch(BASE_URL);
+    } catch (proxyErr) {
+      // Fallback para URL direta da Direct Data se proxy falhar
+      result = await tryFetch('https://apiv3.directd.com.br/api');
+    }
+
     const meta = result.metaDados || {};
     const retorno = result.retorno || {};
 
-    if (response.ok && retorno && (retorno.numeroInscricao || retorno.nomeEmpresarial || retorno.cnpj || retorno.razaoSocial)) {
+    if (retorno && (retorno.numeroInscricao || retorno.nomeEmpresarial || retorno.cnpj || retorno.razaoSocial)) {
       const receiptUrl = meta.urlComprovante || generateReceitaPJParticipacaoSocietariaHtml(retorno, meta);
 
       const socios = Array.isArray(retorno.socios)
         ? retorno.socios.map(s => ({
             nome: s.nomeEntidade || s.nome || '',
             documento: s.documento || '',
+            cpf_cnpj_socio: s.documento || '',
             qualificacao: s.qualificacao || 'Sócio',
             dataEntrada: s.dataEntradaSociedade || s.dataEntrada || '',
             percentual: s.percentualParticipacao || 0
@@ -555,7 +571,7 @@ export const consultarDirectDataReceitaPJParticipacaoSocietaria = async (cnpj) =
 
     return {
       success: false,
-      code: meta.resultadoId || response.status,
+      code: meta.resultadoId || 400,
       error: meta.mensagem || meta.resultado || 'Falha na consulta ReceitaPJParticipacaoSocietaria',
       raw: result
     };
