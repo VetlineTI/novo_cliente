@@ -71,7 +71,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/lib/infosimples.js` | Módulo de integração com APIs de bureau (JUCESP Ficha Simplificada, CENPROT Protestos e SINTEGRA). |
-| `src/lib/directd.js` | Módulo de integração com a API Direct Data: `CadastroPessoaJuridicaPlus`, `ProtestosOnline` (IEPTB / CENPROT Nacional) e `Sintegra` (Consulta e validação cadastral estadual com comprovante em PDF). |
+| `src/lib/directd.js` | Módulo de integração com a API Direct Data: `ReceitaPJParticipacaoSocietaria` (Ficha Oficial da Receita com QSA e Participações), `CadastroPessoaJuridicaPlus`, `ProtestosOnline` (IEPTB / CENPROT Nacional) e `Sintegra` (Consulta e validação cadastral estadual com comprovante em PDF). |
 | `src/components/Header.jsx` | Cabeçalho com logo Vetline, indicador de segurança, identificação da sessão do cliente e link para Admin. |
 | `src/components/LeftSidebar.jsx` | Painel lateral de benefícios institucionais da Vetline. |
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio, checagem antecipada de Sócios (QSA) e Sintegra, e acionamento de criação de senha. |
@@ -97,8 +97,8 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 
 ### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
 - Integrado na esteira de análise de crédito e validação documental com a API da **Direct Data** e **Infosimples**:
-  - **SINTEGRA / Cadastros Estaduais (`/api/Sintegra`)**: Consulta automática da Inscrição Estadual (IE) e verificação de situação cadastral (Habilitado/Ativo) no SEFAZ. O comprovante oficial em PDF (`urlComprovante`) é anexado automaticamente aos documentos do cliente para análise do administrador.
-  - **JUCESP (Ficha Cadastral Simplificada)**: Consulta oficial na Junta Comercial via Direct Data / Gov.br, obtendo NIRE, capital, objeto social e comprovante em PDF oficial.
+  - **Receita Federal / QSA (`/api/ReceitaPJParticipacaoSocietaria`)**: Extração oficial do comprovante da Receita Federal com Quadro Societário e percentuais de participação, anexando o documento oficial em PDF (`urlComprovante`) ao cadastro do cliente que concluiu o credenciamento com sucesso.
+  - **SINTEGRA / Cadastros Estaduais (`/api/Sintegra`)**: Consulta automática da Inscrição Estadual (IE) e verificação de situação cadastral (Habilitado/Ativo) no SEFAZ com comprovante oficial em PDF anexado automaticamente.
   - **CENPROT / IEPTB (`/api/ProtestosOnline`)**: Verificação unificada de ocorrências de protestos em cartórios em âmbito nacional.
 - **Proxy Seguro Serverless**: Funções `api/directd.js` e `api/infosimples.js` para garantir execução rápida e segura no Vercel sem bloqueios de CORS ou WAF.
 

@@ -262,7 +262,12 @@ export const consultarReceitaCNPJ = async (cnpj) => {
   };
 };
 
-import { consultarDirectDataPJ, consultarDirectDataProtestos, consultarDirectDataSintegra } from './directd';
+import { 
+  consultarDirectDataPJ, 
+  consultarDirectDataReceitaPJParticipacaoSocietaria,
+  consultarDirectDataProtestos, 
+  consultarDirectDataSintegra 
+} from './directd';
 
 /**
  * Consulta de Inscrição Estadual e Situação Cadastral no SINTEGRA / CADESP
@@ -386,8 +391,9 @@ export const consultarProtestosCenprot = async (cnpj) => {
 };
 
 /**
- * Consulta Cadastral PJ / JUCESP
- * Prioridade: Direct Data (CadastroPessoaJuridicaPlus) com fallback para JUCESP Oficial (Gov.br)
+ * Consulta Cadastral PJ / JUCESP / Receita Federal com QSA
+ * Prioridade: Direct Data (/api/ReceitaPJParticipacaoSocietaria) com comprovante oficial em PDF
+ * Fallback: CadastroPessoaJuridicaPlus e JUCESP Oficial (Gov.br)
  */
 export const consultarJucespSimplificada = async (cnpj, options = {}) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
@@ -395,13 +401,30 @@ export const consultarJucespSimplificada = async (cnpj, options = {}) => {
     return { success: false, error: 'CNPJ inválido para consulta.' };
   }
 
-  // 1. Tenta Direct Data (CadastroPessoaJuridicaPlus)
+  // 1. Prioridade Oficial: Direct Data (ReceitaPJParticipacaoSocietaria com QSA e Comprovante Oficial PDF)
+  try {
+    const directQsaRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanCnpj);
+    if (directQsaRes.success && directQsaRes.data) {
+      return {
+        success: true,
+        source: 'directd_qsa',
+        nire: directQsaRes.data.nire || null,
+        receiptUrl: directQsaRes.receiptUrl,
+        data: directQsaRes.data,
+        raw: directQsaRes.raw
+      };
+    }
+  } catch (dErr) {
+    console.warn('Tentativa Direct Data ReceitaPJParticipacaoSocietaria:', dErr);
+  }
+
+  // 2. Fallback: Direct Data (CadastroPessoaJuridicaPlus)
   try {
     const directRes = await consultarDirectDataPJ(cleanCnpj);
     if (directRes.success && directRes.data) {
       return {
         success: true,
-        source: 'directd',
+        source: 'directd_pjplus',
         nire: directRes.data.nire || null,
         receiptUrl: directRes.receiptUrl,
         data: directRes.data,

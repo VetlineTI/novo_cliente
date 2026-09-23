@@ -340,6 +340,234 @@ export const consultarDirectDataPJ = async (cnpj) => {
 };
 
 /**
+ * Gera um comprovante HTML estilizado com os dados da Receita Federal e Participação Societária (QSA)
+ * @param {Object} retorno Dados da consulta
+ * @param {Object} metaDados Metadados da consulta
+ * @returns {string} Data URI com HTML formatado
+ */
+export const generateReceitaPJParticipacaoSocietariaHtml = (retorno = {}, metaDados = {}) => {
+  const cnpj = retorno.numeroInscricao || retorno.cnpj || '';
+  const razaoSocial = retorno.nomeEmpresarial || retorno.razaoSocial || '';
+  const nomeFantasia = retorno.nomeFantasia || '-';
+  const dataAbertura = retorno.dataAbertura || retorno.dataFundacao || '';
+  const situacao = retorno.situacaoCadastral || 'Ativa';
+  const dataSituacao = retorno.dataSituacaoCadastral || '';
+  const cnaePrincipal = retorno.atividadeEconomicaPrincipal || '';
+  const natureza = retorno.naturezaJuridica || '';
+  const porte = retorno.porte || '';
+  const capitalSocial = retorno.capitalSocialQSA || '-';
+  const telefone = retorno.telefone || '-';
+  const email = retorno.enderecoEletronico || '-';
+
+  const enderecoFormatado = retorno.logradouro
+    ? `${retorno.logradouro}, ${retorno.numero || 'S/N'}${retorno.complemento ? ' - ' + retorno.complemento : ''} - ${retorno.bairroDistrito || retorno.bairro || ''}, ${retorno.municipio || ''}/${retorno.uf || ''} - CEP: ${retorno.cep || ''}`
+    : '-';
+
+  const socios = Array.isArray(retorno.socios) ? retorno.socios : [];
+  const sociosRows = socios.length > 0
+    ? socios.map(s => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">${s.nomeEntidade || s.nome || '-'}</td>
+        <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#334155;">${s.qualificacao || 'Sócio'}</td>
+        <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#0f766e;font-family:monospace;">${s.documento || '-'}</td>
+        <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:center;font-weight:600;color:#0369a1;">${s.percentualParticipacao ? s.percentualParticipacao + '%' : '-'}</td>
+        <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#64748b;text-align:center;">${s.dataEntradaSociedade || s.dataEntrada || '-'}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" style="padding:10px;border:1px solid #cbd5e1;color:#64748b;font-style:italic;text-align:center;">Nenhum sócio informado no QSA</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Receita Federal - Quadro Societário - ${razaoSocial || cnpj}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; font-size: 12px; }
+    .card { max-width: 860px; margin: 0 auto; background: #ffffff; border: 2px solid #0f766e; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
+    .header { text-align: center; border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 16px; }
+    .title { font-size: 15px; font-weight: bold; color: #0f766e; text-transform: uppercase; margin: 0; }
+    .subtitle { font-size: 11px; color: #475569; margin-top: 4px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; }
+    .box { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; background: #ffffff; }
+    .label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; display: block; margin-bottom: 2px; }
+    .val { font-size: 11px; font-weight: 600; color: #0f172a; }
+    .col-12 { grid-column: span 12; }
+    .col-8 { grid-column: span 8; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    .col-3 { grid-column: span 3; }
+    .badge-status { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    th { background: #f1f5f9; padding: 6px 10px; border: 1px solid #cbd5e1; font-size: 10px; text-align: left; color: #475569; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">Receita Federal • Comprovante Cadastral e Participação Societária (QSA)</div>
+      <div class="subtitle">Direct Data • Consulta UID: ${metaDados.consultaUid || '-'} • Data: ${metaDados.data || new Date().toLocaleString('pt-BR')}</div>
+    </div>
+
+    <div class="grid">
+      <div class="box col-4">
+        <span class="label">Número de Inscrição (CNPJ)</span>
+        <span class="val">${cnpj}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Data de Abertura</span>
+        <span class="val">${dataAbertura || '-'}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Situação Cadastral</span>
+        <span class="val badge-status">${situacao} ${dataSituacao ? '(' + dataSituacao + ')' : ''}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Nome Empresarial (Razão Social)</span>
+        <span class="val" style="font-size: 13px; color: #0f766e;">${razaoSocial}</span>
+      </div>
+
+      <div class="box col-8">
+        <span class="label">Título do Estabelecimento (Nome Fantasia)</span>
+        <span class="val">${nomeFantasia}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Porte</span>
+        <span class="val">${porte || '-'}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Atividade Econômica Principal</span>
+        <span class="val">${cnaePrincipal || '-'}</span>
+      </div>
+
+      <div class="box col-8">
+        <span class="label">Natureza Jurídica</span>
+        <span class="val">${natureza || '-'}</span>
+      </div>
+      <div class="box col-4">
+        <span class="label">Capital Social QSA</span>
+        <span class="val">${capitalSocial ? 'R$ ' + capitalSocial : '-'}</span>
+      </div>
+
+      <div class="box col-12">
+        <span class="label">Endereço do Estabelecimento</span>
+        <span class="val">${enderecoFormatado}</span>
+      </div>
+
+      <div class="box col-6">
+        <span class="label">Telefone de Contato</span>
+        <span class="val">${telefone}</span>
+      </div>
+      <div class="box col-6">
+        <span class="label">Correio Eletrônico (E-mail)</span>
+        <span class="val">${email}</span>
+      </div>
+    </div>
+
+    <div style="margin-top: 18px;">
+      <span class="label" style="font-size: 11px; margin-bottom: 6px;">Quadro de Sócios e Administradores (QSA):</span>
+      <table>
+        <thead>
+          <tr>
+            <th>Nome do Sócio / Administrador</th>
+            <th>Qualificação</th>
+            <th>CPF / CNPJ</th>
+            <th style="text-align: center;">% Part.</th>
+            <th style="text-align: center;">Data Entrada</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sociosRows}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:20px;text-align:center;font-size:10px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:8px;">
+      Comprovante Oficial Direct Data (ReceitaPJParticipacaoSocietaria) • Validação Sistema Vetline em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+};
+
+/**
+ * Consulta oficial da Receita Federal e Quadro Societário na Direct Data (/api/ReceitaPJParticipacaoSocietaria)
+ * Utilizada para extrair e anexar o documento oficial do cliente após a conclusão com sucesso do cadastro
+ * @param {string} cnpj CNPJ da empresa
+ * @returns {Promise<Object>} Resultado padronizado com comprovante oficial em PDF ou HTML
+ */
+export const consultarDirectDataReceitaPJParticipacaoSocietaria = async (cnpj) => {
+  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) {
+    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('CNPJ', cleanCnpj);
+    params.append('TOKEN', DIRECTD_TOKEN);
+    params.append('gerarComprovante', 'true');
+
+    const response = await fetch(`${BASE_URL}/ReceitaPJParticipacaoSocietaria?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Vetline-App/1.0'
+      }
+    });
+
+    const result = await response.json();
+    const meta = result.metaDados || {};
+    const retorno = result.retorno || {};
+
+    if (response.ok && retorno && (retorno.numeroInscricao || retorno.nomeEmpresarial || retorno.cnpj || retorno.razaoSocial)) {
+      const receiptUrl = meta.urlComprovante || generateReceitaPJParticipacaoSocietariaHtml(retorno, meta);
+
+      const socios = Array.isArray(retorno.socios)
+        ? retorno.socios.map(s => ({
+            nome: s.nomeEntidade || s.nome || '',
+            documento: s.documento || '',
+            qualificacao: s.qualificacao || 'Sócio',
+            dataEntrada: s.dataEntradaSociedade || s.dataEntrada || '',
+            percentual: s.percentualParticipacao || 0
+          }))
+        : [];
+
+      return {
+        success: true,
+        data: retorno,
+        metaDados: meta,
+        razaoSocial: retorno.nomeEmpresarial || retorno.razaoSocial || '',
+        nomeFantasia: retorno.nomeFantasia || '',
+        dataAbertura: retorno.dataAbertura || retorno.dataFundacao || '',
+        situacaoCadastral: retorno.situacaoCadastral || 'Ativa',
+        porte: retorno.porte || '',
+        naturezaJuridica: retorno.naturezaJuridica || '',
+        capitalSocial: retorno.capitalSocialQSA || '',
+        socios,
+        receiptUrl,
+        raw: result
+      };
+    }
+
+    return {
+      success: false,
+      code: meta.resultadoId || response.status,
+      error: meta.mensagem || meta.resultado || 'Falha na consulta ReceitaPJParticipacaoSocietaria',
+      raw: result
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Erro ao conectar com Direct Data (ReceitaPJParticipacaoSocietaria): ${err.message || 'Erro inesperado'}`
+    };
+  }
+};
+
+/**
  * Gera um comprovante / certidão digital estilizado do SINTEGRA / Cadastro Estadual
  * @param {Object} retorno Dados da consulta do Sintegra
  * @param {Object} metaDados Metadados da consulta
