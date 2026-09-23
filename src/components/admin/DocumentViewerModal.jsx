@@ -8,14 +8,41 @@ import {
   RotateCw, 
   FileText, 
   ShieldCheck, 
-  Maximize2, 
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
+
+const getDecodedHtml = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.startsWith('data:text/html') || rawUrl.startsWith('data:text/plain')) {
+    try {
+      const commaIdx = rawUrl.indexOf(',');
+      if (commaIdx !== -1) {
+        const meta = rawUrl.slice(0, commaIdx);
+        const body = rawUrl.slice(commaIdx + 1);
+        if (meta.includes('base64')) {
+          return atob(body);
+        }
+        return decodeURIComponent(body);
+      }
+    } catch (e) {
+      try {
+        return unescape(rawUrl.slice(rawUrl.indexOf(',') + 1));
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
+  return null;
+};
 
 export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc }) => {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [inlineHtml, setInlineHtml] = useState(null);
+  const [blobPdfUrl, setBlobPdfUrl] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const activeDoc = docItem || doc;
 
@@ -34,59 +61,85 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
     };
   }, [isOpen]);
 
+  const url = activeDoc?.url;
+  const fileName = activeDoc?.fileName;
+  const title = activeDoc?.title;
+  const verificationBadge = activeDoc?.verificationBadge;
+  const category = activeDoc?.category;
+  const notes = activeDoc?.notes;
+
+  useEffect(() => {
+    let isMounted = true;
+    setInlineHtml(null);
+    setBlobPdfUrl(null);
+
+    if (!url) return;
+
+    // 1. Se for Data URI de HTML
+    const decoded = getDecodedHtml(url);
+    if (decoded) {
+      setInlineHtml(decoded);
+      return;
+    }
+
+    // 2. Se for URL HTTP/HTTPS
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      setIsLoading(true);
+      fetch(url)
+        .then(async (res) => {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('text/html') || url.includes('.html') || fileName?.toLowerCase().endsWith('.html')) {
+            const text = await res.text();
+            if (isMounted) setInlineHtml(text);
+          } else if (contentType.includes('pdf') || url.toLowerCase().includes('.pdf') || fileName?.toLowerCase().endsWith('.pdf')) {
+            const blob = await res.blob();
+            const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+            const objUrl = URL.createObjectURL(pdfBlob);
+            if (isMounted) setBlobPdfUrl(objUrl);
+          }
+        })
+        .catch((err) => {
+          console.warn('Carregamento direto de URL no modal:', err);
+        })
+        .finally(() => {
+          if (isMounted) setIsLoading(false);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url, fileName]);
+
   if (!isOpen || !activeDoc) return null;
 
-  const { title, url, fileName, type, verificationBadge, category, notes } = activeDoc;
-
-  const isDataHtml = typeof url === 'string' && (url.startsWith('data:text/html') || url.includes('data:text/html'));
   const isDataImage = typeof url === 'string' && url.startsWith('data:image');
-  const isDataPdf = typeof url === 'string' && (url.startsWith('data:application/pdf') || url.includes('application/pdf'));
-
-  const isHtml = isDataHtml || (
-    !isDataPdf && (
-      fileName?.toLowerCase().endsWith('.html') || 
-      fileName?.toLowerCase().endsWith('.htm') || 
-      url?.toLowerCase().includes('.html') || 
-      type === 'html'
-    )
-  );
-
-  const isPdf = !isHtml && (
-    isDataPdf ||
-    fileName?.toLowerCase().endsWith('.pdf') || 
-    url?.toLowerCase().includes('.pdf') || 
-    type === 'pdf'
-  );
-
-  const isImage = !isHtml && !isPdf && (
+  const isImage = !inlineHtml && (
     isDataImage ||
     fileName?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|svg)$/) ||
     url?.includes('photo-') ||
-    type === 'image' ||
-    true // Padrão se não for PDF nem HTML
+    (!url?.includes('.pdf') && !url?.includes('.html') && !url?.startsWith('data:text') && !blobPdfUrl)
   );
-
-  // Extrai o conteúdo HTML decodificado para uso com srcDoc se for data:text/html
-  const decodedHtml = isDataHtml
-    ? (() => {
-        try {
-          const raw = url.replace(/^data:text\/html;charset=utf-8,/, '');
-          return decodeURIComponent(raw);
-        } catch (e) {
-          return null;
-        }
-      })()
-    : null;
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
   const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
 
   const handleDownload = () => {
-    if (!url) return;
+    if (!url && !inlineHtml) return;
+    if (inlineHtml) {
+      const blob = new Blob([inlineHtml], { type: 'text/html;charset=utf-8' });
+      const a = window.document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName || `${title || 'documento'}.html`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      return;
+    }
     const a = window.document.createElement('a');
-    a.href = url;
-    a.download = fileName || `${title || 'documento'}.${isHtml ? 'html' : isPdf ? 'pdf' : 'jpg'}`;
+    a.href = blobPdfUrl || url;
+    a.download = fileName || `${title || 'documento'}.pdf`;
     a.target = '_blank';
     window.document.body.appendChild(a);
     a.click();
@@ -192,42 +245,44 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
 
         {/* Área Central de Visualização */}
         <div className="flex-1 bg-slate-950 flex items-center justify-center overflow-auto p-4 relative select-none">
-          {url ? (
-            isHtml ? (
-              <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
-                <iframe
-                  {...(decodedHtml ? { srcDoc: decodedHtml } : { src: url })}
-                  title={title || 'Documento'}
-                  sandbox="allow-same-origin allow-scripts allow-popups"
-                  className="w-full flex-1 border-0 bg-white"
-                />
-              </div>
-            ) : isPdf ? (
-              <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
-                <iframe
-                  src={url.startsWith('data:') ? url : `${url}#toolbar=1&navpanes=0`}
-                  title={title || 'Documento PDF'}
-                  className="w-full flex-1 border-0 bg-white"
-                />
-              </div>
-            ) : (
-              <div className="flex items-center justify-center min-w-full min-h-full transition-transform duration-200">
-                <img
-                  src={url}
-                  alt={title || 'Documento do Cliente'}
-                  style={{
-                    transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                    transformOrigin: 'center center',
-                    transition: 'transform 0.15s ease-out'
-                  }}
-                  className="max-h-[72vh] max-w-[85vw] object-contain rounded shadow-lg"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = 'https://placehold.co/800x600/1e293b/ffffff?text=Documento+Anexado';
-                  }}
-                />
-              </div>
-            )
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center p-8 text-slate-300">
+              <Loader2 className="w-8 h-8 animate-spin text-brand-green mb-3" />
+              <span className="text-xs font-semibold">Carregando visualização do documento...</span>
+            </div>
+          ) : inlineHtml ? (
+            <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
+              <iframe
+                srcDoc={inlineHtml}
+                title={title || 'Documento'}
+                className="w-full h-full border-0 bg-white"
+              />
+            </div>
+          ) : (blobPdfUrl || url?.toLowerCase().includes('.pdf') || fileName?.toLowerCase().endsWith('.pdf')) ? (
+            <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
+              <iframe
+                src={blobPdfUrl || url}
+                title={title || 'Documento PDF'}
+                className="w-full h-full border-0 bg-white"
+              />
+            </div>
+          ) : url ? (
+            <div className="flex items-center justify-center min-w-full min-h-full transition-transform duration-200">
+              <img
+                src={url}
+                alt={title || 'Documento do Cliente'}
+                style={{
+                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.15s ease-out'
+                }}
+                className="max-h-[72vh] max-w-[85vw] object-contain rounded shadow-lg"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = 'https://placehold.co/800x600/1e293b/ffffff?text=Documento+Anexado';
+                }}
+              />
+            </div>
           ) : (
             <div className="text-center p-8 text-slate-400">
               <AlertCircle className="w-12 h-12 text-slate-500 mx-auto mb-3" />
