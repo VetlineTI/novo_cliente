@@ -1066,12 +1066,22 @@ export const ClientDashboard = ({ onLogout }) => {
                       {hasFile ? (
                         <button
                           type="button"
-                          onClick={() => setViewerDoc({
-                            title: doc.title,
-                            url: doc.url,
-                            fileName: `${doc.id}_documento`,
-                            category: 'Documento Anexado'
-                          })}
+                          onClick={() => {
+                            let ext = '';
+                            if (typeof doc.url === 'string') {
+                              const clean = doc.url.split('?')[0].toLowerCase();
+                              if (clean.includes('.pdf')) ext = '.pdf';
+                              else if (clean.includes('.png')) ext = '.png';
+                              else if (clean.includes('.jpg') || clean.includes('.jpeg')) ext = '.jpg';
+                              else if (clean.includes('.webp')) ext = '.webp';
+                            }
+                            setViewerDoc({
+                              title: doc.title,
+                              url: doc.url,
+                              fileName: `${doc.id}_documento${ext}`,
+                              category: 'Documento Anexado'
+                            });
+                          }}
                           className="py-1.5 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5 text-brand-teal" />

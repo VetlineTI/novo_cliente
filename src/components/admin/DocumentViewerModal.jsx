@@ -75,10 +75,19 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
 
     if (!url) return;
 
-    // 1. Se for Data URI de HTML
+    // 1. Se for Data URI de imagem direta
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      return;
+    }
+
+    // 2. Se for Data URI de PDF direto
+    if (typeof url === 'string' && url.startsWith('data:application/pdf')) {
+      return;
+    }
+
+    // 3. Se for Data URI de HTML ou texto
     const decoded = getDecodedHtml(url);
     if (decoded) {
-      // Se por acaso a string decodificada for um binário de PDF
       if (decoded.startsWith('%PDF')) {
         try {
           const rawBytes = url.substring(url.indexOf(',') + 1);
@@ -94,43 +103,93 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
           return;
         } catch (e) {}
       }
-      setInlineHtml(decoded);
+      
+      // Se for imagem binária disfarçada em string (como JFIF / PNG)
+      if (decoded.includes('JFIF') || decoded.startsWith('\xFF\xD8\xFF') || decoded.startsWith('\x89PNG')) {
+        return;
+      }
+
+      // Apenas seta inlineHtml se for realmente estrutura HTML
+      const trimmedDecoded = decoded.trim();
+      if (
+        trimmedDecoded.startsWith('<!DOCTYPE') || 
+        trimmedDecoded.toLowerCase().startsWith('<html') ||
+        trimmedDecoded.startsWith('<div') ||
+        trimmedDecoded.startsWith('<table') ||
+        trimmedDecoded.includes('</html>')
+      ) {
+        setInlineHtml(decoded);
+      }
       return;
     }
 
-    // 2. Se for URL HTTP/HTTPS
+    // 4. Se for imagem por extensão conhecida
+    const cleanUrl = url.split('?')[0].toLowerCase();
+    const isImageFile = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(cleanUrl) || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(fileName || '');
+    if (isImageFile) {
+      return;
+    }
+
+    // 5. Se for PDF direto por extensão
+    if (cleanUrl.endsWith('.pdf') || (fileName && fileName.toLowerCase().endsWith('.pdf'))) {
+      return;
+    }
+
+    // 6. Se for URL HTTP/HTTPS genérica (ex: endpoint do Bureau que pode retornar PDF ou HTML)
     if (url.startsWith('http://') || url.startsWith('https://')) {
       setIsLoading(true);
       fetch(url)
         .then(async (res) => {
+          const contentType = (res.headers.get('content-type') || '').toLowerCase();
+          
+          if (contentType.includes('image/')) {
+            return;
+          }
+
           const blob = await res.blob();
           const headBuffer = await blob.slice(0, 8).arrayBuffer();
+          const headBytes = new Uint8Array(headBuffer);
           const headStr = new TextDecoder().decode(headBuffer);
 
-          if (headStr.startsWith('%PDF')) {
+          // Verifica se é PDF (%PDF)
+          if (headStr.startsWith('%PDF') || contentType.includes('application/pdf')) {
             const pdfBlob = new Blob([blob], { type: 'application/pdf' });
             const objUrl = URL.createObjectURL(pdfBlob);
             if (isMounted) {
               setBlobPdfUrl(objUrl);
               setInlineHtml(null);
             }
-          } else {
-            const text = await blob.text();
-            if (text.startsWith('%PDF')) {
-              const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-              const objUrl = URL.createObjectURL(pdfBlob);
-              if (isMounted) {
-                setBlobPdfUrl(objUrl);
-                setInlineHtml(null);
-              }
-            } else if (isMounted) {
+            return;
+          }
+
+          // Verifica se é imagem binária (JPEG \xFF\xD8, PNG \x89PNG, GIF, etc.)
+          if (
+            (headBytes[0] === 0xFF && headBytes[1] === 0xD8) ||
+            (headBytes[0] === 0x89 && headBytes[1] === 0x50 && headBytes[2] === 0x4E && headBytes[3] === 0x47) ||
+            (headBytes[0] === 0x47 && headBytes[1] === 0x49 && headBytes[2] === 0x46)
+          ) {
+            return;
+          }
+
+          // Verifica se é HTML válido
+          const text = await blob.text();
+          const trimmed = text.trim();
+          if (
+            contentType.includes('text/html') ||
+            trimmed.startsWith('<!DOCTYPE') ||
+            trimmed.toLowerCase().startsWith('<html') ||
+            trimmed.startsWith('<div') ||
+            trimmed.startsWith('<table') ||
+            trimmed.includes('</html>')
+          ) {
+            if (isMounted) {
               setInlineHtml(text);
               setBlobPdfUrl(null);
             }
           }
         })
         .catch((err) => {
-          console.warn('Carregamento direto de URL no modal:', err);
+          console.warn('Carregamento de documento no modal:', err);
         })
         .finally(() => {
           if (isMounted) setIsLoading(false);
@@ -145,11 +204,13 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
   if (!isOpen || !activeDoc) return null;
 
   const isDataImage = typeof url === 'string' && url.startsWith('data:image');
-  const isImage = !inlineHtml && (
+  const isPdfDoc = Boolean(blobPdfUrl || url?.toLowerCase().includes('.pdf') || fileName?.toLowerCase().endsWith('.pdf'));
+  const isImage = !inlineHtml && !isPdfDoc && (
     isDataImage ||
     fileName?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|svg)$/) ||
+    url?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|svg)(\?|$)/) ||
     url?.includes('photo-') ||
-    (!url?.includes('.pdf') && !url?.includes('.html') && !url?.startsWith('data:text') && !blobPdfUrl)
+    (!url?.includes('.pdf') && !url?.includes('.html') && !url?.startsWith('data:text'))
   );
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
