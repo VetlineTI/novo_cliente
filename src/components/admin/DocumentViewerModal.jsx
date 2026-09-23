@@ -38,20 +38,45 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
 
   const { title, url, fileName, type, verificationBadge, category, notes } = activeDoc;
 
-  const isPdf = fileName?.toLowerCase().endsWith('.pdf') || url?.toLowerCase().includes('.pdf') || type === 'pdf';
-  const isHtml = !isPdf && (
-    fileName?.toLowerCase().endsWith('.html') || 
-    url?.toLowerCase().includes('.html') || 
-    url?.startsWith('data:text/html') ||
-    type === 'html'
+  const isDataHtml = typeof url === 'string' && (url.startsWith('data:text/html') || url.includes('data:text/html'));
+  const isDataImage = typeof url === 'string' && url.startsWith('data:image');
+  const isDataPdf = typeof url === 'string' && (url.startsWith('data:application/pdf') || url.includes('application/pdf'));
+
+  const isHtml = isDataHtml || (
+    !isDataPdf && (
+      fileName?.toLowerCase().endsWith('.html') || 
+      fileName?.toLowerCase().endsWith('.htm') || 
+      url?.toLowerCase().includes('.html') || 
+      type === 'html'
+    )
   );
-  const isImage = !isPdf && !isHtml && (
+
+  const isPdf = !isHtml && (
+    isDataPdf ||
+    fileName?.toLowerCase().endsWith('.pdf') || 
+    url?.toLowerCase().includes('.pdf') || 
+    type === 'pdf'
+  );
+
+  const isImage = !isHtml && !isPdf && (
+    isDataImage ||
     fileName?.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|svg)$/) ||
-    url?.startsWith('data:image') ||
     url?.includes('photo-') ||
     type === 'image' ||
     true // Padrão se não for PDF nem HTML
   );
+
+  // Extrai o conteúdo HTML decodificado para uso com srcDoc se for data:text/html
+  const decodedHtml = isDataHtml
+    ? (() => {
+        try {
+          const raw = url.replace(/^data:text\/html;charset=utf-8,/, '');
+          return decodeURIComponent(raw);
+        } catch (e) {
+          return null;
+        }
+      })()
+    : null;
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
@@ -61,7 +86,7 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
     if (!url) return;
     const a = window.document.createElement('a');
     a.href = url;
-    a.download = fileName || `${title || 'documento'}.jpg`;
+    a.download = fileName || `${title || 'documento'}.${isHtml ? 'html' : isPdf ? 'pdf' : 'jpg'}`;
     a.target = '_blank';
     window.document.body.appendChild(a);
     a.click();
@@ -135,7 +160,7 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
             <button
               onClick={handleDownload}
               title="Baixar Documento"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium rounded-lg border border-slate-700 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium rounded-lg border border-slate-700 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-brand-green" />
               <span className="hidden sm:inline">Baixar</span>
@@ -158,7 +183,7 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
             <button
               onClick={onClose}
               title="Fechar (Esc)"
-              className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 hover:text-white rounded-lg border border-red-500/30 transition-colors ml-1"
+              className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 hover:text-white rounded-lg border border-red-500/30 transition-colors ml-1 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -168,12 +193,20 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
         {/* Área Central de Visualização */}
         <div className="flex-1 bg-slate-950 flex items-center justify-center overflow-auto p-4 relative select-none">
           {url ? (
-            isPdf || isHtml ? (
+            isHtml ? (
               <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
                 <iframe
-                  src={isPdf ? `${url}#toolbar=1&navpanes=0` : url}
+                  {...(decodedHtml ? { srcDoc: decodedHtml } : { src: url })}
                   title={title || 'Documento'}
-                  sandbox={isHtml ? "allow-same-origin allow-popups" : undefined}
+                  sandbox="allow-same-origin allow-scripts allow-popups"
+                  className="w-full flex-1 border-0 bg-white"
+                />
+              </div>
+            ) : isPdf ? (
+              <div className="w-full h-full flex flex-col bg-white rounded-lg overflow-hidden border border-slate-700 shadow-xl">
+                <iframe
+                  src={url.startsWith('data:') ? url : `${url}#toolbar=1&navpanes=0`}
+                  title={title || 'Documento PDF'}
                   className="w-full flex-1 border-0 bg-white"
                 />
               </div>

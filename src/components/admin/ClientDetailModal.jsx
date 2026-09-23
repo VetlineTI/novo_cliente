@@ -316,31 +316,9 @@ export const ClientDetailModal = ({
           }
         ] : []
       },
-      ...((client.doc_ie_url || client.doc_sintegra_url) ? [
-        {
-          id: 'ie_fiscal',
-          name: 'Inscrição Estadual (SINTEGRA)',
-          icon: FileCheck2,
-          badge: 'Consultado ✓',
-          hasDocs: true,
-          docs: [
-            {
-              id: 'doc_ie',
-              title: 'Comprovante Oficial SINTEGRA / CADESP (SEFAZ)',
-              category: 'Fiscal / SEFAZ',
-              fileName: `sintegra_${cleanDoc}.pdf`,
-              bucket: bucketName,
-              path: `${clientStoragePath}/sintegra/`,
-              url: client.doc_ie_url || client.doc_sintegra_url,
-              verificationBadge: client.numero_ie || client.ie_number ? `IE: ${client.numero_ie || client.ie_number}` : 'SINTEGRA Habilitado',
-              notes: `Comprovante oficial de Inscrição Estadual (Direct Data)`
-            }
-          ]
-        }
-      ] : []),
       {
         id: 'bureau_certidoes',
-        name: 'Doc. Bureau & Certidões',
+        name: 'Doc. Cadastral simplificada, Sintegra e Cenprot',
         icon: Search,
         badge: (client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url || client.doc_ie_url || client.doc_sintegra_url) ? 'Consultado ✓' : 'Disponível',
         hasDocs: Boolean(client.doc_cenprot_url || client.doc_jucesp_url || client.doc_receita_url || client.doc_ie_url || client.doc_sintegra_url),
@@ -376,14 +354,14 @@ export const ClientDetailModal = ({
           ...((client.doc_ie_url || client.doc_sintegra_url) ? [
             {
               id: 'doc_sintegra_bureau',
-              title: 'Comprovante SINTEGRA / CADESP (SEFAZ)',
-              category: 'Fiscal',
-              fileName: `sintegra_${cleanDoc}.pdf`,
+              title: 'Comprovante Oficial SINTEGRA / CADESP (SEFAZ)',
+              category: 'Fiscal / SEFAZ',
+              fileName: `sintegra_${cleanDoc}.html`,
               bucket: bucketName,
               path: `${clientStoragePath}/sintegra/`,
               url: client.doc_ie_url || client.doc_sintegra_url,
-              verificationBadge: client.numero_ie || client.ie_number ? `IE: ${client.numero_ie || client.ie_number}` : 'SINTEGRA',
-              notes: `Comprovante de Situação Cadastral Estadual`
+              verificationBadge: client.numero_ie || client.ie_number ? `IE: ${client.numero_ie || client.ie_number}` : 'SINTEGRA Habilitado',
+              notes: `Comprovante oficial de Situação Cadastral Estadual (Direct Data)`
             }
           ] : []),
           ...(client.doc_receita_url ? [
@@ -1172,20 +1150,30 @@ export const ClientDetailModal = ({
                           {/* Preview Otimizado do Documento */}
                           <div
                             onClick={() => handleOpenDoc(doc)}
-                            className="w-full h-44 bg-slate-100 rounded-lg overflow-hidden relative cursor-pointer group border border-slate-200 flex items-center justify-center my-2"
+                            className="w-full h-44 bg-slate-100 rounded-lg overflow-hidden relative cursor-pointer group border border-slate-200 flex items-center justify-center my-2 select-none"
                           >
-                            <img
-                              src={doc.url}
-                              alt={doc.title}
-                              className="w-full h-full object-contain object-center group-hover:scale-105 transition-transform"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = 'https://placehold.co/600x400/f1f5f9/475569?text=Visualizar+Documento';
-                              }}
-                            />
+                            {doc.url && !doc.url.startsWith('data:text/html') && !doc.fileName?.endsWith('.html') && (doc.url.startsWith('data:image') || doc.fileName?.match(/\.(jpg|jpeg|png|webp)$/i)) ? (
+                              <img
+                                src={doc.url}
+                                alt={doc.title}
+                                className="w-full h-full object-contain object-center group-hover:scale-105 transition-transform"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center p-4 text-center">
+                                <div className="w-12 h-12 rounded-xl bg-brand-green/15 text-brand-green flex items-center justify-center mb-2 group-hover:scale-110 transition-transform border border-brand-green/20">
+                                  <FileText className="w-6 h-6" />
+                                </div>
+                                <span className="text-xs font-bold text-slate-800 line-clamp-1 max-w-[200px]">{doc.title}</span>
+                                <span className="text-[10px] text-slate-500 mt-0.5 font-medium">{doc.category || 'Documento Oficial'}</span>
+                              </div>
+                            )}
                             <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white font-bold text-xs">
-                              <Maximize2 className="w-4 h-4" />
-                              <span>Clique para Ampliar</span>
+                              <Eye className="w-4 h-4" />
+                              <span>Clique para Visualizar</span>
                             </div>
                           </div>
 
