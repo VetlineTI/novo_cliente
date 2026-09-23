@@ -1,5 +1,5 @@
-import { unmask, maskCNPJ } from './masks';
-import { isValidCNPJ } from './validators';
+import { unmask, maskCNPJ, maskCPF } from './masks';
+import { isValidCNPJ, fetchCNPJDataFromBrasilAPI } from './validators';
 
 // Keywords de documentos oficiais brasileiros
 const DOC_KEYWORDS = {
@@ -252,6 +252,23 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
       cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
     })).filter(p => p.nome && p.nome.trim().length > 0);
 
+    // Se a lista de sócios veio vazia do formulário (ex: ainda carregando), consulta a API na hora
+    if (authorizedPartners.length === 0 && cleanExpectedDoc && cleanExpectedDoc.length === 14) {
+      try {
+        const directData = await fetchCNPJDataFromBrasilAPI(cleanExpectedDoc);
+        if (directData?.socios && directData.socios.length > 0) {
+          authorizedPartners = directData.socios.map(p => ({
+            nome: p.nome || p.nome_socio || '',
+            documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
+            cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
+            cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
+          })).filter(p => p.nome && p.nome.trim().length > 0);
+        }
+      } catch (e) {
+        console.warn('Falha na busca direta de sócios:', e);
+      }
+    }
+
     // Adiciona titular da Razão Social se lista for vazia (MEI / Empresário Individual)
     if (authorizedPartners.length === 0 && expectedName) {
       const ownerFromRazao = extractOwnerFromRazaoSocial(expectedName);
@@ -265,14 +282,24 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
       }
     }
 
-    // Extrai todos os CPFs do texto
+    // Extrai todos os CPFs do texto (suporta 389.570.869-00, 389570869/00, 38957086900 etc)
     const foundCpfs = [];
-    const cpfMatches = fullRawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g) || [];
-    cpfMatches.forEach(m => {
-      const clean = unmask(m);
-      if (clean.length === 11) foundCpfs.push(clean);
+    const cpfRegexes = [
+      /\b\d{3}\.?\d{3}\.?\d{3}[-\/]?\d{2}\b/g,
+      /\b\d{9}[-\/]\d{2}\b/g,
+      /\b\d{11}\b/g,
+      /cpf[^\d]*(\d{9,11}[-\/]?\d{0,2})/gi
+    ];
+    cpfRegexes.forEach(rgx => {
+      const matches = fullRawText.match(rgx) || [];
+      matches.forEach(m => {
+        const clean = unmask(m);
+        if (clean.length === 11 && !foundCpfs.includes(clean)) {
+          foundCpfs.push(clean);
+        }
+      });
     });
-    if (qrCpfFound) {
+    if (qrCpfFound && !foundCpfs.includes(qrCpfFound)) {
       foundCpfs.push(qrCpfFound);
     }
 
@@ -665,6 +692,23 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
     cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
   })).filter(p => p.nome && p.nome.trim().length > 0);
 
+  // Se a lista de sócios veio vazia, consulta a API na hora
+  if (authorizedPartners.length === 0 && cleanExpectedCnpj && cleanExpectedCnpj.length === 14) {
+    try {
+      const directData = await fetchCNPJDataFromBrasilAPI(cleanExpectedCnpj);
+      if (directData?.socios && directData.socios.length > 0) {
+        authorizedPartners = directData.socios.map(p => ({
+          nome: p.nome || p.nome_socio || '',
+          documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
+          cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
+          cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
+        })).filter(p => p.nome && p.nome.trim().length > 0);
+      }
+    } catch (e) {
+      console.warn('Falha na busca direta de sócios em validatePartnerDocument:', e);
+    }
+  }
+
   // Se não houver sócios no QSA (ex: MEI ou Empresário Individual), extrai o nome do titular da Razão Social
   if (authorizedPartners.length === 0 && expectedCompanyName) {
     const ownerFromRazao = extractOwnerFromRazaoSocial(expectedCompanyName);
@@ -733,19 +777,31 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
       }
     }
 
-    // Extrai todos os CPFs de 11 dígitos encontrados no texto / QR Code
+    // Extrai todos os CPFs de 11 dígitos encontrados no texto / QR Code (suporta 389.570.869-00, 389570869/00 etc)
     const foundCpfs = [];
-    const cpfMatches = fullRawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g) || [];
-    cpfMatches.forEach(m => {
-      const clean = unmask(m);
-      if (clean.length === 11) foundCpfs.push(clean);
+    const cpfRegexes = [
+      /\b\d{3}\.?\d{3}\.?\d{3}[-\/]?\d{2}\b/g,
+      /\b\d{9}[-\/]\d{2}\b/g,
+      /\b\d{11}\b/g,
+      /cpf[^\d]*(\d{9,11}[-\/]?\d{0,2})/gi
+    ];
+    cpfRegexes.forEach(rgx => {
+      const matches = fullRawText.match(rgx) || [];
+      matches.forEach(m => {
+        const clean = unmask(m);
+        if (clean.length === 11 && !foundCpfs.includes(clean)) {
+          foundCpfs.push(clean);
+        }
+      });
     });
 
     if (qrData) {
       const qrCpfMatches = qrData.match(/\b\d{11}\b/g) || [];
       qrCpfMatches.forEach(c => {
         const clean = unmask(c);
-        if (clean.length === 11) foundCpfs.push(clean);
+        if (clean.length === 11 && !foundCpfs.includes(clean)) {
+          foundCpfs.push(clean);
+        }
       });
     }
 

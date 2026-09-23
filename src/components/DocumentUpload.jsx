@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   FileText, 
@@ -37,6 +37,37 @@ export const DocumentUpload = ({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+
+  // Revalida automaticamente o arquivo se os dados da empresa/sócios mudarem no formulário
+  useEffect(() => {
+    if (file) {
+      let isCancelled = false;
+      const runValidation = async () => {
+        setIsValidating(true);
+        try {
+          const result = await validateDocumentAttachment(file, {
+            expectedDocument,
+            expectedName,
+            expectedPartners,
+            category
+          });
+          if (!isCancelled) {
+            setValidationResult(result);
+          }
+        } catch (err) {
+          console.warn('Erro ao revalidar arquivo:', err);
+        } finally {
+          if (!isCancelled) {
+            setIsValidating(false);
+          }
+        }
+      };
+      runValidation();
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [file, expectedDocument, expectedName, JSON.stringify(expectedPartners)]);
 
   const processAndValidateFile = async (selectedFile) => {
     setUploadError(null);
