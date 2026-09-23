@@ -29,7 +29,7 @@ import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { executarAuditoriaBureau, consultarSintegra } from '../lib/infosimples';
-import { validatePartnerDocument } from '../utils/documentValidator';
+import { validatePartnerDocument, validateCompanyAttachment } from '../utils/documentValidator';
 import { 
   maskCPF, 
   maskCNPJ, 
@@ -126,6 +126,48 @@ export const RegistrationForm = ({ onSuccess }) => {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .trim();
+  };
+
+  // Limpa todos os campos do formulário para reinício
+  const resetForm = () => {
+    setDocumentNumber('');
+    setFullName('');
+    setPhone('');
+    setSegment('');
+    setEmail('');
+    setHasSalesperson(false);
+    setSelectedSalespersonCode('');
+    setSalespersonSearch('');
+    setCnpjInfo(null);
+    setCnpjAlert('');
+    bureauAuditPromiseRef.current = null;
+    bureauAuditResultRef.current = null;
+    sintegraResultRef.current = null;
+    setZipcode('');
+    setStreet('');
+    setNumber('');
+    setNeighborhood('');
+    setComplement('');
+    setCity('');
+    setState('');
+    setMainCepError('');
+    setHasDifferentDelivery(false);
+    setDeliveryCep('');
+    setDeliveryStreet('');
+    setDeliveryNumber('');
+    setDeliveryNeighborhood('');
+    setDeliveryComplement('');
+    setDeliveryCity('');
+    setDeliveryState('');
+    setCepError('');
+    setDocContract(null);
+    setDocPartnerPhoto(null);
+    setDocCRMV(null);
+    setDocAddress(null);
+    setAgreedTerms(false);
+    setErrors({});
+    setSubmitError(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Carrega lista de vendedores da tabela public.vendedor
@@ -499,44 +541,73 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Validação antecipada do documento do sócio contra o QSA e SINTEGRA (antes de permitir criar senha)
+    // Validação antecipada de documentos (Contrato Social / Sócio contra QSA) e SINTEGRA
     if (personType === 'PJ') {
       setIsValidatingPartnerDoc(true);
       try {
-        // 1. Validação do Documento do Sócio contra o QSA
-        if (docPartnerPhoto) {
-          let partners = cnpjInfo?.socios || [];
-          if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
-            partners = bureauAuditResultRef.current.data.socios;
-          }
-          if (partners.length === 0 && bureauAuditPromiseRef.current) {
-            const bRes = await bureauAuditPromiseRef.current;
-            if (bRes?.data?.socios) {
-              partners = bRes.data.socios;
-            }
-          }
-
-          if (partners.length > 0) {
-            const partnerCheck = await validatePartnerDocument(docPartnerPhoto, partners);
-            if (!partnerCheck.isValid) {
-              setPartnerMismatchData({
-                title: 'O cadastro não foi concluído',
-                subtitle: 'Divergência identificada no Quadro Societário (QSA)',
-                reasons: partnerCheck.reasons,
-                authorizedPartners: partnerCheck.authorizedPartners,
-                buttonText: 'Reenviar Documentos do Sócio'
-              });
-              setShowPartnerMismatchModal(true);
-              setIsValidatingPartnerDoc(false);
-              return;
-            }
-          }
-        }
-
-        // 2. Validação do SINTEGRA / Inscrição Estadual (SEFAZ)
         const cleanCnpj = unmask(documentNumber);
         const ufState = state || cnpjInfo?.uf || 'SP';
 
+        let partners = cnpjInfo?.socios || [];
+        if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
+          partners = bureauAuditResultRef.current.data.socios;
+        }
+        if (partners.length === 0 && bureauAuditPromiseRef.current) {
+          const bRes = await bureauAuditPromiseRef.current;
+          if (bRes?.data?.socios) {
+            partners = bRes.data.socios;
+          }
+        }
+
+        // 1. Validação do Documento da Empresa (Contrato Social / Cartão CNPJ)
+        if (docContract) {
+          const contractCheck = await validateCompanyAttachment(docContract, {
+            expectedCnpj: cleanCnpj,
+            expectedName: fullName,
+            partnersList: partners
+          });
+
+          if (!contractCheck.isValid) {
+            setPartnerMismatchData({
+              title: 'O cadastro não foi concluído',
+              subtitle: 'Divergência identificada no Documento da Empresa',
+              reasons: contractCheck.reasons,
+              authorizedPartners: [],
+              buttonText: 'Reenviar Documento da Empresa',
+              hideReupload: false,
+              shouldResetForm: false
+            });
+            setShowPartnerMismatchModal(true);
+            setIsValidatingPartnerDoc(false);
+            return;
+          }
+        }
+
+        // 2. Validação do Documento do Sócio (RG / CNH) contra o QSA e CNPJ
+        if (docPartnerPhoto) {
+          const partnerCheck = await validatePartnerDocument(
+            docPartnerPhoto,
+            partners,
+            cleanCnpj,
+            fullName || cnpjInfo?.razaoSocial || ''
+          );
+          if (!partnerCheck.isValid) {
+            setPartnerMismatchData({
+              title: 'O cadastro não foi concluído',
+              subtitle: 'Divergência identificada no Quadro Societário (QSA)',
+              reasons: partnerCheck.reasons,
+              authorizedPartners: partnerCheck.authorizedPartners,
+              buttonText: 'Reenviar Documentos do Sócio',
+              hideReupload: false,
+              shouldResetForm: false
+            });
+            setShowPartnerMismatchModal(true);
+            setIsValidatingPartnerDoc(false);
+            return;
+          }
+        }
+
+        // 3. Validação do SINTEGRA / Inscrição Estadual (SEFAZ)
         let sintegraRes = bureauAuditResultRef.current?.data?.sintegra;
         if (!sintegraRes && bureauAuditPromiseRef.current) {
           const bRes = await bureauAuditPromiseRef.current;
@@ -558,15 +629,17 @@ export const RegistrationForm = ({ onSuccess }) => {
         if (!isHabilitado) {
           const sitDesc = sintegraRes?.situacaoCadastral || sintegraRes?.error || 'Não Habilitado';
           setPartnerMismatchData({
-            title: 'Cadastro Impedido - SINTEGRA',
-            subtitle: 'Situação Cadastral Estadual Não Habilitada / Ativa',
+            title: 'O cadastro não foi concluído',
+            subtitle: 'Divergência identificada na validação cadastral (SINTEGRA)',
             reasons: [
               `Situação Cadastral no SINTEGRA: "${sitDesc}".`,
               'O cadastro como Pessoa Jurídica (PJ) exige que a Situação Cadastral no SINTEGRA conste como "Habilitado" ou "Ativo".',
               `A situação atual ("${sitDesc}") impede a conclusão do cadastro no estado de ${sintegraRes?.uf || ufState}.`
             ],
             authorizedPartners: [],
-            buttonText: 'Revisar Dados do Formulário'
+            hideReupload: true,
+            closeButtonText: 'Fechar formulário',
+            shouldResetForm: true
           });
           setShowPartnerMismatchModal(true);
           setIsValidatingPartnerDoc(false);
@@ -575,7 +648,7 @@ export const RegistrationForm = ({ onSuccess }) => {
 
         sintegraResultRef.current = sintegraRes;
       } catch (checkErr) {
-        console.warn('Erro ao validar sócio e sintegra antecipadamente:', checkErr);
+        console.warn('Erro ao validar documentos e sintegra antecipadamente:', checkErr);
       } finally {
         setIsValidatingPartnerDoc(false);
       }
@@ -1764,12 +1837,22 @@ export const RegistrationForm = ({ onSuccess }) => {
         }}
       />
 
-      {/* Modal de Alerta de Divergência de Sócio no QSA */}
+      {/* Modal de Alerta de Divergência de Sócio no QSA ou SINTEGRA */}
       <PartnerMismatchModal
         isOpen={showPartnerMismatchModal}
-        onClose={() => setShowPartnerMismatchModal(false)}
+        onClose={() => {
+          setShowPartnerMismatchModal(false);
+          if (partnerMismatchData?.shouldResetForm) {
+            resetForm();
+          }
+        }}
+        title={partnerMismatchData?.title}
+        subtitle={partnerMismatchData?.subtitle}
         reasons={partnerMismatchData?.reasons || []}
         authorizedPartners={partnerMismatchData?.authorizedPartners || []}
+        buttonText={partnerMismatchData?.buttonText || 'Reenviar Documentos'}
+        hideReupload={Boolean(partnerMismatchData?.hideReupload)}
+        closeButtonText={partnerMismatchData?.closeButtonText || 'Fechar formulário'}
         onReupload={() => {
           setShowPartnerMismatchModal(false);
           const uploadEls = document.querySelectorAll('input[type="file"]');

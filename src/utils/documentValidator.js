@@ -1,4 +1,5 @@
-import { unmask } from './masks';
+import { unmask, maskCNPJ } from './masks';
+import { isValidCNPJ } from './validators';
 
 // Keywords de documentos oficiais brasileiros
 const DOC_KEYWORDS = {
@@ -168,13 +169,34 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
       extractedText += ' ' + (ocrResult?.data?.text || '');
     }
 
-    const normalizedText = (extractedText + ' ' + (qrData || ''))
+    const fullRawText = `${extractedText} ${qrData || ''}`;
+    const normalizedText = fullRawText
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, ''); // remove acentos para busca precisa
 
     // =========================================================================
-    // 1. CHECAGEM DE QR CODE OFICIAL (CNH / CIN)
+    // 1. CHECAGEM DE CNPJ DIVERGENTE NO ARQUIVO
+    // =========================================================================
+    if (cleanExpectedDoc && cleanExpectedDoc.length === 14) {
+      const foundCnpjs = extractCnpjsFromText(fullRawText);
+      if (foundCnpjs.length > 0 && !foundCnpjs.includes(cleanExpectedDoc)) {
+        const divergentCnpj = foundCnpjs[0];
+        return {
+          isValid: false,
+          isWarning: true,
+          status: 'CNPJ_MISMATCH',
+          badge: 'CNPJ Divergente Detectado',
+          message: `O documento contém o CNPJ ${maskCNPJ(divergentCnpj)}, diferente do CNPJ cadastrado (${maskCNPJ(cleanExpectedDoc)}).`,
+          details: 'Por favor, anexe o documento pertencente ao mesmo CNPJ preenchido no cadastro.',
+          score: 10,
+          qrFound: Boolean(qrData)
+        };
+      }
+    }
+
+    // =========================================================================
+    // 2. CHECAGEM DE QR CODE OFICIAL (CNH / CIN)
     // =========================================================================
     let qrCodeMatch = false;
     let qrCpfFound = null;
@@ -191,7 +213,7 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     }
 
     // =========================================================================
-    // 2. CHECAGEM DE CPF / CNPJ NO TEXTO DO DOCUMENTO
+    // 3. CHECAGEM DE CPF / CNPJ NO TEXTO DO DOCUMENTO
     // =========================================================================
     const cleanNumbersInText = unmask(normalizedText);
     let docNumberFound = false;
@@ -203,7 +225,7 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     }
 
     // =========================================================================
-    // 3. CHECAGEM DE PALAVRAS-CHAVE GOVERNAMENTAIS / OFICIAIS
+    // 4. CHECAGEM DE PALAVRAS-CHAVE GOVERNAMENTAIS / OFICIAIS
     // =========================================================================
     const relevantKeywords = DOC_KEYWORDS[category] || DOC_KEYWORDS.IDENTIFICATION;
     let keywordHits = 0;
@@ -343,12 +365,144 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
 }
 
 /**
+ * Extrai todos os CNPJs válidos de um texto
+ * @param {string} text Texto bruto
+ * @returns {string[]} Lista de CNPJs (somente dígitos)
+ */
+export function extractCnpjsFromText(text) {
+  if (!text) return [];
+  const found = new Set();
+
+  // 1. Padrão formatado ou semi-formatado (ex: 51.101.372/0001-45 ou 51101372/0001-45)
+  const formattedMatches = text.match(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g) || [];
+  for (const m of formattedMatches) {
+    const clean = unmask(m);
+    if (clean.length === 14 && isValidCNPJ(clean)) {
+      found.add(clean);
+    }
+  }
+
+  // 2. Sequências de 14 dígitos contínuos
+  const rawDigits = text.match(/\b\d{14}\b/g) || [];
+  for (const m of rawDigits) {
+    if (isValidCNPJ(m)) {
+      found.add(m);
+    }
+  }
+
+  return Array.from(found);
+}
+
+/**
+ * Validação rigorosa do documento da empresa (Contrato Social / Cartão CNPJ / Requerimento de Empresário)
+ * @param {File} file Arquivo anexado da empresa
+ * @param {Object} options { expectedCnpj, expectedName, partnersList }
+ * @returns {Promise<{isValid: boolean, isVerified: boolean, reasons: string[]}>}
+ */
+export async function validateCompanyAttachment(file, { expectedCnpj = '', expectedName = '', partnersList = [] } = {}) {
+  if (!file) {
+    return {
+      isValid: false,
+      isVerified: false,
+      reasons: ['Nenhum documento da empresa foi anexado.']
+    };
+  }
+
+  const cleanExpectedCnpj = unmask(expectedCnpj);
+
+  try {
+    const { Tesseract, jsQR, pdfjs } = await loadLibraries();
+
+    let extractedText = '';
+    let qrData = null;
+    let canvasForOCR = null;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      const pdfResult = await processPDF(file, pdfjs, jsQR);
+      extractedText = pdfResult.directText || '';
+      qrData = pdfResult.qrData;
+      canvasForOCR = pdfResult.canvas;
+    } else {
+      const imgResult = await imageToCanvas(file);
+      canvasForOCR = imgResult.canvas;
+      if (jsQR) {
+        qrData = scanQRCodeFromCanvas(canvasForOCR, jsQR);
+      }
+    }
+
+    // Se o texto for curto (scan ou foto), usa OCR com Tesseract
+    if (extractedText.length < 50 && canvasForOCR) {
+      const ocrResult = await Tesseract.recognize(canvasForOCR, 'por', {
+        logger: () => {}
+      });
+      extractedText += ' ' + (ocrResult?.data?.text || '');
+    }
+
+    const fullRawText = `${extractedText} ${qrData || ''}`;
+    const foundCnpjs = extractCnpjsFromText(fullRawText);
+
+    // 1. CHECAGEM DE DIVERGÊNCIA DE CNPJ NO DOCUMENTO ANEXADO
+    if (cleanExpectedCnpj && foundCnpjs.length > 0) {
+      const hasExpectedCnpj = foundCnpjs.includes(cleanExpectedCnpj) || unmask(fullRawText).includes(cleanExpectedCnpj);
+      if (!hasExpectedCnpj) {
+        const divergentCnpj = foundCnpjs[0];
+        return {
+          isValid: false,
+          isVerified: false,
+          divergentCnpj,
+          reasons: [
+            `O documento anexado pertence a outro CNPJ (${maskCNPJ(divergentCnpj)}), diferente do CNPJ informado no formulário (${maskCNPJ(cleanExpectedCnpj)}).`,
+            'Por favor, anexe o documento (Contrato Social ou Cartão CNPJ) correspondente ao mesmo CNPJ cadastrado.'
+          ]
+        };
+      }
+    }
+
+    return {
+      isValid: true,
+      isVerified: foundCnpjs.includes(cleanExpectedCnpj),
+      reasons: []
+    };
+  } catch (err) {
+    console.warn('Erro ao validar documento da empresa:', err);
+    return {
+      isValid: true,
+      isVerified: false,
+      reasons: []
+    };
+  }
+}
+
+/**
+ * Extrai o nome do titular a partir da Razão Social (para MEI, Empresário Individual, EIRELI)
+ * Ex: "51.101.372 CAIO VINICIUS FERRAZ PRADO" -> "CAIO VINICIUS FERRAZ PRADO"
+ * @param {string} razaoSocial 
+ * @returns {string|null}
+ */
+export function extractOwnerFromRazaoSocial(razaoSocial) {
+  if (!razaoSocial) return null;
+  const cleanName = String(razaoSocial)
+    .replace(/^[\d.\-\/]+\s+/, '')
+    .replace(/\b(ltda|eireli|me|epp|s\/s|ss|s\.s\.|s\.a\.|sa|cia)\b/gi, '')
+    .trim();
+
+  const words = cleanName.split(/\s+/).filter(w => w.length > 1);
+  if (words.length >= 2) {
+    return cleanName;
+  }
+  return null;
+}
+
+/**
  * Validação rigorosa do documento com foto do sócio (RG/CNH) contra o Quadro Societário (QSA)
  * @param {File} file Arquivo do documento com foto (RG ou CNH)
  * @param {Array} partnersList Lista de sócios obtidos da Direct Data / Receita Federal
+ * @param {string} expectedCnpj CNPJ esperado para evitar anexo de CNPJ de terceiros
+ * @param {string} expectedCompanyName Razão Social da empresa para identificação de titular
  * @returns {Promise<{isValid: boolean, isVerified: boolean, matchedPartner?: object, reasons: string[], authorizedPartners: string[], extractedInfo?: object}>}
  */
-export async function validatePartnerDocument(file, partnersList = []) {
+export async function validatePartnerDocument(file, partnersList = [], expectedCnpj = '', expectedCompanyName = '') {
   if (!file) {
     return {
       isValid: false,
@@ -358,20 +512,23 @@ export async function validatePartnerDocument(file, partnersList = []) {
     };
   }
 
-  const authorizedPartners = (partnersList || []).map(p => ({
+  const cleanExpectedCnpj = unmask(expectedCnpj);
+  let authorizedPartners = (partnersList || []).map(p => ({
     nome: p.nome || p.nome_socio || '',
     documento: unmask(p.documento || p.cpf || ''),
     cargo: p.cargo || p.qualificacao_socio || 'Sócio'
   })).filter(p => p.nome.trim().length > 0);
 
-  // Se não houver lista de sócios cadastrados (ex: MEI sem QSA público), permite prosseguir
-  if (authorizedPartners.length === 0) {
-    return {
-      isValid: true,
-      isVerified: false,
-      reasons: [],
-      authorizedPartners: []
-    };
+  // Se não houver sócios no QSA (ex: MEI ou Empresário Individual), extrai o nome do titular da Razão Social
+  if (authorizedPartners.length === 0 && expectedCompanyName) {
+    const ownerFromRazao = extractOwnerFromRazaoSocial(expectedCompanyName);
+    if (ownerFromRazao) {
+      authorizedPartners.push({
+        nome: ownerFromRazao,
+        documento: '',
+        cargo: 'Titular / Responsável Legal'
+      });
+    }
   }
 
   try {
@@ -409,17 +566,43 @@ export async function validatePartnerDocument(file, partnersList = []) {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
+    // 1. CHECAGEM DE CNPJ DIVERGENTE ANEXADO NO CAMPO DE SÓCIO
+    if (cleanExpectedCnpj) {
+      const foundCnpjs = extractCnpjsFromText(fullRawText);
+      if (foundCnpjs.length > 0) {
+        const hasExpected = foundCnpjs.includes(cleanExpectedCnpj) || unmask(fullRawText).includes(cleanExpectedCnpj);
+        if (!hasExpected) {
+          const divergentCnpj = foundCnpjs[0];
+          return {
+            isValid: false,
+            isVerified: false,
+            reasons: [
+              `O documento anexado contém o CNPJ ${maskCNPJ(divergentCnpj)}, que não corresponde ao CNPJ informado no cadastro (${maskCNPJ(cleanExpectedCnpj)}).`,
+              'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
+            ],
+            authorizedPartners: authorizedPartners.map(p => p.nome)
+          };
+        }
+      }
+    }
+
     // Extrai todos os CPFs de 11 dígitos encontrados no texto / QR Code
     const foundCpfs = [];
     const cpfMatches = fullRawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g) || [];
-    cpfMatches.forEach(m => foundCpfs.push(unmask(m)));
+    cpfMatches.forEach(m => {
+      const clean = unmask(m);
+      if (clean.length === 11) foundCpfs.push(clean);
+    });
 
     if (qrData) {
       const qrCpfMatches = qrData.match(/\b\d{11}\b/g) || [];
-      qrCpfMatches.forEach(c => foundCpfs.push(unmask(c)));
+      qrCpfMatches.forEach(c => {
+        const clean = unmask(c);
+        if (clean.length === 11) foundCpfs.push(clean);
+      });
     }
 
-    // 1. Cruzamento prioritário por CPF (exato)
+    // 2. Cruzamento prioritário por CPF (exato)
     let matchedByCpf = null;
     for (const partner of authorizedPartners) {
       if (partner.documento && partner.documento.length === 11) {
@@ -441,8 +624,10 @@ export async function validatePartnerDocument(file, partnersList = []) {
       };
     }
 
-    // 2. Cruzamento por Nome Completo do Sócio
+    // 3. Cruzamento rigoroso por Nome Completo do Sócio
+    const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
     let matchedByName = null;
+
     for (const partner of authorizedPartners) {
       const cleanPartnerName = partner.nome
         .toLowerCase()
@@ -450,15 +635,29 @@ export async function validatePartnerDocument(file, partnersList = []) {
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
 
-      const nameTokens = cleanPartnerName.split(/\s+/).filter(t => t.length > 2);
-      const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
-
-      const hasFirst = nameTokens.length > 0 && normalizedText.includes(nameTokens[0]);
-      const hasLast = nameTokens.length > 1 && normalizedText.includes(nameTokens[nameTokens.length - 1]);
-
-      if ((hasFirst && hasLast) || matchedTokens.length >= Math.max(2, Math.ceil(nameTokens.length * 0.65))) {
+      // Verifica correspondência do nome completo
+      if (cleanPartnerName.length > 5 && normalizedText.includes(cleanPartnerName)) {
         matchedByName = partner;
         break;
+      }
+
+      // Tokens significativos (sem preposições)
+      const nameTokens = cleanPartnerName
+        .split(/\s+/)
+        .filter(t => t.length > 2 && !stopwords.has(t));
+
+      if (nameTokens.length >= 2) {
+        const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
+        const matchRatio = matchedTokens.length / nameTokens.length;
+
+        // Requer que o primeiro nome e o último sobrenome estejam presentes, ou mais de 75% dos tokens
+        const hasFirst = normalizedText.includes(nameTokens[0]);
+        const hasLast = normalizedText.includes(nameTokens[nameTokens.length - 1]);
+
+        if ((hasFirst && hasLast && matchedTokens.length >= 2) || matchRatio >= 0.75) {
+          matchedByName = partner;
+          break;
+        }
       }
     }
 
@@ -473,7 +672,8 @@ export async function validatePartnerDocument(file, partnersList = []) {
       };
     }
 
-    // Se o documento é legível, mas NÃO pertence a nenhum sócio da empresa
+    // Se nenhum sócio ou titular da empresa foi identificado no documento
+    const partnersNamesList = authorizedPartners.map(p => p.nome);
     const reasons = [
       'O documento de identificação anexado (RG/CNH) não pertence a nenhum dos sócios registrados no Quadro Societário (QSA) deste CNPJ.',
       'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
@@ -483,7 +683,7 @@ export async function validatePartnerDocument(file, partnersList = []) {
       isValid: false,
       isVerified: false,
       reasons,
-      authorizedPartners: authorizedPartners.map(p => p.nome),
+      authorizedPartners: partnersNamesList,
       extractedInfo: {
         cpfsFound: foundCpfs.slice(0, 3)
       }
@@ -491,10 +691,14 @@ export async function validatePartnerDocument(file, partnersList = []) {
   } catch (err) {
     console.warn('Falha técnica no cruzamento de sócio:', err);
     return {
-      isValid: true,
+      isValid: false,
       isVerified: false,
-      reasons: [],
+      reasons: [
+        'Não foi possível confirmar o vínculo do documento do sócio com o CNPJ informado.',
+        'Por favor, certifique-se de anexar uma foto ou PDF nítido da CNH ou RG de um dos sócios da empresa.'
+      ],
       authorizedPartners: authorizedPartners.map(p => p.nome)
     };
   }
 }
+

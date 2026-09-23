@@ -10,6 +10,8 @@ export const PartnerMismatchModal = ({
   reasons = [],
   authorizedPartners = [],
   buttonText = 'Reenviar Documentos',
+  hideReupload = false,
+  closeButtonText = 'Fechar formulário',
   onReupload
 }) => {
   if (!isOpen) return null;
@@ -78,24 +80,37 @@ export const PartnerMismatchModal = ({
 
           {/* Ações */}
           <div className="pt-2 space-y-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                if (onReupload) onReupload();
-                onClose();
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>{buttonText}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs transition-colors cursor-pointer"
-            >
-              Fechar e revisar formulário
-            </button>
+            {!hideReupload ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onReupload) onReupload();
+                    onClose();
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>{buttonText}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs transition-colors cursor-pointer"
+                >
+                  Fechar e revisar formulário
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                <span>{closeButtonText}</span>
+              </button>
+            )}
           </div>
         </div>
 
