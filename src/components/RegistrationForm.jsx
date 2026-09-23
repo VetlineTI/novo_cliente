@@ -558,6 +558,13 @@ export const RegistrationForm = ({ onSuccess }) => {
             partners = bRes.data.socios;
           }
         }
+        if (partners.length === 0) {
+          const freshData = await fetchCNPJDataFromBrasilAPI(cleanCnpj);
+          if (freshData?.socios && freshData.socios.length > 0) {
+            partners = freshData.socios;
+            setCnpjInfo(freshData);
+          }
+        }
 
         // 1. Validação do Documento da Empresa (Contrato Social / Cartão CNPJ)
         if (docContract) {

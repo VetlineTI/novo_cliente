@@ -240,96 +240,174 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     });
 
     // =========================================================================
-    // 4. CHECAGEM DE NOME E QUADRO DE SÓCIOS (BRASILAPI QSA)
+    // 4. CRUZAMENTO DE SÓCIOS E TITULARES (PJ / QSA) OU CPF (PF)
     // =========================================================================
-    let nameHit = false;
     let partnerMatchedName = null;
+    let partnerMatchedByCpf = false;
+    let nameHit = false;
 
-    if (expectedName && expectedName.trim().length > 3) {
-      const nameParts = expectedName
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .split(' ')
-        .filter((part) => part.length >= 3);
+    // Constrói lista de pessoas autorizadas para PJ
+    let authorizedPartners = (expectedPartners || []).map(p => ({
+      nome: p.nome || p.nome_socio || '',
+      documento: unmask(p.documento || p.cpf || p.cpfRepresentante || ''),
+      cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
+    })).filter(p => p.nome && p.nome.trim().length > 0);
 
-      const matchedParts = nameParts.filter((part) => normalizedText.includes(part));
-      if (matchedParts.length >= Math.min(2, nameParts.length)) {
-        nameHit = true;
+    // Adiciona titular da Razão Social se lista for vazia (MEI / Empresário Individual)
+    if (authorizedPartners.length === 0 && expectedName) {
+      const ownerFromRazao = extractOwnerFromRazaoSocial(expectedName);
+      if (ownerFromRazao) {
+        authorizedPartners.push({
+          nome: ownerFromRazao,
+          documento: '',
+          cargo: 'Titular / Responsável Legal'
+        });
       }
     }
 
-    // Cruzamento com Sócios da BrasilAPI (se fornecido)
-    if (expectedPartners && Array.isArray(expectedPartners) && expectedPartners.length > 0) {
-      for (const partner of expectedPartners) {
-        if (!partner.nome) continue;
-        const partnerParts = partner.nome
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .split(' ')
-          .filter((p) => p.length >= 3);
+    // Extrai todos os CPFs do texto
+    const foundCpfs = [];
+    const cpfMatches = fullRawText.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g) || [];
+    cpfMatches.forEach(m => {
+      const clean = unmask(m);
+      if (clean.length === 11) foundCpfs.push(clean);
+    });
+    if (qrCpfFound) {
+      foundCpfs.push(qrCpfFound);
+    }
 
-        const matched = partnerParts.filter((p) => normalizedText.includes(p));
-        if (matched.length >= Math.min(2, partnerParts.length)) {
-          nameHit = true;
-          partnerMatchedName = partner.nome;
-          break;
+    // A) Cruzamento para Pessoa Jurídica (Sócio na CNH/RG)
+    if (category === 'IDENTIFICATION' && (cleanExpectedDoc?.length === 14 || authorizedPartners.length > 0)) {
+      // 1. Busca por CPF do sócio
+      for (const partner of authorizedPartners) {
+        if (partner.documento && partner.documento.length === 11) {
+          if (foundCpfs.includes(partner.documento) || unmask(normalizedText).includes(partner.documento)) {
+            partnerMatchedName = partner.nome;
+            partnerMatchedByCpf = true;
+            break;
+          }
         }
       }
-    }
 
-    // =========================================================================
-    // 5. CLASSIFICAÇÃO E RESPOSTA FINAL
-    // =========================================================================
+      // 2. Busca por Nome do Sócio
+      if (!partnerMatchedName) {
+        const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
+        for (const partner of authorizedPartners) {
+          const cleanPartnerName = partner.nome
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
 
-    // Caso 1: QR Code Oficial Validado com Sucesso
-    if (qrCodeMatch) {
+          if (cleanPartnerName.length > 5 && normalizedText.includes(cleanPartnerName)) {
+            partnerMatchedName = partner.nome;
+            break;
+          }
+
+          const nameTokens = cleanPartnerName.split(/\s+/).filter(t => t.length > 2 && !stopwords.has(t));
+          if (nameTokens.length >= 2) {
+            const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
+            const hasFirst = normalizedText.includes(nameTokens[0]);
+            const hasLast = normalizedText.includes(nameTokens[nameTokens.length - 1]);
+            const matchRatio = matchedTokens.length / nameTokens.length;
+
+            if ((hasFirst && hasLast && matchedTokens.length >= 2) || matchRatio >= 0.75) {
+              partnerMatchedName = partner.nome;
+              break;
+            }
+          }
+        }
+      }
+
+      // Se achou o sócio
+      if (partnerMatchedName) {
+        return {
+          isValid: true,
+          status: 'VERIFIED_MATCH',
+          badge: 'Sócio Confirmado no CNPJ',
+          message: `Documento oficial verificado! Sócio (${partnerMatchedName}) confirmado no CNPJ.`,
+          details: 'Associação com o Quadro Societário (QSA) validada com sucesso.',
+          score: 100,
+          qrFound: Boolean(qrData)
+        };
+      }
+
+      // Se NÃO achou nenhum sócio vinculado (MESMO que o documento seja uma CNH oficial!)
       return {
-        isValid: true,
-        status: 'VERIFIED_QR',
-        badge: 'QR Code Oficial Verificado',
-        message: partnerMatchedName 
-          ? `QR Code autenticado! Sócio (${partnerMatchedName}) confirmado no CNPJ.`
-          : 'QR Code oficial autenticado e CPF conferido com sucesso!',
-        details: 'Assinatura digital e dados batem 100% com o cadastro.',
-        score: 100,
-        qrFound: true
-      };
-    }
-
-    // Caso 2: CPF ou Sócio e Dados Oficiais Conferidos na Imagem/PDF
-    if ((docNumberFound || partnerMatchedName) && keywordHits >= 2) {
-      return {
-        isValid: true,
-        status: 'VERIFIED_MATCH',
-        badge: partnerMatchedName ? 'Sócio Confirmado no CNPJ' : 'Documento e CPF Conferidos',
-        message: partnerMatchedName 
-          ? `Documento oficial legível! Titular identificado como sócio (${partnerMatchedName}) no CNPJ.`
-          : 'Documento oficial legível e CPF conferido com sucesso!',
-        details: `Identificados termos oficiais (${foundKeywords.slice(0, 3).join(', ')}) e dados compatíveis.`,
-        score: 95,
+        isValid: false,
+        isWarning: true,
+        status: 'PARTNER_MISMATCH',
+        badge: 'Sócio Não Vinculado ao CNPJ',
+        message: 'O titular desta CNH/RG não foi localizado no Quadro de Sócios (QSA) deste CNPJ.',
+        details: 'Por favor, anexe a CNH ou RG de um dos sócios administradores da empresa.',
+        score: 20,
         qrFound: Boolean(qrData)
       };
     }
 
-    // Caso 3: Documento Oficial Reconhecido (Termos oficiais presentes, CPF pendente de validação visual)
-    if (keywordHits >= 2 || nameHit) {
+    // B) Cruzamento para Pessoa Física (CPF do titular)
+    if (category === 'IDENTIFICATION' && cleanExpectedDoc?.length === 11) {
+      if (docNumberFound || (qrCpfFound && qrCpfFound === cleanExpectedDoc)) {
+        return {
+          isValid: true,
+          status: 'VERIFIED_MATCH',
+          badge: 'Documento e CPF Conferidos',
+          message: 'Documento oficial legível e CPF conferido com sucesso!',
+          details: 'Dados do documento batem 100% com o cadastro.',
+          score: 95,
+          qrFound: Boolean(qrData)
+        };
+      }
+
+      // Se encontrou outro CPF diferente
+      if (foundCpfs.length > 0 && !foundCpfs.includes(cleanExpectedDoc)) {
+        return {
+          isValid: false,
+          isWarning: true,
+          status: 'CPF_MISMATCH',
+          badge: 'CPF Divergente no Documento',
+          message: `O documento contém o CPF ${maskCPF(foundCpfs[0])}, diferente do CPF cadastrado (${maskCPF(cleanExpectedDoc)}).`,
+          details: 'Por favor, anexe o documento com foto pertencente ao titular do cadastro.',
+          score: 20,
+          qrFound: Boolean(qrData)
+        };
+      }
+    }
+
+    // C) Documento de Empresa / Contrato Social
+    if (category === 'CONTRACT' && cleanExpectedDoc?.length === 14) {
+      const foundCnpjs = extractCnpjsFromText(fullRawText);
+      if (foundCnpjs.includes(cleanExpectedDoc) || unmask(fullRawText).includes(cleanExpectedDoc)) {
+        return {
+          isValid: true,
+          status: 'VERIFIED_MATCH',
+          badge: 'CNPJ da Empresa Confirmado',
+          message: 'Contrato Social vinculado ao CNPJ cadastrado com sucesso!',
+          details: 'Número de CNPJ conferido no documento.',
+          score: 95,
+          qrFound: Boolean(qrData)
+        };
+      }
+    }
+
+    // =========================================================================
+    // 5. CLASSIFICAÇÃO GERAL / FALLBACK
+    // =========================================================================
+    if (keywordHits >= 2) {
       return {
         isValid: true,
         status: 'OFFICIAL_DOC',
-        badge: 'Documento Oficial Reconhecido',
-        message: 'Documento oficial legível identificado com sucesso.',
-        details: `Termos detectados: ${foundKeywords.slice(0, 3).join(', ')}. Aguardará validação cadastral.`,
-        score: 80,
+        badge: 'Documento Legível',
+        message: 'Documento anexado e legível para conferência interna.',
+        details: `Termos detectados: ${foundKeywords.slice(0, 3).join(', ')}.`,
+        score: 75,
         qrFound: Boolean(qrData)
       };
     }
 
-    // Caso 4: Pouco legível ou Imagem não parece documento oficial
     if (normalizedText.trim().length < 15 || keywordHits === 0) {
       return {
-        isValid: true, // Não bloqueia envio se o usuário insistir, mas avisa
+        isValid: true,
         isWarning: true,
         status: 'SUSPICIOUS_OR_BLURRY',
         badge: 'Atenção na Legibilidade',
@@ -340,7 +418,6 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
       };
     }
 
-    // Caso Padrão Aceito
     return {
       isValid: true,
       status: 'ACCEPTED',
@@ -352,7 +429,6 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
     };
 
   } catch (error) {
-    // Em caso de falha de processamento, aceita graciosamente sem travar o cliente
     return {
       isValid: true,
       status: 'FALLBACK_OK',

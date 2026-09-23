@@ -125,9 +125,9 @@ export const DocumentUpload = ({
         onDragLeave={handleDragLeave}
         className={`relative flex flex-col items-center justify-between p-4 rounded-2xl border-2 transition-all duration-200 min-h-[175px] h-full ${
           file
-            ? validationResult?.isWarning
-              ? 'border-amber-400 bg-amber-50/40'
-              : 'border-brand-green bg-brand-green-light/50'
+            ? (validationResult?.isWarning || validationResult?.isValid === false)
+              ? 'border-amber-400 bg-amber-50/50 shadow-xs'
+              : 'border-brand-green bg-brand-green-light/50 shadow-xs'
             : isDragging
             ? 'border-brand-green bg-brand-green-light shadow-md scale-[1.01]'
             : error || uploadError
@@ -190,14 +190,14 @@ export const DocumentUpload = ({
                     ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                     : validationResult.status === 'VERIFIED_MATCH'
                     ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                    : validationResult.isWarning
+                    : (validationResult.isWarning || validationResult.isValid === false)
                     ? 'bg-amber-100 text-amber-900 border-amber-300'
                     : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                 }`}
               >
-                {validationResult.qrFound ? (
+                {validationResult.qrFound && validationResult.isValid ? (
                   <QrCode className="w-3.5 h-3.5 text-brand-green" />
-                ) : validationResult.isWarning ? (
+                ) : (validationResult.isWarning || validationResult.isValid === false) ? (
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                 ) : (
                   <CheckCircle className="w-3.5 h-3.5 text-brand-green" />
@@ -218,7 +218,11 @@ export const DocumentUpload = ({
 
             {/* Mensagem Explicativa da Validação */}
             {validationResult?.message && (
-              <p className="text-[10px] text-slate-600 leading-tight px-1 font-medium">
+              <p className={`text-[10px] leading-tight px-1 font-medium ${
+                validationResult.isValid === false || validationResult.isWarning
+                  ? 'text-amber-800 font-semibold'
+                  : 'text-slate-600'
+              }`}>
                 {validationResult.message}
               </p>
             )}
