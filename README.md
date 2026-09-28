@@ -46,7 +46,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - **CRMV (Número do Registro Profissional & Validação Documental) - Exclusivo para PF**:
   - Para Pessoa Física (PF), não são exibidos os campos de tipo e número de inscrição (sendo salvo automaticamente no banco como `tp_inscricao: 'I'` e `numero_inscricao: 'ISENTO'`).
   - Em seu lugar, é exibido o campo obrigatório de texto **CRMV** (armazenado na coluna `crmv`).
-  - **Validação de Situação no CFMV**: Consulta automática em tempo real na API Infosimples (`/cfmv/cadastro`) garantindo que o profissional conste como "Ativo / Regular".
+  - **Validação de Situação no CFMV & Bloqueio Preventivo**: Consulta em tempo real na API Infosimples (`/cfmv/cadastro`). Enquanto o CRMV não obtiver retorno positivo de **Ativo/Regular**, os campos subsequentes (contato, endereço, upload de anexos e envio) permanecem **bloqueados**. Se o CRMV retornar inativo, suspenso ou cancelado, é exibido alerta vermelho de impedimento e os campos não são liberados.
   - **Cruzamento com o Documento Anexado**: Extração inteligente via OCR (Tesseract / PDF.js) da carteira/cédula do CRMV anexada para conferir se o número do registro profissional no documento coincide com o CRMV informado no formulário, alertando e bloqueando divergências.
 - **Pessoa Jurídica (PJ)**: Consulta automática na Receita Federal via BrasilAPI ao digitar o CNPJ, preenchendo Razão Social, CNAE, Situação Cadastral e Sócios. Anexo de Contrato Social OU Documento do Sócio (pelo menos 1 obrigatório).
 - **Pessoa Física (PF)**: Validação de CPF e obrigatoriedade do número e anexo da carteira do CRMV (Médico Veterinário) + Comprovante de Endereço.
