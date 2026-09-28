@@ -25,8 +25,12 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
     - 🔵 **Em Análise**: Processo de checagem documental ativo.
     - 🟢 **Aprovado**: Boas-vindas com exibição das condições comerciais, tabela de preço liberada (`VTL01`) e vendedor responsável.
     - 🔴 **Necessita Correções (Recusado)**: Exibição clara das notas/parecer do analista para que o cliente ajuste os dados e reenviar documentos.
-  - **Edição de Dados Cadastrais**:
-    - Alteração de Razão Social/Nome, telefone/WhatsApp, e-mail de faturamento, segmento e endereços (principal e entrega divergente com busca por CEP).
+  - **Edição de Dados Cadastrais com Verificação Obrigatória de Segurança**:
+    - Ao tentar salvar alterações no perfil cadastral, o sistema aciona o fluxo guiado (`ClientVerificationModal`) de verificação sequencial:
+      1. **Telefone**: Pergunta se o telefone/WhatsApp permanece o mesmo (se não, permite digitar e validar o novo número);
+      2. **E-mail**: Pergunta se o e-mail permanece o mesmo (se não, permite digitar e validar o novo e-mail);
+      3. **Endereço**: Pergunta se o endereço cadastral permanece o mesmo (se não, abre os campos com busca automática de CEP por ViaCEP).
+    - Caso o usuário responda "Sim" para todos, avança direto e grava as alterações no banco de dados.
   - **Documentos & Reenvio de Anexos**:
     - Visualização dos arquivos já enviados com suporte a zoom e rotação.
     - Botão **"Substituir / Enviar documento"** para reenvio direto de arquivos ao Supabase Storage.
@@ -34,8 +38,17 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 
 ### 4. 🏢 Regras Cadastrais (PF & PJ)
 - **Tipo de Pessoa**: Seleção entre Pessoa Jurídica (PJ) e Pessoa Física (PF).
+- **Tipo de Inscrição (`tp_inscricao`) & Número (`numero_inscricao`) - Exclusivo para PJ**:
+  - Opções de Tipo: **Estadual** (`'E'`), **Isento** (`'I'`) ou **Municipal** (`'M'`).
+  - Quando selecionado **Isento** (`'I'`), o campo do número de inscrição fica automaticamente preenchido como `"ISENTO"` e desabilitado para edição.
+  - Quando selecionado **Estadual** (`'E'`) ou **Municipal** (`'M'`), permite preencher o número correspondente.
+  - Gravação no banco de dados Supabase: coluna `tp_inscricao` (`'E'`, `'I'` ou `'M'`) e coluna `numero_inscricao` (o número digitado ou `"ISENTO"`).
+- **CRMV (Número do Registro Profissional) - Exclusivo para PF**:
+  - Para Pessoa Física (PF), não são exibidos os campos de tipo e número de inscrição (sendo salvo automaticamente no banco como `tp_inscricao: 'I'` e `numero_inscricao: 'ISENTO'`).
+  - Em seu lugar, é exibido o campo obrigatório de texto **CRMV** (armazenado na coluna `crmv`).
 - **Pessoa Jurídica (PJ)**: Consulta automática na Receita Federal via BrasilAPI ao digitar o CNPJ, preenchendo Razão Social, CNAE, Situação Cadastral e Sócios. Anexo de Contrato Social OU Documento do Sócio (pelo menos 1 obrigatório).
-- **Pessoa Física (PF)**: Validação de CPF e obrigatoriedade de CRMV (Médico Veterinário) + Comprovante de Endereço.
+- **Pessoa Física (PF)**: Validação de CPF e obrigatoriedade do número e anexo da carteira do CRMV (Médico Veterinário) + Comprovante de Endereço.
+- **Segmentos de Atuação (`ram_ativ` & `descricao`)**: Lista de segmentos carregada dinamicamente da tabela `novo_cliente.segmento` exibindo a `descricao` amigável no formulário e gravando o código `ram_ativ` no banco de dados.
 - **Endereço Principal & Entrega**: Preenchimento automático via CEP (BrasilAPI / ViaCEP).
 - **Vendedor Responsável (`cd_vend`)**: Seleção de vendedor da tabela `public.vendedor` ou padrão `'ATENA'`.
 
@@ -60,6 +73,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/rename_columns_to_ptbr.sql` | Script de migração para renomear todas as colunas da tabela de clientes para Português BR no Supabase. |
 | `supabase/fix_auth_trigger.sql` | Correção definitiva do trigger `handle_new_auth_user()` e criação de view de compatibilidade para evitar erro 500 no cadastro. |
 | `supabase/add_bureau_columns.sql` | Script SQL para adicionar as colunas do Bureau e Certidões (JUCESP, CENPROT e Receita Federal) no Supabase. |
+| `supabase/add_inscricao_and_crmv_columns.sql` | Script SQL completo para criação das colunas `tp_inscricao`, `numero_inscricao`, `crmv` e atualização das RPCs. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
@@ -86,6 +100,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/client/ForgotPasswordModal.jsx` | Modal de solicitação de recuperação de senha via envio de link para o e-mail cadastrado. |
 | `src/components/client/ResetPasswordModal.jsx` | Modal de criação de nova senha para usuários que acessam o link de recuperação. |
 | `src/components/client/ClientDashboard.jsx` | Painel do cliente logado com acompanhamento de status, edição de dados e reenvio de documentos. |
+| `src/components/client/ClientVerificationModal.jsx` | Modal interativo de verificação obrigatória de Telefone, E-mail e Endereço ao salvar edições cadastrais. |
 | `src/components/admin/AdminLogin.jsx` | Tela de login administrativo com Supabase Auth e credenciais de emergência. |
 | `src/components/admin/AdminDashboard.jsx` | Painel de controle administrativo com listagem de clientes e gestão de perfis. |
 | `src/components/admin/ClientDetailModal.jsx` | Visualização detalhada do cliente organizada em pastas e aprovações. |
@@ -97,6 +112,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 
 ### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
 - Integrado na esteira de análise de crédito e validação documental com a API da **Direct Data** e **Infosimples**:
+  - **CFMV / CRMV (Pessoa Física - `/cfmv/cadastro`)**: Consulta e validação em tempo real da situação cadastral do CRMV do profissional (Médico Veterinário) junto ao Conselho Federal de Medicina Veterinária via Infosimples. Garante que o cadastro só seja concluído se o registro profissional estiver constando como **Ativo / Regular**, bloqueando situações suspensas ou canceladas com alerta orientador.
   - **Receita Federal / QSA (`/api/ReceitaPJParticipacaoSocietaria`)**: Extração oficial do comprovante da Receita Federal com Quadro Societário e percentuais de participação, anexando o documento oficial em PDF (`urlComprovante`) ao cadastro do cliente que concluiu o credenciamento com sucesso.
   - **SINTEGRA / Cadastros Estaduais (`/api/Sintegra`)**: Consulta automática da Inscrição Estadual (IE) e verificação de situação cadastral (Habilitado/Ativo) no SEFAZ com comprovante oficial em PDF anexado automaticamente.
   - **CENPROT / IEPTB (`/api/ProtestosOnline`)**: Verificação unificada de ocorrências de protestos em cartórios em âmbito nacional.

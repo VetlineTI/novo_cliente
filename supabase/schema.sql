@@ -28,12 +28,16 @@ CREATE TABLE IF NOT EXISTS novo_cliente.data_new_cliente (
     -- Nome Fantasia (opcional para PJ)
     nome_fantasia VARCHAR(255),
     
-    -- Inscrição Estadual (Apenas PJ)
+    -- Inscrição Estadual / Municipal / Isento (PJ) / CRMV (PF)
+    tp_inscricao VARCHAR(5) DEFAULT 'E' CHECK (tp_inscricao IN ('E', 'I', 'M')),
+    numero_inscricao VARCHAR(50) DEFAULT 'ISENTO',
+    crmv VARCHAR(50),
     possui_ie BOOLEAN DEFAULT FALSE,
     numero_ie VARCHAR(50),
     
     -- Contato
     telefone VARCHAR(30) NOT NULL,
+    ram_ativ VARCHAR(50),
     segmento VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,
 
@@ -126,6 +130,22 @@ ON public.vendedor FOR SELECT
 TO anon, authenticated, service_role USING (true);
 
 -- ==============================================================================
+-- 1.1 TABELA DE SEGMENTOS / RAMOS DE ATIVIDADE (novo_cliente.segmento)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS novo_cliente.segmento (
+    ram_ativ VARCHAR(50) PRIMARY KEY,
+    descricao VARCHAR(255) NOT NULL
+);
+
+GRANT ALL ON TABLE novo_cliente.segmento TO anon, authenticated, service_role;
+ALTER TABLE novo_cliente.segmento ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Permitir leitura de segmentos" ON novo_cliente.segmento;
+CREATE POLICY "Permitir leitura de segmentos" 
+ON novo_cliente.segmento FOR SELECT 
+TO anon, authenticated, service_role USING (true);
+
+-- ==============================================================================
 -- 2. BUCKET DE ARMAZENAMENTO (Storage): novos_clientes
 -- ==============================================================================
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types) 
@@ -181,87 +201,120 @@ TO authenticated, anon, service_role USING (true) WITH CHECK (true);
 -- ==============================================================================
 
 -- 4.1 Inserção Direta no schema NOVO_CLIENTE.DATA_NEW_CLIENT
+-- 4.1 Inserção Direta no schema NOVO_CLIENTE.DATA_NEW_CLIENTE
 CREATE OR REPLACE FUNCTION public.insert_novo_cliente(client_payload JSONB)
 RETURNS JSONB
 SECURITY DEFINER
 SET search_path = novo_cliente, public, auth
 AS $$
 DECLARE
-    v_inserted novo_cliente.data_new_client%ROWTYPE;
+    v_inserted novo_cliente.data_new_cliente%ROWTYPE;
+    v_person_type VARCHAR(2);
+    v_tp_inscricao VARCHAR(5);
+    v_numero_inscricao VARCHAR(50);
+    v_crmv VARCHAR(50);
+    v_possui_ie BOOLEAN;
 BEGIN
-    INSERT INTO novo_cliente.data_new_client (
-        person_type,
-        document_number,
-        full_name,
-        trade_name,
-        has_ie,
-        ie_number,
-        phone,
-        segment,
+    v_person_type := COALESCE(client_payload->>'tipo_pessoa', client_payload->>'person_type', 'PJ');
+    
+    IF v_person_type = 'PF' THEN
+        v_tp_inscricao := 'I';
+        v_numero_inscricao := 'ISENTO';
+        v_possui_ie := FALSE;
+        v_crmv := NULLIF(TRIM(COALESCE(client_payload->>'crmv', client_payload->>'numero_crmv', '')), '');
+    ELSE
+        v_tp_inscricao := COALESCE(client_payload->>'tp_inscricao', client_payload->>'tipo_inscricao', 'E');
+        IF v_tp_inscricao = 'I' THEN
+            v_numero_inscricao := 'ISENTO';
+            v_possui_ie := FALSE;
+        ELSE
+            v_numero_inscricao := COALESCE(client_payload->>'numero_inscricao', client_payload->>'numero_ie', client_payload->>'ie_number', 'ISENTO');
+            v_possui_ie := (v_tp_inscricao = 'E');
+        END IF;
+        v_crmv := NULL;
+    END IF;
+
+    INSERT INTO novo_cliente.data_new_cliente (
+        tipo_pessoa,
+        cpf_cnpj,
+        razao_social_nome,
+        nome_fantasia,
+        tp_inscricao,
+        numero_inscricao,
+        crmv,
+        possui_ie,
+        numero_ie,
+        telefone,
+        ram_ativ,
+        segmento,
         email,
-        zipcode,
-        street,
-        number,
-        neighborhood,
-        complement,
-        city,
-        state,
-        has_different_delivery_address,
-        delivery_zipcode,
-        delivery_street,
-        delivery_number,
-        delivery_neighborhood,
-        delivery_complement,
-        delivery_city,
-        delivery_state,
+        cep,
+        logradouro,
+        numero,
+        bairro,
+        complemento,
+        cidade,
+        uf,
+        endereco_entrega_diferente,
+        entrega_cep,
+        entrega_logradouro,
+        entrega_numero,
+        entrega_bairro,
+        entrega_complemento,
+        entrega_cidade,
+        entrega_uf,
         cd_vend,
         tab_pre,
         tp_ped,
         storage_bucket,
         doc_ie_url,
-        doc_contract_url,
-        doc_address_url,
-        doc_photo_id_url,
+        doc_contrato_social_url,
+        doc_comprovante_endereco_url,
+        doc_identificacao_url,
         doc_crmv_url,
         status,
-        terms_accepted,
+        termos_aceitos,
         auth_user_id
     ) VALUES (
-        COALESCE(client_payload->>'person_type', 'PJ'),
-        COALESCE(client_payload->>'document_number', ''),
-        COALESCE(client_payload->>'full_name', ''),
-        client_payload->>'trade_name',
-        COALESCE((client_payload->>'has_ie')::BOOLEAN, false),
-        client_payload->>'ie_number',
-        COALESCE(client_payload->>'phone', ''),
-        COALESCE(client_payload->>'segment', ''),
+        v_person_type,
+        COALESCE(client_payload->>'cpf_cnpj', client_payload->>'document_number', ''),
+        COALESCE(client_payload->>'razao_social_nome', client_payload->>'full_name', ''),
+        client_payload->>'nome_fantasia',
+        v_tp_inscricao,
+        v_numero_inscricao,
+        v_crmv,
+        v_possui_ie,
+        v_numero_inscricao,
+        COALESCE(client_payload->>'telefone', client_payload->>'phone', ''),
+        client_payload->>'ram_ativ',
+        COALESCE(client_payload->>'segmento', client_payload->>'segment', ''),
         COALESCE(client_payload->>'email', ''),
-        client_payload->>'zipcode',
-        client_payload->>'street',
-        client_payload->>'number',
-        client_payload->>'neighborhood',
-        client_payload->>'complement',
-        client_payload->>'city',
-        client_payload->>'state',
-        COALESCE((client_payload->>'has_different_delivery_address')::BOOLEAN, false),
-        client_payload->>'delivery_zipcode',
-        client_payload->>'delivery_street',
-        client_payload->>'delivery_number',
-        client_payload->>'delivery_neighborhood',
-        client_payload->>'delivery_complement',
-        client_payload->>'delivery_city',
-        client_payload->>'delivery_state',
+        client_payload->>'cep',
+        client_payload->>'logradouro',
+        client_payload->>'numero',
+        client_payload->>'bairro',
+        client_payload->>'complemento',
+        client_payload->>'cidade',
+        client_payload->>'uf',
+        COALESCE((client_payload->>'endereco_entrega_diferente')::BOOLEAN, (client_payload->>'has_different_delivery_address')::BOOLEAN, false),
+        client_payload->>'entrega_cep',
+        client_payload->>'entrega_logradouro',
+        client_payload->>'entrega_numero',
+        client_payload->>'entrega_bairro',
+        client_payload->>'entrega_complemento',
+        client_payload->>'entrega_cidade',
+        client_payload->>'entrega_uf',
         COALESCE(client_payload->>'cd_vend', 'ATENA'),
         COALESCE(client_payload->>'tab_pre', 'VTL01'),
         COALESCE(client_payload->>'tp_ped', 'VTL01'),
         COALESCE(client_payload->>'storage_bucket', 'novos_clientes'),
         client_payload->>'doc_ie_url',
-        client_payload->>'doc_contract_url',
-        client_payload->>'doc_address_url',
-        client_payload->>'doc_photo_id_url',
+        COALESCE(client_payload->>'doc_contrato_social_url', client_payload->>'doc_contract_url'),
+        COALESCE(client_payload->>'doc_comprovante_endereco_url', client_payload->>'doc_address_url'),
+        COALESCE(client_payload->>'doc_identificacao_url', client_payload->>'doc_photo_id_url'),
         client_payload->>'doc_crmv_url',
         COALESCE(client_payload->>'status', 'pendente'),
-        COALESCE((client_payload->>'terms_accepted')::BOOLEAN, true),
+        COALESCE((client_payload->>'termos_aceitos')::BOOLEAN, (client_payload->>'terms_accepted')::BOOLEAN, true),
         CASE 
             WHEN client_payload->>'auth_user_id' IS NOT NULL AND client_payload->>'auth_user_id' ~* '^[0-9a-fA-F-]{36}$'
             THEN (client_payload->>'auth_user_id')::UUID 

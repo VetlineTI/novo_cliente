@@ -28,7 +28,7 @@ import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
-import { executarAuditoriaBureau, consultarSintegra } from '../lib/infosimples';
+import { executarAuditoriaBureau, consultarSintegra, consultarCRMV } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment } from '../utils/documentValidator';
 import { 
   maskCPF, 
@@ -44,7 +44,7 @@ import {
   fetchAddressByCEP,
   fetchCNPJDataFromBrasilAPI 
 } from '../utils/validators';
-import { uploadDocument, submitNewClient, updateClientData, fetchSalespeople } from '../lib/supabase';
+import { uploadDocument, submitNewClient, updateClientData, fetchSalespeople, fetchSegments } from '../lib/supabase';
 
 export const RegistrationForm = ({ onSuccess }) => {
   // Estado do formulário
@@ -53,8 +53,13 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Dados principais
   const [documentNumber, setDocumentNumber] = useState('');
   const [fullName, setFullName] = useState('');
+  const [crmv, setCrmv] = useState(''); // CRMV para Pessoa Física
+  const [tpInscricao, setTpInscricao] = useState('E'); // 'E' (Estadual), 'I' (Isento), 'M' (Municipal)
+  const [numeroInscricao, setNumeroInscricao] = useState('');
   const [phone, setPhone] = useState('');
-  const [segment, setSegment] = useState('');
+  const [segment, setSegment] = useState(''); // Guarda o ram_ativ selecionado
+  const [segmentsList, setSegmentsList] = useState([]);
+  const [loadingSegments, setLoadingSegments] = useState(false);
   const [email, setEmail] = useState('');
 
   // Vendedor / Atendimento
@@ -70,6 +75,12 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [loadingCnpj, setLoadingCnpj] = useState(false);
   const [cnpjInfo, setCnpjInfo] = useState(null);
   const [cnpjAlert, setCnpjAlert] = useState('');
+
+  // CRMV Validação (PF)
+  const [loadingCrmv, setLoadingCrmv] = useState(false);
+  const [crmvData, setCrmvData] = useState(null);
+  const [crmvAlert, setCrmvAlert] = useState('');
+  const crmvAuditPromiseRef = useRef(null);
 
   // Refs para pré-consulta antecipada do Bureau (JUCESP & CENPROT & SINTEGRA)
   const bureauAuditPromiseRef = useRef(null);
@@ -132,6 +143,12 @@ export const RegistrationForm = ({ onSuccess }) => {
   const resetForm = () => {
     setDocumentNumber('');
     setFullName('');
+    setCrmv('');
+    setCrmvData(null);
+    setCrmvAlert('');
+    crmvAuditPromiseRef.current = null;
+    setTpInscricao(personType === 'PJ' ? 'E' : 'I');
+    setNumeroInscricao(personType === 'PJ' ? '' : 'ISENTO');
     setPhone('');
     setSegment('');
     setEmail('');
@@ -186,6 +203,22 @@ export const RegistrationForm = ({ onSuccess }) => {
 
   useEffect(() => {
     loadSalespeopleData();
+
+    // Carrega segmentos da tabela novo_cliente.segmento
+    const loadSegmentsData = async () => {
+      setLoadingSegments(true);
+      try {
+        const res = await fetchSegments();
+        if (res.success && res.data && res.data.length > 0) {
+          setSegmentsList(res.data);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar lista de segmentos:', err);
+      } finally {
+        setLoadingSegments(false);
+      }
+    };
+    loadSegmentsData();
   }, []);
 
   // Fechar dropdown de vendedor ao clicar fora
@@ -213,11 +246,32 @@ export const RegistrationForm = ({ onSuccess }) => {
 
   const selectedSalespersonObj = salespeopleList.find((v) => v.cd_vend === selectedSalespersonCode);
 
+  // Seleciona segmento vindo do modal de ajuda mapeando para o ram_ativ
+  const handleSelectSegmentFromModal = (selectedValue) => {
+    if (!selectedValue) return;
+    const found = segmentsList.find(
+      s => String(s.ram_ativ) === String(selectedValue) || 
+           s.descricao.toUpperCase() === String(selectedValue).toUpperCase()
+    );
+    if (found) {
+      setSegment(found.ram_ativ);
+    } else {
+      setSegment(selectedValue);
+    }
+    if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+  };
+
   // Reset de documento ao trocar tipo de pessoa
   const handlePersonTypeChange = (type) => {
     setPersonType(type);
     setDocumentNumber('');
     setFullName('');
+    setCrmv('');
+    setCrmvData(null);
+    setCrmvAlert('');
+    crmvAuditPromiseRef.current = null;
+    setTpInscricao(type === 'PJ' ? 'E' : 'I');
+    setNumeroInscricao(type === 'PJ' ? '' : 'ISENTO');
     setCnpjInfo(null);
     setCnpjAlert('');
     setErrors({});
@@ -229,6 +283,44 @@ export const RegistrationForm = ({ onSuccess }) => {
     } else {
       setDocCRMV(null);
       setDocAddress(null);
+    }
+  };
+
+  // Validação em tempo real do CRMV no CFMV via Infosimples
+  const handleCrmvBlur = async (crmvValOverride = null) => {
+    const valToQuery = typeof crmvValOverride === 'string' ? crmvValOverride : crmv;
+    if (!valToQuery || !valToQuery.trim()) {
+      setCrmvData(null);
+      setCrmvAlert('');
+      return null;
+    }
+
+    setLoadingCrmv(true);
+    setCrmvAlert('');
+    try {
+      const ufSearch = state || 'SP';
+      const res = await consultarCRMV(valToQuery, ufSearch);
+      setCrmvData(res);
+      if (res.success) {
+        if (!res.isAtivo) {
+          setCrmvAlert(`Atenção: Este CRMV consta como "${res.situacao}" no CFMV.`);
+        } else {
+          setCrmvAlert('');
+          // Sugere o nome do profissional se o campo de Nome Completo estiver vazio
+          if (res.nome && !fullName.trim()) {
+            setFullName(res.nome);
+            if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+          }
+        }
+      } else {
+        setCrmvAlert(res.error || 'Não foi possível confirmar o CRMV no CFMV.');
+      }
+      return res;
+    } catch (err) {
+      console.warn('Erro ao consultar CRMV:', err);
+      return null;
+    } finally {
+      setLoadingCrmv(false);
     }
   };
 
@@ -254,7 +346,16 @@ export const RegistrationForm = ({ onSuccess }) => {
           if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
         }
         if (data.suggestedSegment && !segment) {
-          setSegment(data.suggestedSegment);
+          // Busca correspondência na lista de segmentos para atribuir o ram_ativ
+          const matched = segmentsList.find(s => 
+            s.descricao.toLowerCase().includes(data.suggestedSegment.toLowerCase()) || 
+            data.suggestedSegment.toLowerCase().includes(s.descricao.toLowerCase())
+          );
+          if (matched) {
+            setSegment(matched.ram_ativ);
+          } else {
+            setSegment(data.suggestedSegment);
+          }
           if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
         }
         if (data.telefone && !phone) {
@@ -293,9 +394,15 @@ export const RegistrationForm = ({ onSuccess }) => {
         bureauAuditResultRef.current = null;
         bureauAuditPromiseRef.current = executarAuditoriaBureau({
           cpf_cnpj: clean,
-          razao_social_nome: data?.razaoSocial || fullName
+          razao_social_nome: data?.razaoSocial || fullName,
+          uf: data?.endereco?.uf || state || 'SP'
         }).then(res => {
           bureauAuditResultRef.current = res;
+          const ieFound = res?.inscricaoEstadual || res?.data?.sintegra?.ie;
+          if (ieFound && ieFound !== 'ISENTO' && ieFound !== 'ISENTA' && ieFound !== '-') {
+            setTpInscricao('E');
+            setNumeroInscricao(ieFound);
+          }
           return res;
         }).catch(err => {
           console.warn('Pré-consulta Bureau:', err);
@@ -436,6 +543,22 @@ export const RegistrationForm = ({ onSuccess }) => {
     // 3. Razão Social / Nome Completo
     if (!fullName.trim()) {
       newErrors.fullName = personType === 'PJ' ? 'Informe a Razão Social.' : 'Informe o Nome Completo.';
+    }
+
+    // 3.1 Inscrição para PJ / CRMV para PF
+    if (personType === 'PJ') {
+      if (!tpInscricao) {
+        newErrors.tpInscricao = 'Selecione o tipo de inscrição.';
+      } else if (tpInscricao !== 'I') {
+        if (!numeroInscricao || !numeroInscricao.trim() || numeroInscricao.trim().toUpperCase() === 'ISENTO') {
+          newErrors.numeroInscricao = 'Informe o número da inscrição.';
+        }
+      }
+    } else {
+      // PF
+      if (!crmv.trim()) {
+        newErrors.crmv = 'Informe o CRMV (Número do Registro Profissional).';
+      }
     }
 
     // 4. Telefone / Celular
@@ -661,6 +784,39 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
+    // Validação de CRMV ativo no CFMV para Pessoa Física
+    if (personType === 'PF') {
+      setIsValidatingPartnerDoc(true);
+      try {
+        let crmvRes = crmvData;
+        if (!crmvRes) {
+          crmvRes = await handleCrmvBlur();
+        }
+        if (crmvRes && crmvRes.success && !crmvRes.isAtivo) {
+          setPartnerMismatchData({
+            title: 'O cadastro não foi concluído',
+            subtitle: 'Divergência identificada no Conselho de Medicina Veterinária (CFMV)',
+            reasons: [
+              `Situação no CFMV: "${crmvRes.situacao}".`,
+              'O cadastro como Pessoa Física exige registro profissional ativo e regular no CRMV.',
+              `Profissional consultado: ${crmvRes.nome || fullName || 'Não identificado'}.`
+            ],
+            authorizedPartners: [],
+            hideReupload: true,
+            closeButtonText: 'Fechar e revisar CRMV',
+            shouldResetForm: false
+          });
+          setShowPartnerMismatchModal(true);
+          setIsValidatingPartnerDoc(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Erro ao validar CRMV antecipadamente:', err);
+      } finally {
+        setIsValidatingPartnerDoc(false);
+      }
+    }
+
     // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
     setShowPasswordModal(true);
   };
@@ -767,10 +923,14 @@ export const RegistrationForm = ({ onSuccess }) => {
         full_name: fullName,
         nome_fantasia: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
         trade_name: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
-        possui_ie: hasIe,
-        has_ie: hasIe,
-        numero_ie: sintegraIe || null,
-        ie_number: sintegraIe || null,
+        possui_ie: personType === 'PJ' && tpInscricao === 'E',
+        has_ie: personType === 'PJ' && tpInscricao === 'E',
+        tp_inscricao: personType === 'PF' ? 'I' : tpInscricao,
+        numero_inscricao: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || 'ISENTO')),
+        numero_ie: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'E' ? (numeroInscricao?.trim() || sintegraIe || null) : (tpInscricao === 'I' ? 'ISENTO' : numeroInscricao?.trim() || null)),
+        ie_number: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'E' ? (numeroInscricao?.trim() || sintegraIe || null) : (tpInscricao === 'I' ? 'ISENTO' : numeroInscricao?.trim() || null)),
+        crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
+        numero_crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
         telefone: phone,
         phone: phone,
         segmento: segment,
@@ -990,6 +1150,124 @@ export const RegistrationForm = ({ onSuccess }) => {
               <p className="text-xs text-red-500 mt-1 font-medium">{errors.fullName}</p>
             )}
           </div>
+
+          {/* Inscrição Estadual/Municipal para PJ */}
+          {personType === 'PJ' && (
+            <>
+              {/* Tipo de Inscrição */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Tipo de Inscrição <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={tpInscricao}
+                  onChange={(e) => {
+                    const newTp = e.target.value;
+                    setTpInscricao(newTp);
+                    if (newTp === 'I') {
+                      setNumeroInscricao('ISENTO');
+                    } else if (numeroInscricao === 'ISENTO') {
+                      setNumeroInscricao('');
+                    }
+                    if (errors.tpInscricao) setErrors(prev => ({ ...prev, tpInscricao: null }));
+                    if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer ${
+                    errors.tpInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                >
+                  <option value="E">Estadual</option>
+                  <option value="I">Isento</option>
+                  <option value="M">Municipal</option>
+                </select>
+                {errors.tpInscricao && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{errors.tpInscricao}</p>
+                )}
+              </div>
+
+              {/* Número da Inscrição */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Número da Inscrição {tpInscricao !== 'I' && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="text"
+                  value={tpInscricao === 'I' ? 'ISENTO' : numeroInscricao}
+                  disabled={tpInscricao === 'I'}
+                  readOnly={tpInscricao === 'I'}
+                  onChange={(e) => {
+                    setNumeroInscricao(e.target.value);
+                    if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
+                  }}
+                  placeholder={tpInscricao === 'I' ? 'ISENTO' : (tpInscricao === 'E' ? 'Número da Inscrição Estadual' : 'Número da Inscrição Municipal')}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 transition-all ${
+                    tpInscricao === 'I'
+                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-medium'
+                      : 'bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green ' +
+                        (errors.numeroInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200')
+                  }`}
+                />
+                {errors.numeroInscricao && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{errors.numeroInscricao}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* CRMV para Pessoa Física */}
+          {personType === 'PF' && (
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span>
+                  CRMV (Número do Registro Profissional) <span className="text-red-500">*</span>
+                </span>
+                {loadingCrmv && (
+                  <span className="flex items-center gap-1 text-xs text-brand-green font-normal">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Validando CFMV...
+                  </span>
+                )}
+                {!loadingCrmv && crmvData?.isAtivo && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-semibold">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    CRMV Ativo ({crmvData.nome || 'Veterinário'})
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={crmv}
+                  onChange={(e) => {
+                    setCrmv(e.target.value);
+                    setCrmvData(null);
+                    setCrmvAlert('');
+                    if (errors.crmv) setErrors(prev => ({ ...prev, crmv: null }));
+                  }}
+                  onBlur={() => handleCrmvBlur()}
+                  placeholder="ex: CRMV-SP 12345 ou apenas o número"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.crmv || (crmvData && !crmvData.isAtivo)
+                      ? 'border-red-400 bg-red-50/20'
+                      : (crmvData?.isAtivo ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
+                  }`}
+                />
+                {loadingCrmv && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Loader2 className="w-4 h-4 text-brand-green animate-spin" />
+                  </div>
+                )}
+              </div>
+              {errors.crmv && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{errors.crmv}</p>
+              )}
+              {crmvAlert && (
+                <p className={`text-xs mt-1 font-medium ${crmvData && !crmvData.isAtivo ? 'text-red-500' : 'text-amber-600'}`}>
+                  {crmvAlert}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}
@@ -1069,36 +1347,14 @@ export const RegistrationForm = ({ onSuccess }) => {
                 errors.segment ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
               }`}
             >
-              <option value="">Selecione o segmento de atuação...</option>
-              <option value="LOJA AGROPECUARIA">LOJA AGROPECUARIA</option>
-              <option value="FORNECEDOR">FORNECEDOR</option>
-              <option value="ATACADISTA">ATACADISTA</option>
-              <option value="BANHO E TOSA">BANHO E TOSA</option>
-              <option value="CLÍNICA COM LOJA">CLÍNICA COM LOJA</option>
-              <option value="CRIADOR">CRIADOR</option>
-              <option value="CRECHE">CRECHE</option>
-              <option value="CLINICA VETERINARIA">CLINICA VETERINARIA</option>
-              <option value="DISTRIBUIDORA">DISTRIBUIDORA</option>
-              <option value="E-COMMERCE">E-COMMERCE</option>
-              <option value="FUNCIONARIO">FUNCIONARIO</option>
-              <option value="HOSPITAL VETERINARIO">HOSPITAL VETERINARIO</option>
-              <option value="HOTEL / CRECHE">HOTEL / CRECHE</option>
-              <option value="INDUSTRIA VLF">INDUSTRIA VLF</option>
-              <option value="INSTITUIÇAO DE ENSINO">INSTITUIÇAO DE ENSINO</option>
-              <option value="LABORATORIO DE EXAMES">LABORATORIO DE EXAMES</option>
-              <option value="PET SHOP COM BANHO E TOSA">PET SHOP COM BANHO E TOSA</option>
-              <option value="PET SHOP COM CLINICA">PET SHOP COM CLINICA</option>
-              <option value="PET SHOP COMPLETO">PET SHOP COMPLETO</option>
-              <option value="ONGs">ONGs</option>
-              <option value="OUTROS SEGMENTOS">OUTROS SEGMENTOS</option>
-              <option value="PREFEITURA">PREFEITURA</option>
-              <option value="ANIMAIS DE PRODUÇAO">ANIMAIS DE PRODUÇAO</option>
-              <option value="PET SHOP GRANEL">PET SHOP GRANEL</option>
-              <option value="PET SHOP COM VETERINARIO">PET SHOP COM VETERINARIO</option>
-              <option value="PET SHOP">PET SHOP</option>
-              <option value="PRODUTOR RURAL">PRODUTOR RURAL</option>
-              <option value="TRANSPORTADORA">TRANSPORTADORA</option>
-              <option value="VETERINARIO AUTONOMO">VETERINARIO AUTONOMO</option>
+              <option value="">
+                {loadingSegments ? 'Carregando segmentos...' : 'Selecione o segmento de atuação...'}
+              </option>
+              {segmentsList.map((s) => (
+                <option key={s.ram_ativ} value={s.ram_ativ}>
+                  {s.descricao}
+                </option>
+              ))}
             </select>
             {errors.segment && <p className="text-xs text-red-500 mt-1 font-medium">{errors.segment}</p>}
           </div>
@@ -1838,10 +2094,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         isOpen={showSegmentModal}
         onClose={() => setShowSegmentModal(false)}
         currentValue={segment}
-        onSelectSegment={(val) => {
-          setSegment(val);
-          if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
-        }}
+        onSelectSegment={handleSelectSegmentFromModal}
       />
 
       {/* Modal de Alerta de Divergência de Sócio no QSA ou SINTEGRA */}

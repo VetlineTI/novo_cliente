@@ -24,30 +24,72 @@ import {
   Download,
   Briefcase,
   Tag,
-  Receipt
+  Receipt,
+  X,
+  Users
 } from 'lucide-react';
 import logoImg from '../../assets/vetline-logo.png';
-import { fetchClients, updateClientStatus, updateClientData } from '../../lib/supabase';
+import { fetchClients, updateClientStatus, updateClientData, fetchSegments } from '../../lib/supabase';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UserManagementView } from './UserManagementView';
-import { Users } from 'lucide-react';
 
 export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [activeMainTab, setActiveMainTab] = useState('cadastros'); // 'cadastros' | 'usuarios'
   const [clients, setClients] = useState([]);
+  const [segmentsList, setSegmentsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatusTab, setSelectedStatusTab] = useState('pendente'); // Padrão: Pendente
   const [personTypeFilter, setPersonTypeFilter] = useState('todos'); // 'todos', 'PJ', 'PF'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [toastNotification, setToastNotification] = useState(null);
+
+  const handleStatusChangeSuccess = (newStatus, clientName) => {
+    // Redireciona imediatamente para a aba de pendentes
+    setSelectedStatusTab('pendente');
+    setIsDetailOpen(false);
+    setSelectedClient(null);
+
+    // Mensagem de feedback contextual
+    let title = 'Cadastro Atualizado';
+    let message = `O cadastro de "${clientName || 'Cliente'}" foi atualizado com sucesso.`;
+    let type = 'success';
+
+    if (newStatus === 'aprovado') {
+      title = 'Cadastro Aprovado com Sucesso!';
+      message = `O cadastro de "${clientName || 'Cliente'}" foi aprovado com sucesso e movido para a lista de aprovados.`;
+      type = 'success';
+    } else if (newStatus === 'recusado') {
+      title = 'Cadastro Recusado';
+      message = `O cadastro de "${clientName || 'Cliente'}" foi recusado.`;
+      type = 'warning';
+    } else if (newStatus === 'em_analise') {
+      title = 'Em Análise';
+      message = `O cadastro de "${clientName || 'Cliente'}" foi colocado em análise.`;
+      type = 'info';
+    }
+
+    setToastNotification({ title, message, type });
+
+    // Desaparece automaticamente após 5 segundos
+    setTimeout(() => {
+      setToastNotification((prev) => (prev?.title === title ? null : prev));
+    }, 5000);
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchClients();
-      if (res.success) {
-        setClients(res.data || []);
+      const [clientsRes, segsRes] = await Promise.all([
+        fetchClients(),
+        fetchSegments()
+      ]);
+      if (clientsRes.success) {
+        setClients(clientsRes.data || []);
+      }
+      if (segsRes.success && segsRes.data) {
+        setSegmentsList(segsRes.data);
       }
     } catch (err) {
     } finally {
@@ -525,7 +567,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                         {/* Linha 2: Segmento e Contato */}
                         <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
                           <span className="font-semibold text-brand-teal">
-                            {client.segment}
+                            {segmentsList.find(s => String(s.ram_ativ) === String(client.ram_ativ || client.segment))?.descricao || client.segment || 'Sem segmento'}
                           </span>
                           <span className="text-slate-300">•</span>
                           <span className="font-medium text-slate-700">{client.phone}</span>
@@ -622,6 +664,46 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         )}
       </main>
 
+      {/* Notificação Toast Flutuante */}
+      {toastNotification && (
+        <div className="fixed top-5 right-5 z-50 max-w-md w-full animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-auto">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start gap-3 backdrop-blur-md ${
+            toastNotification.type === 'success'
+              ? 'bg-slate-900/95 text-white border-emerald-500/60 shadow-emerald-950/40 ring-1 ring-emerald-500/30'
+              : toastNotification.type === 'warning'
+              ? 'bg-slate-900/95 text-white border-amber-500/60 shadow-amber-950/40 ring-1 ring-amber-500/30'
+              : 'bg-slate-900/95 text-white border-blue-500/60 shadow-slate-950/40 ring-1 ring-blue-500/30'
+          }`}>
+            <div className={`p-2 rounded-xl flex-shrink-0 ${
+              toastNotification.type === 'success'
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : toastNotification.type === 'warning'
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'bg-blue-500/20 text-blue-400'
+            }`}>
+              {toastNotification.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
+              {toastNotification.type === 'warning' && <AlertCircle className="w-5 h-5" />}
+              {toastNotification.type === 'info' && <Clock className="w-5 h-5" />}
+            </div>
+            <div className="flex-1 min-w-0 pt-0.5">
+              <h5 className="text-sm font-bold text-white tracking-wide flex items-center gap-1.5">
+                {toastNotification.title}
+              </h5>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed break-words">
+                {toastNotification.message}
+              </p>
+            </div>
+            <button
+              onClick={() => setToastNotification(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Detalhes do Cliente com Pastas de Documentos e Edição */}
       <ClientDetailModal
         isOpen={isDetailOpen}
@@ -629,6 +711,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         client={selectedClient}
         onUpdateStatus={handleUpdateStatus}
         onUpdateClient={handleUpdateClient}
+        onStatusChangeSuccess={handleStatusChangeSuccess}
       />
     </div>
   );

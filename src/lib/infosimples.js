@@ -488,6 +488,107 @@ export const consultarJucespSimplificada = async (cnpj, options = {}) => {
 export const consultarJucespCompleta = consultarJucespSimplificada;
 
 /**
+ * Consulta cadastral de Médico Veterinário no CFMV (Conselho Federal de Medicina Veterinária) via Infosimples
+ * Serviço: /cfmv/cadastro
+ * @param {string} query Termo de busca (número do CRMV, ex: "12345", "CRMV-SP 12345", CPF ou nome)
+ * @param {string} uf Estado (UF) do profissional (opcional, ex: "SP")
+ * @param {string|number} tipoInscricao 0 para Pessoa Física (padrão), 1 para Pessoa Jurídica
+ * @returns {Promise<Object>}
+ */
+export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
+  if (!query || !String(query).trim()) {
+    return { success: false, error: 'Informe o número do CRMV para consulta.' };
+  }
+
+  const rawQuery = String(query).trim();
+  let cleanUf = uf ? String(uf).trim().toUpperCase() : '';
+
+  // Extrai a UF caso esteja no próprio termo (ex: "CRMV-SP 12345" ou "12345/SP")
+  const ufMatch = rawQuery.match(/(?:crmv[-/\s]*)?([A-Za-z]{2})/i);
+  if (!cleanUf && ufMatch && ufMatch[1] && ufMatch[1].toUpperCase() !== 'CR') {
+    cleanUf = ufMatch[1].toUpperCase();
+  }
+
+  // Extrai o número ou utiliza o termo digitado
+  const numMatch = rawQuery.match(/\d+/);
+  const searchTerm = numMatch ? numMatch[0] : rawQuery;
+
+  try {
+    const params = new URLSearchParams();
+    params.append('token', INFOSIMPLES_TOKEN);
+    params.append('tipo_inscricao', String(tipoInscricao ?? 0));
+    params.append('query', searchTerm);
+    if (cleanUf) {
+      params.append('uf', cleanUf);
+    }
+    params.append('timeout', '180');
+
+    const isProduction = typeof window !== 'undefined' && 
+      (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+
+    let url = `${BASE_URL}/cfmv/cadastro`;
+    if (isProduction) {
+      url = `/api/infosimples?service=cfmv/cadastro`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    if (response.ok || response.status === 400 || response.status === 422) {
+      const result = await response.json();
+      if (result.code === 200 && result.data && result.data.length > 0) {
+        const item = result.data[0];
+        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || item.site_receipt || null;
+        const situacao = item.situacao || item.situacao_cadastral || item.status || item.descricao_situacao || 'Ativo';
+        const sitClean = String(situacao).trim().toLowerCase();
+        
+        // Verifica se a situação é ativa/regular
+        const isAtivo = ['ativo', 'ativa', 'regular', 'adimplente', 'habilitado', 'inscrito'].some(s => sitClean.includes(s)) &&
+          !['cancelado', 'cancelada', 'suspenso', 'suspensa', 'falecido', 'inativo', 'inativa'].some(s => sitClean.includes(s));
+
+        return {
+          success: true,
+          isAtivo,
+          situacao,
+          nome: item.nome || item.nome_profissional || item.razao_social || '',
+          crmv: item.crmv || item.numero_registro || item.registro || searchTerm,
+          uf: item.uf || cleanUf,
+          tipo: item.tipo_inscricao || item.tipo || 'Médico Veterinário',
+          receiptUrl,
+          data: item,
+          raw: result
+        };
+      }
+
+      const errorMsg = (result.errors && result.errors[0]) || result.code_message || 'Profissional / CRMV não localizado no CFMV.';
+      return {
+        success: false,
+        isAtivo: false,
+        code: result.code,
+        error: errorMsg,
+        raw: result
+      };
+    }
+
+    return {
+      success: false,
+      isAtivo: false,
+      error: `Erro na comunicação com a API do CFMV (HTTP ${response.status})`
+    };
+  } catch (err) {
+    console.warn('Erro ao consultar CRMV no Infosimples:', err);
+    return {
+      success: false,
+      isAtivo: false,
+      error: err.message || 'Falha ao consultar CRMV no CFMV.'
+    };
+  }
+};
+
+/**
  * Executa a esteira de Auditoria / Bureau para um cliente PJ
  * Consulta apenas JUCESP (Ficha Cadastral Simplificada) e CENPROT (Protestos)
  * @param {Object} client Objeto do cliente

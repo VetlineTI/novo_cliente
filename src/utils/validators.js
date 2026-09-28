@@ -78,6 +78,8 @@ export const isValidEmail = (email) => {
   return re.test(String(email).toLowerCase());
 };
 
+export const validateEmail = isValidEmail;
+
 /**
  * Consulta de CNPJ com redundância multi-provedor (Direct Data Oficial, Minha Receita, BrasilAPI e CNPJ.ws)
  * Evita falhas por CORS / Rate Limit 429 e garante preenchimento automático contínuo

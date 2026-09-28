@@ -34,20 +34,30 @@ import {
 } from '../../lib/clientAuth';
 import { DocumentViewerModal } from '../admin/DocumentViewerModal';
 import { SegmentHelpModal } from '../SegmentHelpModal';
+import { ClientVerificationModal } from './ClientVerificationModal';
 import { maskPhone, maskCEP, maskCPF, maskCNPJ } from '../../utils/masks';
 import { fetchAddressByCEP } from '../../utils/validators';
+import { fetchSegments } from '../../lib/supabase';
 
 export const ClientDashboard = ({ onLogout }) => {
   const session = getClientSession();
   const [client, setClient] = useState(() => session?.client || {});
   const [activeTab, setActiveTab] = useState('dados'); // 'dados' | 'documentos' | 'suporte'
+  const [isVerificationOpen, setIsVerificationOpen] = useState(false);
+  
+  // Lista de segmentos dinâmicos da tabela novo_cliente.segmento
+  const [segmentsList, setSegmentsList] = useState([]);
+  const [loadingSegments, setLoadingSegments] = useState(false);
   
   // Estados de edição de dados cadastrais
   const [fullName, setFullName] = useState(client.full_name || '');
   const [tradeName, setTradeName] = useState(client.trade_name || '');
+  const [crmv, setCrmv] = useState(client.crmv || client.numero_crmv || '');
+  const [tpInscricao, setTpInscricao] = useState(client.tp_inscricao || (client.person_type === 'PJ' ? 'E' : 'I'));
+  const [numeroInscricao, setNumeroInscricao] = useState(client.numero_inscricao || client.numero_ie || (client.tp_inscricao === 'I' ? 'ISENTO' : ''));
   const [phone, setPhone] = useState(client.phone || '');
   const [email, setEmail] = useState(client.email || '');
-  const [segment, setSegment] = useState(client.segment || '');
+  const [segment, setSegment] = useState(client.ram_ativ || client.segmento || client.segment || '');
   
   // Endereço Principal
   const [zipcode, setZipcode] = useState(client.zipcode || '');
@@ -95,9 +105,12 @@ export const ClientDashboard = ({ onLogout }) => {
           setClient(fresh);
           setFullName(fresh.full_name || '');
           setTradeName(fresh.trade_name || '');
+          setCrmv(fresh.crmv || fresh.numero_crmv || '');
+          setTpInscricao(fresh.tp_inscricao || (fresh.person_type === 'PJ' ? 'E' : 'I'));
+          setNumeroInscricao(fresh.numero_inscricao || fresh.numero_ie || (fresh.tp_inscricao === 'I' ? 'ISENTO' : ''));
           setPhone(fresh.phone || '');
           setEmail(fresh.email || '');
-          setSegment(fresh.segment || '');
+          setSegment(fresh.ram_ativ || fresh.segmento || fresh.segment || '');
           setZipcode(fresh.zipcode || '');
           setStreet(fresh.street || '');
           setNumber(fresh.number || '');
@@ -123,7 +136,37 @@ export const ClientDashboard = ({ onLogout }) => {
 
   useEffect(() => {
     refreshClientData();
+
+    // Carrega segmentos da tabela novo_cliente.segmento
+    const loadSegmentsData = async () => {
+      setLoadingSegments(true);
+      try {
+        const res = await fetchSegments();
+        if (res.success && res.data) {
+          setSegmentsList(res.data);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar segmentos:', err);
+      } finally {
+        setLoadingSegments(false);
+      }
+    };
+    loadSegmentsData();
   }, []);
+
+  // Seleciona segmento vindo do modal de ajuda mapeando para o ram_ativ
+  const handleSelectSegmentFromModal = (selectedValue) => {
+    if (!selectedValue) return;
+    const found = segmentsList.find(
+      s => String(s.ram_ativ) === String(selectedValue) || 
+           s.descricao.toUpperCase() === String(selectedValue).toUpperCase()
+    );
+    if (found) {
+      setSegment(found.ram_ativ);
+    } else {
+      setSegment(selectedValue);
+    }
+  };
 
   // Busca CEP Principal
   const handleCepChange = async (e) => {
@@ -178,27 +221,57 @@ export const ClientDashboard = ({ onLogout }) => {
     }
   };
 
-  // Salva Alterações Cadastrais
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
+  // 1. Ao tentar salvar, abre a verificação obrigatória de Telefone, E-mail e Endereço
+  const handleSaveProfile = (e) => {
+    if (e) e.preventDefault();
+    setSaveError('');
+    setSaveSuccess(false);
+    setIsVerificationOpen(true);
+  };
+
+  // 2. Executa a gravação oficial após o usuário responder o fluxo de verificação
+  const handleExecuteSaveVerified = async (verifiedData) => {
     setIsSaving(true);
     setSaveSuccess(false);
     setSaveError('');
 
     try {
+      // Atualiza os estados em tela com os dados verificados
+      if (verifiedData.phone) setPhone(verifiedData.phone);
+      if (verifiedData.email) setEmail(verifiedData.email);
+      if (verifiedData.zipcode) setZipcode(verifiedData.zipcode);
+      if (verifiedData.street) setStreet(verifiedData.street);
+      if (verifiedData.number) setNumber(verifiedData.number);
+      if (verifiedData.complement !== undefined) setComplement(verifiedData.complement);
+      if (verifiedData.neighborhood) setNeighborhood(verifiedData.neighborhood);
+      if (verifiedData.city) setCity(verifiedData.city);
+      if (verifiedData.state) setState(verifiedData.state);
+
+      const isPJ = client.person_type === 'PJ';
+      const finalTpInscricao = isPJ ? (tpInscricao || 'E') : 'I';
+      const finalNumeroInscricao = (!isPJ || finalTpInscricao === 'I') ? 'ISENTO' : (numeroInscricao?.trim() || 'ISENTO');
+
       const updatePayload = {
         full_name: fullName,
         trade_name: tradeName || null,
-        phone,
-        email,
+        crmv: !isPJ ? (crmv?.trim() || null) : null,
+        numero_crmv: !isPJ ? (crmv?.trim() || null) : null,
+        tp_inscricao: finalTpInscricao,
+        numero_inscricao: finalNumeroInscricao,
+        possui_ie: isPJ && finalTpInscricao === 'E',
+        numero_ie: isPJ && finalTpInscricao === 'E' ? finalNumeroInscricao : (finalTpInscricao === 'I' ? 'ISENTO' : finalNumeroInscricao),
+        phone: verifiedData.phone || phone,
+        email: verifiedData.email || email,
+        ram_ativ: segment,
+        segmento: segment,
         segment,
-        zipcode,
-        street,
-        number,
-        neighborhood,
-        complement: complement || null,
-        city,
-        state,
+        zipcode: verifiedData.zipcode || zipcode,
+        street: verifiedData.street || street,
+        number: verifiedData.number || number,
+        neighborhood: verifiedData.neighborhood || neighborhood,
+        complement: (verifiedData.complement !== undefined ? verifiedData.complement : complement) || null,
+        city: verifiedData.city || city,
+        state: verifiedData.state || state,
         has_different_delivery_address: hasDifferentDelivery,
         delivery_zipcode: hasDifferentDelivery ? deliveryZipcode : null,
         delivery_street: hasDifferentDelivery ? deliveryStreet : null,
@@ -212,9 +285,10 @@ export const ClientDashboard = ({ onLogout }) => {
       const res = await updateClientProfile(client.id, updatePayload);
 
       if (res.success) {
+        setIsVerificationOpen(false);
         setSaveSuccess(true);
         setClient((prev) => ({ ...prev, ...updatePayload }));
-        setTimeout(() => setSaveSuccess(false), 4000);
+        setTimeout(() => setSaveSuccess(false), 5000);
       } else {
         setSaveError(res.error || 'Não foi possível salvar as alterações.');
       }
@@ -688,6 +762,72 @@ export const ClientDashboard = ({ onLogout }) => {
                 />
               </div>
 
+              {/* Inscrição Estadual/Municipal para PJ */}
+              {client.person_type === 'PJ' && (
+                <>
+                  {/* Tipo de Inscrição */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Tipo de Inscrição <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={tpInscricao}
+                      onChange={(e) => {
+                        const newTp = e.target.value;
+                        setTpInscricao(newTp);
+                        if (newTp === 'I') {
+                          setNumeroInscricao('ISENTO');
+                        } else if (numeroInscricao === 'ISENTO') {
+                          setNumeroInscricao('');
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer"
+                    >
+                      <option value="E">Estadual</option>
+                      <option value="I">Isento</option>
+                      <option value="M">Municipal</option>
+                    </select>
+                  </div>
+
+                  {/* Número da Inscrição */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Número da Inscrição {tpInscricao !== 'I' && <span className="text-red-500">*</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={tpInscricao === 'I' ? 'ISENTO' : numeroInscricao}
+                      disabled={tpInscricao === 'I'}
+                      readOnly={tpInscricao === 'I'}
+                      onChange={(e) => setNumeroInscricao(e.target.value)}
+                      placeholder={tpInscricao === 'I' ? 'ISENTO' : (tpInscricao === 'E' ? 'Inscrição Estadual' : 'Inscrição Municipal')}
+                      className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 transition-all ${
+                        tpInscricao === 'I'
+                          ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-medium'
+                          : 'border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green'
+                      }`}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* CRMV para Pessoa Física */}
+              {client.person_type === 'PF' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    CRMV (Número do Registro Profissional) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={crmv}
+                    onChange={(e) => setCrmv(e.target.value)}
+                    required
+                    placeholder="ex: CRMV-SP 12345"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all"
+                  />
+                </div>
+              )}
+
               {/* Segmento */}
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
@@ -710,36 +850,14 @@ export const ClientDashboard = ({ onLogout }) => {
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer"
                 >
-                  <option value="">Selecione o segmento...</option>
-                  <option value="LOJA AGROPECUARIA">LOJA AGROPECUARIA</option>
-                  <option value="FORNECEDOR">FORNECEDOR</option>
-                  <option value="ATACADISTA">ATACADISTA</option>
-                  <option value="BANHO E TOSA">BANHO E TOSA</option>
-                  <option value="CLÍNICA COM LOJA">CLÍNICA COM LOJA</option>
-                  <option value="CRIADOR">CRIADOR</option>
-                  <option value="CRECHE">CRECHE</option>
-                  <option value="CLINICA VETERINARIA">CLINICA VETERINARIA</option>
-                  <option value="DISTRIBUIDORA">DISTRIBUIDORA</option>
-                  <option value="E-COMMERCE">E-COMMERCE</option>
-                  <option value="FUNCIONARIO">FUNCIONARIO</option>
-                  <option value="HOSPITAL VETERINARIO">HOSPITAL VETERINARIO</option>
-                  <option value="HOTEL / CRECHE">HOTEL / CRECHE</option>
-                  <option value="INDUSTRIA VLF">INDUSTRIA VLF</option>
-                  <option value="INSTITUIÇAO DE ENSINO">INSTITUIÇAO DE ENSINO</option>
-                  <option value="LABORATORIO DE EXAMES">LABORATORIO DE EXAMES</option>
-                  <option value="PET SHOP COM BANHO E TOSA">PET SHOP COM BANHO E TOSA</option>
-                  <option value="PET SHOP COM CLINICA">PET SHOP COM CLINICA</option>
-                  <option value="PET SHOP COMPLETO">PET SHOP COMPLETO</option>
-                  <option value="ONGs">ONGs</option>
-                  <option value="OUTROS SEGMENTOS">OUTROS SEGMENTOS</option>
-                  <option value="PREFEITURA">PREFEITURA</option>
-                  <option value="ANIMAIS DE PRODUÇAO">ANIMAIS DE PRODUÇAO</option>
-                  <option value="PET SHOP GRANEL">PET SHOP GRANEL</option>
-                  <option value="PET SHOP COM VETERINARIO">PET SHOP COM VETERINARIO</option>
-                  <option value="PET SHOP">PET SHOP</option>
-                  <option value="PRODUTOR RURAL">PRODUTOR RURAL</option>
-                  <option value="TRANSPORTADORA">TRANSPORTADORA</option>
-                  <option value="VETERINARIO AUTONOMO">VETERINARIO AUTONOMO</option>
+                  <option value="">
+                    {loadingSegments ? 'Carregando segmentos...' : 'Selecione o segmento...'}
+                  </option>
+                  {segmentsList.map((s) => (
+                    <option key={s.ram_ativ} value={s.ram_ativ}>
+                      {s.descricao}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1207,7 +1325,26 @@ export const ClientDashboard = ({ onLogout }) => {
         isOpen={showSegmentModal}
         onClose={() => setShowSegmentModal(false)}
         currentValue={segment}
-        onSelectSegment={(val) => setSegment(val)}
+        onSelectSegment={handleSelectSegmentFromModal}
+      />
+
+      {/* Modal de Verificação Obrigatória (Telefone -> E-mail -> Endereço) */}
+      <ClientVerificationModal
+        isOpen={isVerificationOpen}
+        onClose={() => setIsVerificationOpen(false)}
+        initialData={{
+          phone,
+          email,
+          zipcode,
+          street,
+          number,
+          complement,
+          neighborhood,
+          city,
+          state
+        }}
+        onConfirmAndSave={handleExecuteSaveVerified}
+        isSaving={isSaving}
       />
     </div>
   );

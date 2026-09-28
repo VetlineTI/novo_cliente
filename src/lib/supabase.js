@@ -147,6 +147,95 @@ export const fetchSalespeople = async (forceRefresh = false) => {
   };
 };
 
+// Cache em memória para os segmentos
+let cachedSegments = null;
+
+/**
+ * Busca a lista de segmentos/ramos de atividade da tabela novo_cliente.segmento (ram_ativ, descricao)
+ * @param {boolean} forceRefresh Força atualização ignorando cache
+ * @returns {Promise<{success: boolean, data: Array<{ram_ativ: string, descricao: string}>}>}
+ */
+export const fetchSegments = async (forceRefresh = false) => {
+  if (!forceRefresh && cachedSegments && cachedSegments.length > 0) {
+    return { success: true, data: cachedSegments };
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      // 1. Tenta consulta no schema novo_cliente
+      let res = await supabase
+        .schema('novo_cliente')
+        .from('segmento')
+        .select('*');
+
+      // 2. Se falhar ou vier vazio, tenta sem schema explícito / schema public
+      if (res.error || !res.data || res.data.length === 0) {
+        res = await supabase
+          .from('segmento')
+          .select('*');
+      }
+
+      if (res.data && res.data.length > 0) {
+        const normalized = res.data.map((item) => {
+          const id = item.ram_ativ ?? item.RAM_ATIV ?? item.id ?? item.codigo ?? item.cd_segmento ?? '';
+          const desc = item.descricao ?? item.DESCRICAO ?? item.nome ?? item.segmento ?? '';
+          return {
+            ram_ativ: String(id).trim(),
+            descricao: String(desc).trim()
+          };
+        }).filter((item) => item.descricao && item.ram_ativ);
+
+        if (normalized.length > 0) {
+          // Ordena por descrição em ordem alfabética
+          normalized.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'));
+          cachedSegments = normalized;
+          return { success: true, data: normalized };
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar segmentos do Supabase:', err);
+    }
+  }
+
+  // Lista padrão de fallback caso a tabela esteja vazia ou em modo offline
+  const fallbackList = [
+    { ram_ativ: '1', descricao: 'LOJA AGROPECUARIA' },
+    { ram_ativ: '2', descricao: 'FORNECEDOR' },
+    { ram_ativ: '3', descricao: 'ATACADISTA' },
+    { ram_ativ: '4', descricao: 'BANHO E TOSA' },
+    { ram_ativ: '5', descricao: 'CLÍNICA COM LOJA' },
+    { ram_ativ: '6', descricao: 'CRIADOR' },
+    { ram_ativ: '7', descricao: 'CRECHE' },
+    { ram_ativ: '8', descricao: 'CLINICA VETERINARIA' },
+    { ram_ativ: '9', descricao: 'DISTRIBUIDORA' },
+    { ram_ativ: '10', descricao: 'E-COMMERCE' },
+    { ram_ativ: '11', descricao: 'FUNCIONARIO' },
+    { ram_ativ: '12', descricao: 'HOSPITAL VETERINARIO' },
+    { ram_ativ: '13', descricao: 'HOTEL / CRECHE' },
+    { ram_ativ: '14', descricao: 'INDUSTRIA VLF' },
+    { ram_ativ: '15', descricao: 'INSTITUIÇAO DE ENSINO' },
+    { ram_ativ: '16', descricao: 'LABORATORIO DE EXAMES' },
+    { ram_ativ: '17', descricao: 'PET SHOP COM BANHO E TOSA' },
+    { ram_ativ: '18', descricao: 'PET SHOP COM CLINICA' },
+    { ram_ativ: '19', descricao: 'PET SHOP COMPLETO' },
+    { ram_ativ: '20', descricao: 'ONGs' },
+    { ram_ativ: '21', descricao: 'OUTROS SEGMENTOS' },
+    { ram_ativ: '22', descricao: 'PREFEITURA' },
+    { ram_ativ: '23', descricao: 'ANIMAIS DE PRODUÇAO' },
+    { ram_ativ: '24', descricao: 'PET SHOP GRANEL' },
+    { ram_ativ: '25', descricao: 'PET SHOP COM VETERINARIO' },
+    { ram_ativ: '26', descricao: 'PET SHOP' },
+    { ram_ativ: '27', descricao: 'PRODUTOR RURAL' },
+    { ram_ativ: '28', descricao: 'TRANSPORTADORA' },
+    { ram_ativ: '29', descricao: 'VETERINARIO AUTONOMO' }
+  ];
+
+  return { 
+    success: true, 
+    data: cachedSegments || fallbackList 
+  };
+};
+
 /**
  * Normaliza os dados do cliente para manter compatibilidade total
  * e fornecer propriedades tanto em Português BR quanto em aliases de leitura
@@ -160,10 +249,22 @@ export const normalizeClientRecord = (c) => {
   const cpf_cnpj = c.cpf_cnpj || c.document_number || '';
   const razao_social_nome = c.razao_social_nome || c.full_name || '';
   const nome_fantasia = c.nome_fantasia || c.trade_name || '';
-  const possui_ie = c.possui_ie !== undefined ? Boolean(c.possui_ie) : Boolean(c.has_ie);
-  const numero_ie = c.numero_ie !== undefined ? c.numero_ie : (c.ie_number || null);
+  const rawNumeroInscricao = c.numero_inscricao ?? c.numero_ie ?? c.ie_number ?? null;
+  const isPF = tipo_pessoa === 'PF';
+  const tp_inscricao = c.tp_inscricao || c.tipo_inscricao || (
+    isPF 
+      ? 'I'
+      : (rawNumeroInscricao && String(rawNumeroInscricao).toUpperCase() === 'ISENTO' 
+          ? 'I' 
+          : (c.possui_ie !== undefined ? (c.possui_ie ? 'E' : 'I') : 'E'))
+  );
+  const numero_inscricao = (isPF || tp_inscricao === 'I') ? 'ISENTO' : (rawNumeroInscricao || '');
+  const crmv = c.crmv || c.numero_crmv || c.crmv_number || '';
+  const numero_ie = numero_inscricao;
+  const possui_ie = tp_inscricao === 'E';
   const telefone = c.telefone || c.phone || '';
-  const segmento = c.segmento || c.segment || '';
+  const ram_ativ = c.ram_ativ ?? c.RAM_ATIV ?? c.ramo_atividade ?? c.segmento ?? c.segment ?? '';
+  const segmento = c.segmento || c.segment || c.ram_ativ || '';
   const email = c.email || '';
   const cep = c.cep || c.zipcode || '';
   const logradouro = c.logradouro || c.street || '';
@@ -211,12 +312,18 @@ export const normalizeClientRecord = (c) => {
     full_name: razao_social_nome,
     nome_fantasia,
     trade_name: nome_fantasia,
+    tp_inscricao,
+    tipo_inscricao: tp_inscricao,
+    numero_inscricao,
+    crmv,
+    numero_crmv: crmv,
     possui_ie,
     has_ie: possui_ie,
     numero_ie,
     ie_number: numero_ie,
     telefone,
     phone: telefone,
+    ram_ativ,
     segmento,
     segment: segmento,
     email,
@@ -294,8 +401,32 @@ export const toPortuguesePayload = (data) => {
   
   if (data.razao_social_nome || data.full_name) p.razao_social_nome = data.razao_social_nome || data.full_name;
   if (data.nome_fantasia !== undefined || data.trade_name !== undefined) p.nome_fantasia = data.nome_fantasia || data.trade_name || null;
-  if (data.possui_ie !== undefined || data.has_ie !== undefined) p.possui_ie = data.possui_ie ?? data.has_ie ?? false;
-  if (data.numero_ie !== undefined || data.ie_number !== undefined) p.numero_ie = data.numero_ie || data.ie_number || null;
+  
+  // Tipo e Número de Inscrição ('E' = Estadual, 'I' = Isento, 'M' = Municipal)
+  let resolvedTp = data.tp_inscricao || data.tipo_inscricao || null;
+  let resolvedNum = data.numero_inscricao !== undefined 
+    ? data.numero_inscricao 
+    : (data.numero_ie !== undefined ? data.numero_ie : data.ie_number);
+
+  if (resolvedTp === 'I' || String(resolvedNum).toUpperCase() === 'ISENTO') {
+    p.tp_inscricao = 'I';
+    p.numero_inscricao = 'ISENTO';
+    p.numero_ie = 'ISENTO';
+    p.possui_ie = false;
+  } else {
+    if (resolvedTp) {
+      p.tp_inscricao = resolvedTp;
+    }
+    if (resolvedNum !== undefined) {
+      p.numero_inscricao = resolvedNum || null;
+      p.numero_ie = resolvedNum || null;
+    }
+    if (data.possui_ie !== undefined || data.has_ie !== undefined) {
+      p.possui_ie = data.possui_ie ?? data.has_ie ?? (resolvedTp === 'E');
+    } else {
+      p.possui_ie = resolvedTp === 'E';
+    }
+  }
   
   // Limpa Telefone/Celular para salvar estritamente apenas números (sem traço, parênteses ou espaços)
   if (data.telefone !== undefined || data.phone !== undefined) {
@@ -303,7 +434,11 @@ export const toPortuguesePayload = (data) => {
     p.telefone = rawPhone ? String(rawPhone).replace(/\D/g, '') : '';
   }
   
-  if (data.segmento || data.segment) p.segmento = data.segmento || data.segment;
+  if (data.ram_ativ !== undefined || data.segmento !== undefined || data.segment !== undefined) {
+    const val = data.ram_ativ ?? data.segmento ?? data.segment;
+    p.ram_ativ = val;
+    p.segmento = val;
+  }
   if (data.email !== undefined) p.email = data.email;
   
   // Limpa CEP para apenas números
@@ -346,6 +481,9 @@ export const toPortuguesePayload = (data) => {
   }
   if (data.doc_identificacao_url !== undefined || data.doc_photo_id_url !== undefined) {
     p.doc_identificacao_url = data.doc_identificacao_url || data.doc_photo_id_url || null;
+  }
+  if (data.crmv !== undefined || data.numero_crmv !== undefined) {
+    p.crmv = data.crmv !== undefined ? data.crmv : data.numero_crmv;
   }
   if (data.doc_crmv_url !== undefined) p.doc_crmv_url = data.doc_crmv_url;
   if (data.doc_receita_url !== undefined) p.doc_receita_url = data.doc_receita_url;

@@ -31,48 +31,16 @@ import {
   Search
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
-import { fetchSalespeople } from '../../lib/supabase';
+import { fetchSalespeople, fetchSegments } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
-
-// Segmentos padronizados de mercado
-const AVAILABLE_SEGMENTS = [
-  'LOJA AGROPECUARIA',
-  'FORNECEDOR',
-  'ATACADISTA',
-  'BANHO E TOSA',
-  'CLÍNICA COM LOJA',
-  'CRIADOR',
-  'CRECHE',
-  'CLINICA VETERINARIA',
-  'DISTRIBUIDORA',
-  'E-COMMERCE',
-  'FUNCIONARIO',
-  'HOSPITAL VETERINARIO',
-  'HOTEL / CRECHE',
-  'INDUSTRIA VLF',
-  'INSTITUIÇAO DE ENSINO',
-  'LABORATORIO DE EXAMES',
-  'PET SHOP COM BANHO E TOSA',
-  'PET SHOP COM CLINICA',
-  'PET SHOP COMPLETO',
-  'ONGs',
-  'OUTROS SEGMENTOS',
-  'PREFEITURA',
-  'ANIMAIS DE PRODUÇAO',
-  'PET SHOP GRANEL',
-  'PET SHOP COM VETERINARIO',
-  'PET SHOP',
-  'PRODUTOR RURAL',
-  'TRANSPORTADORA',
-  'VETERINARIO AUTONOMO'
-];
 
 export const ClientDetailModal = ({
   isOpen,
   onClose,
   client,
   onUpdateStatus,
-  onUpdateClient
+  onUpdateClient,
+  onStatusChangeSuccess
 }) => {
   const [activeFolder, setActiveFolder] = useState('ficha');
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -84,6 +52,10 @@ export const ClientDetailModal = ({
   // Lista de vendedores para seleção
   const [salespeopleList, setSalespeopleList] = useState([]);
   const [loadingSalespeople, setLoadingSalespeople] = useState(false);
+
+  // Lista de segmentos dinâmicos da tabela novo_cliente.segmento
+  const [segmentsList, setSegmentsList] = useState([]);
+  const [loadingSegments, setLoadingSegments] = useState(false);
 
   // Estado dos campos editáveis do cliente
   const [formData, setFormData] = useState({});
@@ -101,9 +73,13 @@ export const ClientDetailModal = ({
         document_number: client.document_number || '',
         phone: client.phone || '',
         email: client.email || '',
-        segment: client.segment || '',
+        ram_ativ: client.ram_ativ || client.segmento || client.segment || '',
+        segment: client.ram_ativ || client.segmento || client.segment || '',
         has_ie: Boolean(client.has_ie),
         ie_number: client.ie_number || '',
+        tp_inscricao: client.tp_inscricao || (client.has_ie ? 'E' : (client.numero_ie === 'ISENTO' ? 'I' : (client.person_type === 'PJ' ? 'E' : 'I'))),
+        numero_inscricao: client.numero_inscricao || client.numero_ie || (client.tp_inscricao === 'I' ? 'ISENTO' : ''),
+        crmv: client.crmv || client.numero_crmv || '',
         zipcode: client.zipcode || '',
         street: client.street || '',
         number: client.number || '',
@@ -130,22 +106,30 @@ export const ClientDetailModal = ({
     }
   }, [client]);
 
-  // Carrega vendedores da tabela public.vendedor
+  // Carrega vendedores e segmentos
   useEffect(() => {
     if (isOpen) {
-      const loadVends = async () => {
+      const loadData = async () => {
         setLoadingSalespeople(true);
+        setLoadingSegments(true);
         try {
-          const res = await fetchSalespeople();
-          if (res.success && res.data) {
-            setSalespeopleList(res.data);
+          const [vendsRes, segsRes] = await Promise.all([
+            fetchSalespeople(),
+            fetchSegments()
+          ]);
+          if (vendsRes.success && vendsRes.data) {
+            setSalespeopleList(vendsRes.data);
+          }
+          if (segsRes.success && segsRes.data) {
+            setSegmentsList(segsRes.data);
           }
         } catch (e) {
         } finally {
           setLoadingSalespeople(false);
+          setLoadingSegments(false);
         }
       };
-      loadVends();
+      loadData();
     }
   }, [isOpen]);
 
@@ -257,6 +241,18 @@ export const ClientDetailModal = ({
       setFormData(payloadToSave);
       setSaveSuccess(true);
       setIsEditing(false);
+
+      if (newStatusOverride) {
+        if (onStatusChangeSuccess) {
+          onStatusChangeSuccess(
+            newStatusOverride,
+            payloadToSave.full_name || client.full_name || client.razao_social_nome || client.trade_name || client.nome_fantasia
+          );
+        }
+        onClose();
+        return;
+      }
+
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err) {
       alert('Erro ao salvar dados no banco: ' + (err.message || 'Verifique sua conexão'));
@@ -621,17 +617,22 @@ export const ClientDetailModal = ({
                           <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">Segmento de Atuação:</label>
                           {isEditing ? (
                             <select
-                              value={formData.segment}
-                              onChange={(e) => handleChange('segment', e.target.value)}
+                              value={formData.segment || formData.ram_ativ || ''}
+                              onChange={(e) => {
+                                handleChange('segment', e.target.value);
+                                handleChange('ram_ativ', e.target.value);
+                              }}
                               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none text-slate-800 bg-white"
                             >
-                              <option value="">Selecione...</option>
-                              {AVAILABLE_SEGMENTS.map((s) => (
-                                <option key={s} value={s}>{s}</option>
+                              <option value="">{loadingSegments ? 'Carregando...' : 'Selecione...'}</option>
+                              {segmentsList.map((s) => (
+                                <option key={s.ram_ativ} value={s.ram_ativ}>{s.descricao}</option>
                               ))}
                             </select>
                           ) : (
-                            <div className="font-semibold text-slate-800">{formData.segment}</div>
+                            <div className="font-semibold text-slate-800">
+                              {segmentsList.find(s => String(s.ram_ativ) === String(formData.segment || formData.ram_ativ))?.descricao || formData.segment || formData.ram_ativ || 'Não informado'}
+                            </div>
                           )}
                         </div>
 
@@ -667,23 +668,81 @@ export const ClientDetailModal = ({
                           )}
                         </div>
 
-                        {isPJ && (
+                        {isPJ ? (
+                          <>
+                            <div>
+                              <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">Tipo de Inscrição:</label>
+                              {isEditing ? (
+                                <select
+                                  value={formData.tp_inscricao || 'E'}
+                                  onChange={(e) => {
+                                    const newTp = e.target.value;
+                                    handleChange('tp_inscricao', newTp);
+                                    handleChange('has_ie', newTp === 'E');
+                                    if (newTp === 'I') {
+                                      handleChange('numero_inscricao', 'ISENTO');
+                                      handleChange('ie_number', 'ISENTO');
+                                    } else if (formData.numero_inscricao === 'ISENTO') {
+                                      handleChange('numero_inscricao', '');
+                                      handleChange('ie_number', '');
+                                    }
+                                  }}
+                                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none text-slate-800 bg-white text-xs cursor-pointer"
+                                >
+                                  <option value="E">Estadual (E)</option>
+                                  <option value="I">Isento (I)</option>
+                                  <option value="M">Municipal (M)</option>
+                                </select>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700">
+                                  {formData.tp_inscricao === 'I' ? 'Isento (I)' : (formData.tp_inscricao === 'M' ? 'Municipal (M)' : 'Estadual (E)')}
+                                </span>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">Número da Inscrição:</label>
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={formData.tp_inscricao === 'I' ? 'ISENTO' : (formData.numero_inscricao ?? '')}
+                                  disabled={formData.tp_inscricao === 'I'}
+                                  readOnly={formData.tp_inscricao === 'I'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handleChange('numero_inscricao', val);
+                                    if (formData.tp_inscricao === 'E') {
+                                      handleChange('ie_number', val);
+                                    }
+                                  }}
+                                  placeholder={formData.tp_inscricao === 'I' ? 'ISENTO' : 'Número da Inscrição'}
+                                  className={`w-full px-2.5 py-1.5 rounded-lg border text-slate-800 text-xs ${
+                                    formData.tp_inscricao === 'I'
+                                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-medium'
+                                      : 'border-slate-300 focus:border-brand-green outline-none bg-white'
+                                  }`}
+                                />
+                              ) : (
+                                <div className="font-medium text-slate-800">
+                                  {formData.tp_inscricao === 'I' ? 'ISENTO' : (formData.numero_inscricao || formData.ie_number || 'Não informada')}
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        ) : (
                           <div className="sm:col-span-2">
-                            <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">Inscrição Estadual (IE):</label>
+                            <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">CRMV (Registro Profissional):</label>
                             {isEditing ? (
                               <input
                                 type="text"
-                                value={formData.ie_number}
-                                onChange={(e) => {
-                                  handleChange('ie_number', e.target.value);
-                                  handleChange('has_ie', Boolean(e.target.value.trim()));
-                                }}
-                                placeholder="Número da IE ou Isento"
-                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none text-slate-800"
+                                value={formData.crmv ?? ''}
+                                onChange={(e) => handleChange('crmv', e.target.value)}
+                                placeholder="ex: CRMV-SP 12345"
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none text-slate-800 text-xs"
                               />
                             ) : (
-                              <div className="font-medium text-slate-800">
-                                {formData.has_ie ? (formData.ie_number || 'Informada em Anexo') : 'Isento / Não possui'}
+                              <div className="font-medium text-slate-800 font-mono">
+                                {formData.crmv || 'Não informado'}
                               </div>
                             )}
                           </div>
@@ -1255,12 +1314,14 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('em_analise')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${formData.status === 'em_analise'
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
+                  isSaving ? 'opacity-70 cursor-not-allowed' : ''
+                } ${formData.status === 'em_analise'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
                   }`}
               >
-                <Clock className="w-3.5 h-3.5" />
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
                 <span>Em Análise</span>
               </button>
 
@@ -1269,12 +1330,14 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('recusado')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${formData.status === 'recusado'
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
+                  isSaving ? 'opacity-70 cursor-not-allowed' : ''
+                } ${formData.status === 'recusado'
                   ? 'bg-red-600 text-white shadow-xs'
                   : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
                   }`}
               >
-                <XCircle className="w-3.5 h-3.5" />
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
                 <span>Recusar</span>
               </button>
 
@@ -1283,13 +1346,24 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('aprovado')}
                 disabled={isSaving}
-                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${formData.status === 'aprovado'
+                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isSaving ? 'opacity-80 cursor-wait' : ''
+                } ${formData.status === 'aprovado'
                   ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
                   }`}
               >
-                <CheckCircle className="w-3.5 h-3.5" />
-                <span>Confirmar & Aprovar</span>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Aprovando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Confirmar & Aprovar</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
