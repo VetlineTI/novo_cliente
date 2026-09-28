@@ -29,6 +29,7 @@ export const DocumentUpload = ({
   expectedDocument = '',
   expectedName = '',
   expectedPartners = [],
+  expectedCrmv = '',
   category = 'IDENTIFICATION'
 }) => {
   const fileInputRef = useRef(null);
@@ -38,7 +39,7 @@ export const DocumentUpload = ({
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
-  // Revalida automaticamente o arquivo se os dados da empresa/sócios mudarem no formulário
+  // Revalida automaticamente o arquivo se os dados da empresa/sócios/CRMV mudarem no formulário
   useEffect(() => {
     if (file) {
       let isCancelled = false;
@@ -49,6 +50,7 @@ export const DocumentUpload = ({
             expectedDocument,
             expectedName,
             expectedPartners,
+            expectedCrmv,
             category
           });
           if (!isCancelled) {
@@ -67,7 +69,7 @@ export const DocumentUpload = ({
         isCancelled = true;
       };
     }
-  }, [file, expectedDocument, expectedName, JSON.stringify(expectedPartners)]);
+  }, [file, expectedDocument, expectedName, expectedCrmv, category, JSON.stringify(expectedPartners)]);
 
   const processAndValidateFile = async (selectedFile) => {
     setUploadError(null);
@@ -100,6 +102,7 @@ export const DocumentUpload = ({
         expectedDocument,
         expectedName,
         expectedPartners,
+        expectedCrmv,
         category
       });
       setValidationResult(result);

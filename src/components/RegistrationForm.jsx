@@ -29,7 +29,7 @@ import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { executarAuditoriaBureau, consultarSintegra, consultarCRMV } from '../lib/infosimples';
-import { validatePartnerDocument, validateCompanyAttachment } from '../utils/documentValidator';
+import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
 import { 
   maskCPF, 
   maskCNPJ, 
@@ -784,10 +784,11 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
-    // Validação de CRMV ativo no CFMV para Pessoa Física
+    // Validação de CRMV (Situação no CFMV e Cruzamento com Documento Anexado) para Pessoa Física
     if (personType === 'PF') {
       setIsValidatingPartnerDoc(true);
       try {
+        // 1. Checagem de situação ativa no CFMV via Infosimples
         let crmvRes = crmvData;
         if (!crmvRes) {
           crmvRes = await handleCrmvBlur();
@@ -809,6 +810,31 @@ export const RegistrationForm = ({ onSuccess }) => {
           setShowPartnerMismatchModal(true);
           setIsValidatingPartnerDoc(false);
           return;
+        }
+
+        // 2. Cruzamento do documento anexado do CRMV contra o CRMV informado no formulário
+        if (docCRMV && crmv) {
+          const crmvDocCheck = await validateCrmvAttachment(docCRMV, {
+            expectedCrmv: crmv,
+            expectedName: fullName,
+            expectedCpf: documentNumber,
+            expectedUf: state || 'SP'
+          });
+
+          if (!crmvDocCheck.isValid) {
+            setPartnerMismatchData({
+              title: 'O cadastro não foi concluído',
+              subtitle: 'Divergência identificada no Anexo do CRMV',
+              reasons: crmvDocCheck.reasons,
+              authorizedPartners: [],
+              buttonText: 'Reenviar Documento do CRMV',
+              hideReupload: false,
+              shouldResetForm: false
+            });
+            setShowPartnerMismatchModal(true);
+            setIsValidatingPartnerDoc(false);
+            return;
+          }
         }
       } catch (err) {
         console.warn('Erro ao validar CRMV antecipadamente:', err);
@@ -1962,7 +1988,8 @@ export const RegistrationForm = ({ onSuccess }) => {
                 error={errors.docCRMV}
                 expectedDocument={documentNumber}
                 expectedName={fullName}
-                category="IDENTIFICATION"
+                expectedCrmv={crmv}
+                category="CRMV"
               />
 
               {/* 2. Comprovante de Endereço (PF) - Obrigatório */}

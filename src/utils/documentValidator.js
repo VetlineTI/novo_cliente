@@ -27,6 +27,11 @@ const DOC_KEYWORDS = {
     'inscricao', 'inscrição', 'estadual', 'sintegra', 'sefaz', 'fazenda',
     'secretaria', 'comprovante', 'contribuinte', 'situacao', 'situação',
     'cadastral', 'ativa', 'cce', 'icms'
+  ],
+  CRMV: [
+    'crmv', 'conselho', 'regional', 'federal', 'medicina', 'veterinaria', 'veterinária',
+    'veterinario', 'veterinário', 'medico', 'médico', 'cfmv', 'carteira', 'identidade',
+    'inscricao', 'inscrição', 'registro', 'profissional', 'habilitacao', 'habilitação'
   ]
 };
 
@@ -124,7 +129,7 @@ async function processPDF(file, pdfjs, jsQR) {
  * @param {Object} options Dados esperados para cruzamento
  * @returns {Promise<Object>} Resultado estruturado da validação
  */
-export async function validateDocumentAttachment(file, { expectedDocument = '', expectedName = '', category = 'IDENTIFICATION', expectedPartners = [] } = {}) {
+export async function validateDocumentAttachment(file, { expectedDocument = '', expectedName = '', category = 'IDENTIFICATION', expectedPartners = [], expectedCrmv = '' } = {}) {
   if (!file) {
     return { isValid: false, status: 'EMPTY', message: 'Nenhum arquivo informado.' };
   }
@@ -390,6 +395,50 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
       }
     }
 
+    // D) Documento de Registro Profissional (CRMV - Pessoa Física)
+    if (category === 'CRMV' || expectedCrmv) {
+      const cleanExpectedCrmvDigits = (expectedCrmv || '').replace(/\D/g, '');
+      const foundCrmvs = extractCrmvsFromText(fullRawText);
+      const unmaskedText = fullRawText.replace(/\D/g, '');
+
+      let crmvMatched = false;
+      if (cleanExpectedCrmvDigits && cleanExpectedCrmvDigits.length >= 2) {
+        if (
+          foundCrmvs.includes(cleanExpectedCrmvDigits) || 
+          unmaskedText.includes(cleanExpectedCrmvDigits) || 
+          new RegExp(`\\b${cleanExpectedCrmvDigits}\\b`).test(fullRawText)
+        ) {
+          crmvMatched = true;
+        }
+      }
+
+      if (crmvMatched) {
+        return {
+          isValid: true,
+          status: 'VERIFIED_MATCH',
+          badge: 'CRMV Conferido',
+          message: `Documento do CRMV conferido com sucesso! Registro ${expectedCrmv} validado.`,
+          details: 'Número de registro profissional coincide com o anexo.',
+          score: 100,
+          qrFound: Boolean(qrData)
+        };
+      }
+
+      if (cleanExpectedCrmvDigits && foundCrmvs.length > 0 && !crmvMatched) {
+        const divergentCrmv = foundCrmvs[0];
+        return {
+          isValid: false,
+          isWarning: true,
+          status: 'CRMV_MISMATCH',
+          badge: 'CRMV Divergente no Documento',
+          message: `O documento contém o CRMV ${divergentCrmv}, diferente do CRMV informado (${expectedCrmv}).`,
+          details: 'Por favor, anexe a carteira do CRMV pertencente ao mesmo número informado.',
+          score: 20,
+          qrFound: Boolean(qrData)
+        };
+      }
+    }
+
     // =========================================================================
     // 5. CLASSIFICAÇÃO GERAL / FALLBACK
     // =========================================================================
@@ -542,6 +591,147 @@ export async function validateCompanyAttachment(file, { expectedCnpj = '', expec
     };
   } catch (err) {
     console.warn('Erro ao validar documento da empresa:', err);
+    return {
+      isValid: true,
+      isVerified: false,
+      reasons: []
+    };
+  }
+}
+
+/**
+ * Extrai possíveis números de CRMV encontrados em um texto
+ * @param {string} text Texto bruto
+ * @returns {string[]} Lista de números de CRMV encontrados
+ */
+export function extractCrmvsFromText(text) {
+  if (!text) return [];
+  const found = new Set();
+  
+  // Padrões comuns em carteiras do CRMV, certidões e identidades profissionais
+  const crmvPatterns = [
+    /crmv[\s\-\/\.:]*(?:[a-z]{2})?[\s\-\/\.:]*(?:n[oº°\.]?)?[\s\-\/\.:]*(\d{2,8})/gi,
+    /crmv[\s\-\/\.:]*(\d{2,8})[\s\-\/\.:]*(?:[a-z]{2})?/gi,
+    /(?:inscri[cç][aã]o|registro|carteira|m[eé]dico\s*veterin[aá]rio)[\s\-\/\.:]*(?:n[oº°\.]?)?[\s\-\/\.:]*(\d{2,8})/gi,
+    /\b(\d{3,7})\s*[\/-]\s*(?:sp|rj|mg|rs|pr|sc|ba|go|df|es|pe|ce|pa|mt|ms|am|rn|pb|al|se|pi|to|ro|ac|ap|rr)\b/gi,
+    /\b(?:sp|rj|mg|rs|pr|sc|ba|go|df|es|pe|ce|pa|mt|ms|am|rn|pb|al|se|pi|to|ro|ac|ap|rr)\s*[\/-]?\s*(\d{3,7})\b/gi
+  ];
+
+  for (const pattern of crmvPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match[1]) {
+        const digits = match[1].replace(/\D/g, '');
+        if (digits.length >= 2 && digits.length <= 8) {
+          found.add(digits);
+        }
+      }
+    }
+  }
+
+  return Array.from(found);
+}
+
+/**
+ * Validação rigorosa do documento do CRMV anexado contra o CRMV informado no formulário
+ * @param {File} file Arquivo do CRMV (PDF ou Imagem)
+ * @param {Object} options { expectedCrmv, expectedName, expectedCpf, expectedUf }
+ * @returns {Promise<{isValid: boolean, isVerified: boolean, reasons: string[], matchedCrmv?: string}>}
+ */
+export async function validateCrmvAttachment(file, { expectedCrmv = '', expectedName = '', expectedCpf = '', expectedUf = '' } = {}) {
+  if (!file) {
+    return {
+      isValid: false,
+      isVerified: false,
+      reasons: ['Nenhum documento do CRMV foi anexado.']
+    };
+  }
+
+  // Extrai apenas os dígitos numéricos do CRMV digitado no formulário (ex: "CRMV-SP 12345" -> "12345")
+  const cleanExpectedDigits = (expectedCrmv || '').replace(/\D/g, '');
+  const cleanExpectedCpf = unmask(expectedCpf || '');
+
+  try {
+    const { Tesseract, jsQR, pdfjs } = await loadLibraries();
+
+    let extractedText = '';
+    let qrData = null;
+    let canvasForOCR = null;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      const pdfResult = await processPDF(file, pdfjs, jsQR);
+      extractedText = pdfResult.directText || '';
+      qrData = pdfResult.qrData;
+      canvasForOCR = pdfResult.canvas;
+    } else {
+      const imgResult = await imageToCanvas(file);
+      canvasForOCR = imgResult.canvas;
+      if (jsQR) {
+        qrData = scanQRCodeFromCanvas(canvasForOCR, jsQR);
+      }
+    }
+
+    if (extractedText.length < 50 && canvasForOCR) {
+      const ocrResult = await Tesseract.recognize(canvasForOCR, 'por', {
+        logger: () => {}
+      });
+      extractedText += ' ' + (ocrResult?.data?.text || '');
+    }
+
+    const fullRawText = `${extractedText} ${qrData || ''}`;
+    const foundCrmvs = extractCrmvsFromText(fullRawText);
+    const unmaskedText = fullRawText.replace(/\D/g, '');
+
+    // 1. CHECAGEM SE O NÚMERO DO CRMV CONSTA NO DOCUMENTO
+    let hasMatchingCrmv = false;
+
+    if (cleanExpectedDigits && cleanExpectedDigits.length >= 2) {
+      if (foundCrmvs.includes(cleanExpectedDigits)) {
+        hasMatchingCrmv = true;
+      } else if (unmaskedText.includes(cleanExpectedDigits)) {
+        hasMatchingCrmv = true;
+      } else {
+        const exactNumRegex = new RegExp(`\\b${cleanExpectedDigits}\\b`);
+        if (exactNumRegex.test(fullRawText)) {
+          hasMatchingCrmv = true;
+        }
+      }
+    }
+
+    // Se encontrou CRMV no documento e NÃO bate com o digitado no campo
+    if (cleanExpectedDigits && foundCrmvs.length > 0 && !hasMatchingCrmv) {
+      const divergentCrmv = foundCrmvs[0];
+      return {
+        isValid: false,
+        isVerified: false,
+        isWarning: true,
+        divergentCrmv,
+        reasons: [
+          `O documento anexado apresenta o CRMV "${divergentCrmv}", diferente do CRMV informado no formulário ("${expectedCrmv}").`,
+          'Por favor, anexe a cédula profissional ou certidão correspondente ao mesmo CRMV preenchido no cadastro.'
+        ]
+      };
+    }
+
+    // Se o CRMV coincidiu
+    if (hasMatchingCrmv) {
+      return {
+        isValid: true,
+        isVerified: true,
+        matchedCrmv: cleanExpectedDigits,
+        reasons: []
+      };
+    }
+
+    // Se não encontrou padrão exato de CRMV divergente, aceita para conferência interna se for legível
+    return {
+      isValid: true,
+      isVerified: false,
+      reasons: []
+    };
+  } catch (err) {
+    console.warn('Erro ao validar anexo de CRMV:', err);
     return {
       isValid: true,
       isVerified: false,
