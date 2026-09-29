@@ -428,7 +428,6 @@ export const toPortuguesePayload = (data) => {
   
   if (data.ram_ativ !== undefined || data.segmento !== undefined || data.segment !== undefined) {
     const val = data.ram_ativ ?? data.segmento ?? data.segment;
-    p.ram_ativ = val;
     p.segmento = val;
   }
   if (data.email !== undefined) p.email = data.email;
