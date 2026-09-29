@@ -28,7 +28,8 @@ import {
   Receipt,
   Loader2,
   Maximize2,
-  Search
+  Search,
+  AlertCircle
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
