@@ -45,7 +45,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [toastNotification, setToastNotification] = useState(null);
 
-  const handleStatusChangeSuccess = (newStatus, clientName) => {
+  const handleStatusChangeSuccess = (newStatus, clientName, webhookResult = null) => {
     // Redireciona imediatamente para a aba de pendentes
     setSelectedStatusTab('pendente');
     setIsDetailOpen(false);
@@ -57,9 +57,29 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
     let type = 'success';
 
     if (newStatus === 'aprovado') {
-      title = 'Cadastro Aprovado com Sucesso!';
-      message = `O cadastro de "${clientName || 'Cliente'}" foi aprovado com sucesso e movido para a lista de aprovados.`;
-      type = 'success';
+      if (webhookResult) {
+        if (webhookResult.statusType === 'created' || webhookResult.resultado === 'OK') {
+          title = 'Cliente Criado no ERP Moinho!';
+          message = `Cadastro de "${clientName || 'Cliente'}" aprovado com sucesso. Código no ERP Moinho: ${webhookResult.cd_clien || 'Gerado'}.`;
+          type = 'success';
+        } else if (webhookResult.statusType === 'already_exists' || webhookResult.resultado === 'JA_EXISTE') {
+          title = 'Aprovado (Já Cadastrado no ERP)';
+          message = `Cadastro de "${clientName || 'Cliente'}" aprovado. Atenção: Este CPF/CNPJ já constava no ERP Moinho (JA_EXISTE).`;
+          type = 'info';
+        } else if (webhookResult.statusType === 'error' || webhookResult.error) {
+          title = 'Aprovado com Alerta no ERP Moinho';
+          message = `Cadastro salvo como aprovado, mas o ERP retornou: ${webhookResult.error || webhookResult.message}`;
+          type = 'warning';
+        } else {
+          title = 'Cadastro Aprovado com Sucesso!';
+          message = `O cadastro de "${clientName || 'Cliente'}" foi aprovado com sucesso.`;
+          type = 'success';
+        }
+      } else {
+        title = 'Cadastro Aprovado com Sucesso!';
+        message = `O cadastro de "${clientName || 'Cliente'}" foi aprovado com sucesso e movido para a lista de aprovados.`;
+        type = 'success';
+      }
     } else if (newStatus === 'recusado') {
       title = 'Cadastro Recusado';
       message = `O cadastro de "${clientName || 'Cliente'}" foi recusado.`;
@@ -72,10 +92,10 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
 
     setToastNotification({ title, message, type });
 
-    // Desaparece automaticamente após 5 segundos
+    // Desaparece automaticamente após 7 segundos
     setTimeout(() => {
       setToastNotification((prev) => (prev?.title === title ? null : prev));
-    }, 5000);
+    }, 7000);
   };
 
   const loadData = async () => {
@@ -111,15 +131,6 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         );
         if (selectedClient && selectedClient.id === clientId) {
           setSelectedClient((prev) => ({ ...prev, ...res.data }));
-        }
-
-        // Se o status for aprovado, garante o disparo do webhook para o N8N Moinho
-        if (updatedData.status === 'aprovado' || res.data.status === 'aprovado') {
-          try {
-            await enviarWebhookNovoClienteMoinho(res.data);
-          } catch (whErr) {
-            console.warn('Erro ao disparar webhook N8N em handleUpdateClient:', whErr);
-          }
         }
 
         return res;

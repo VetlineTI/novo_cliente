@@ -239,6 +239,7 @@ export const ClientDetailModal = ({
         await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
       }
 
+      let webhookResult = null;
       // Se o cadastro foi aprovado/confirmado, dispara o webhook para o N8N Moinho
       if (finalStatus === 'aprovado') {
         try {
@@ -247,9 +248,15 @@ export const ClientDetailModal = ({
             ...payloadToSave,
             status: 'aprovado'
           };
-          await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
+          webhookResult = await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
         } catch (whErr) {
           console.warn('Falha não bloqueante ao disparar webhook N8N:', whErr);
+          webhookResult = {
+            success: false,
+            statusType: 'error',
+            error: whErr.message || 'Falha de comunicação com o Webhook',
+            message: whErr.message || 'Falha de comunicação com o Webhook'
+          };
         }
       }
 
@@ -261,7 +268,8 @@ export const ClientDetailModal = ({
         if (onStatusChangeSuccess) {
           onStatusChangeSuccess(
             newStatusOverride,
-            payloadToSave.full_name || client.full_name || client.razao_social_nome || client.trade_name || client.nome_fantasia
+            payloadToSave.full_name || client.full_name || client.razao_social_nome || client.trade_name || client.nome_fantasia,
+            webhookResult
           );
         }
         onClose();

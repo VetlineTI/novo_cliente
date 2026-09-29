@@ -813,14 +813,35 @@ export const deleteClient = async (clientId) => {
 /**
  * Dispara o webhook no N8N ao confirmar / aprovar o cadastro do cliente no Painel Administrativo
  * Webhook URL: https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho
+ * 
+ * Retornos esperados:
+ * 1. Cliente criado com sucesso: [{ "cd_clien": 45279, "resultado": "OK" }]
+ * 2. CPF/CNPJ já cadastrado: [{ "cd_clien": null, "resultado": "JA_EXISTE" }]
+ * 3. Erro: [{ "error": "CPF/CNPJ invalido: 123" }]
+ * 
  * @param {Object} clientData Dados completos do cliente aprovado
- * @returns {Promise<{success: boolean, status?: number, error?: string, response?: any}>}
+ * @returns {Promise<{
+ *   success: boolean,
+ *   statusType: 'created' | 'already_exists' | 'error',
+ *   cd_clien: number | null,
+ *   resultado: string,
+ *   message: string,
+ *   error?: string | null,
+ *   response?: any
+ * }>}
  */
 export const enviarWebhookNovoClienteMoinho = async (clientData) => {
   const WEBHOOK_URL = 'https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho';
 
   if (!clientData) {
-    return { success: false, error: 'Dados do cliente não informados para o webhook.' };
+    return {
+      success: false,
+      statusType: 'error',
+      cd_clien: null,
+      resultado: 'ERRO',
+      message: 'Dados do cliente não informados para o webhook.',
+      error: 'Dados do cliente não informados para o webhook.'
+    };
   }
 
   try {
@@ -899,23 +920,79 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
     }
 
     if (!response.ok) {
-      console.warn(`Webhook N8N retornou status ${response.status}:`, resData);
+      console.warn(`Webhook N8N retornou status HTTP ${response.status}:`, resData);
       return {
         success: false,
-        status: response.status,
-        error: `Webhook retornou status ${response.status}`
+        statusType: 'error',
+        cd_clien: null,
+        resultado: 'ERRO',
+        message: `Webhook retornou status HTTP ${response.status}`,
+        error: `Webhook retornou status HTTP ${response.status}`,
+        response: resData
       };
     }
 
+    // Normalização: pode vir array [{ ... }] ou objeto direto { ... }
+    const firstItem = Array.isArray(resData) ? (resData[0] || {}) : (resData && typeof resData === 'object' ? resData : {});
+
+    // 3. Erro (validação ou falha no SQL Server)
+    if (firstItem.error || firstItem.resultado === 'ERRO' || firstItem.status === 'error') {
+      const errMsg = firstItem.error || firstItem.message || 'Falha de validação ou erro no SQL Server.';
+      return {
+        success: false,
+        statusType: 'error',
+        cd_clien: null,
+        resultado: 'ERRO',
+        message: errMsg,
+        error: errMsg,
+        response: resData
+      };
+    }
+
+    // 2. CPF/CNPJ já cadastrado (caso esperado)
+    if (firstItem.resultado === 'JA_EXISTE') {
+      return {
+        success: true,
+        statusType: 'already_exists',
+        cd_clien: null,
+        resultado: 'JA_EXISTE',
+        message: 'CPF/CNPJ já cadastrado no ERP MOINHO (JA_EXISTE).',
+        error: null,
+        response: resData
+      };
+    }
+
+    // 1. Cliente criado com sucesso
+    if (firstItem.resultado === 'OK' || (firstItem.cd_clien !== undefined && firstItem.cd_clien !== null)) {
+      return {
+        success: true,
+        statusType: 'created',
+        cd_clien: firstItem.cd_clien,
+        resultado: 'OK',
+        message: `Cliente criado com sucesso no MOINHO! Código: ${firstItem.cd_clien}`,
+        error: null,
+        response: resData
+      };
+    }
+
+    // Retorno de fallback caso venha 200 com formato não especificado
     return {
       success: true,
-      status: response.status,
+      statusType: 'created',
+      cd_clien: firstItem.cd_clien || null,
+      resultado: firstItem.resultado || 'OK',
+      message: 'Cadastro confirmado com sucesso no ERP MOINHO.',
+      error: null,
       response: resData
     };
   } catch (err) {
     console.error('Erro ao disparar webhook N8N Moinho:', err);
     return {
       success: false,
+      statusType: 'error',
+      cd_clien: null,
+      resultado: 'ERRO',
+      message: err.message || 'Falha de conexão com o Webhook N8N',
       error: err.message || 'Falha de conexão com o Webhook N8N'
     };
   }
