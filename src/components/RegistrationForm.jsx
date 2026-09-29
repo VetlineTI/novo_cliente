@@ -757,7 +757,8 @@ export const RegistrationForm = ({ onSuccess }) => {
           }
         }
 
-        // 3. Validação do SINTEGRA / Inscrição Estadual (SEFAZ)
+        // 3. Validação do SINTEGRA / Inscrição Estadual (SEFAZ) - TEMPORARIAMENTE COMENTADO PARA TESTES
+        /*
         let sintegraRes = bureauAuditResultRef.current?.data?.sintegra;
         if (!sintegraRes && bureauAuditPromiseRef.current) {
           const bRes = await bureauAuditPromiseRef.current;
@@ -797,6 +798,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
 
         sintegraResultRef.current = sintegraRes;
+        */
       } catch (checkErr) {
         console.warn('Erro ao validar documentos e sintegra antecipadamente:', checkErr);
       } finally {
