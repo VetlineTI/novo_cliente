@@ -290,6 +290,7 @@ export const normalizeClientRecord = (c) => {
   const doc_comprovante_endereco_url = c.doc_comprovante_endereco_url || c.doc_address_url || null;
   const doc_identificacao_url = c.doc_identificacao_url || c.doc_photo_id_url || null;
   const doc_crmv_url = c.doc_crmv_url || null;
+  const cd_clien = c.cd_clien ?? c.CD_CLIEN ?? c.cd_cliente ?? null;
   const status = c.status || 'pendente';
   const termos_aceitos = c.termos_aceitos !== undefined 
     ? Boolean(c.termos_aceitos) 
@@ -356,6 +357,8 @@ export const normalizeClientRecord = (c) => {
     entrega_uf,
     delivery_state: entrega_uf,
     cd_vend,
+    cd_clien,
+    client_code: cd_clien,
     tab_pre,
     tp_ped,
     storage_bucket,
@@ -467,6 +470,9 @@ export const toPortuguesePayload = (data) => {
   if (data.entrega_cidade !== undefined || data.delivery_city !== undefined) p.entrega_cidade = data.entrega_cidade || data.delivery_city || null;
   if (data.entrega_uf !== undefined || data.delivery_state !== undefined) p.entrega_uf = data.entrega_uf || data.delivery_state || null;
   if (data.cd_vend) p.cd_vend = data.cd_vend;
+  if (data.cd_clien !== undefined || data.client_code !== undefined) {
+    p.cd_clien = data.cd_clien || data.client_code || null;
+  }
   if (data.tab_pre) p.tab_pre = data.tab_pre;
   if (data.tp_ped) p.tp_ped = data.tp_ped;
   if (data.storage_bucket) p.storage_bucket = data.storage_bucket;
