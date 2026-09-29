@@ -249,6 +249,22 @@ export const ClientDetailModal = ({
             status: 'aprovado'
           };
           webhookResult = await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
+
+          // Se o webhook retornou um cd_vend ou cd_clien do ERP, atualiza o cadastro
+          if (webhookResult && (webhookResult.cd_vend || webhookResult.cd_clien)) {
+            const extraFields = {};
+            if (webhookResult.cd_vend) {
+              extraFields.cd_vend = webhookResult.cd_vend;
+              payloadToSave.cd_vend = webhookResult.cd_vend;
+            }
+            if (webhookResult.cd_clien) {
+              extraFields.cd_clien = webhookResult.cd_clien;
+              payloadToSave.cd_clien = webhookResult.cd_clien;
+            }
+            if (onUpdateClient) {
+              await onUpdateClient(client.id, extraFields);
+            }
+          }
         } catch (whErr) {
           console.warn('Falha não bloqueante ao disparar webhook N8N:', whErr);
           webhookResult = {
@@ -1011,6 +1027,19 @@ export const ClientDetailModal = ({
                       </div>
 
                       <div className="space-y-2.5 text-xs">
+
+                        {/* Código do Cliente no ERP Moinho */}
+                        {formData.cd_clien && (
+                          <div>
+                            <label className="text-[11px] text-indigo-700 font-bold block mb-1">
+                              Código ERP Moinho (cd_clien):
+                            </label>
+                            <div className="px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-between">
+                              <span className="font-mono font-black text-indigo-950 text-sm">{formData.cd_clien}</span>
+                              <span className="text-[10px] text-indigo-600 font-bold">Integrado</span>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Tabela de Preço */}
                         <div>

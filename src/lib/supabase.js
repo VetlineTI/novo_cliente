@@ -942,6 +942,9 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
     // Normalização: pode vir array [{ ... }] ou objeto direto { ... }
     const firstItem = Array.isArray(resData) ? (resData[0] || {}) : (resData && typeof resData === 'object' ? resData : {});
 
+    const cdClien = firstItem.cd_clien ?? firstItem.CD_CLIEN ?? firstItem.cd_cliente ?? null;
+    const cdVend = firstItem.cd_vend ?? firstItem.CD_VEND ?? firstItem.cd_vendedor ?? null;
+
     // 3. Erro (validação ou falha no SQL Server)
     if (firstItem.error || firstItem.resultado === 'ERRO' || firstItem.status === 'error') {
       const errMsg = firstItem.error || firstItem.message || 'Falha de validação ou erro no SQL Server.';
@@ -949,6 +952,7 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         success: false,
         statusType: 'error',
         cd_clien: null,
+        cd_vend: null,
         resultado: 'ERRO',
         message: errMsg,
         error: errMsg,
@@ -961,7 +965,8 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
       return {
         success: true,
         statusType: 'already_exists',
-        cd_clien: null,
+        cd_clien: cdClien,
+        cd_vend: cdVend,
         resultado: 'JA_EXISTE',
         message: 'CPF/CNPJ já cadastrado no ERP MOINHO (JA_EXISTE).',
         error: null,
@@ -970,13 +975,14 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
     }
 
     // 1. Cliente criado com sucesso
-    if (firstItem.resultado === 'OK' || (firstItem.cd_clien !== undefined && firstItem.cd_clien !== null)) {
+    if (firstItem.resultado === 'OK' || cdClien !== null) {
       return {
         success: true,
         statusType: 'created',
-        cd_clien: firstItem.cd_clien,
+        cd_clien: cdClien,
+        cd_vend: cdVend,
         resultado: 'OK',
-        message: `Cliente criado com sucesso no MOINHO! Código: ${firstItem.cd_clien}`,
+        message: `Cliente criado com sucesso no MOINHO! Código: ${cdClien || ''}`,
         error: null,
         response: resData
       };
@@ -986,7 +992,8 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
     return {
       success: true,
       statusType: 'created',
-      cd_clien: firstItem.cd_clien || null,
+      cd_clien: cdClien,
+      cd_vend: cdVend,
       resultado: firstItem.resultado || 'OK',
       message: 'Cadastro confirmado com sucesso no ERP MOINHO.',
       error: null,
