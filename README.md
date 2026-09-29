@@ -60,6 +60,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - Edição cadastral e comercial completa (`tab_pre`, `tp_ped`, `cd_vend`, status e parecer interno `notes`).
 - Organização em **Pastas de Documentos** e visualizador integrado de PDFs e imagens.
 - **Gestão de Usuários & Perfis**: Listagem dos usuários de `auth.users` via RPC e concessão de perfis (Administrador, Operador, Consulta ou Bloqueado).
+- **Integração Webhook N8N (Moinho)**: Ao clicar em **"Confirmar & Aprovar"** ou aprovar o cadastro no painel, o sistema dispara automaticamente o webhook `https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho` com a carga completa de dados do cliente (dados cadastrais, fiscais, endereço, vendedor, tabelas comerciais e URLs dos anexos).
 
 ---
 

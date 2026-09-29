@@ -29,7 +29,7 @@ import {
   Users
 } from 'lucide-react';
 import logoImg from '../../assets/vetline-logo.png';
-import { fetchClients, updateClientStatus, updateClientData, fetchSegments } from '../../lib/supabase';
+import { fetchClients, updateClientStatus, updateClientData, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UserManagementView } from './UserManagementView';
 
@@ -112,6 +112,16 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         if (selectedClient && selectedClient.id === clientId) {
           setSelectedClient((prev) => ({ ...prev, ...res.data }));
         }
+
+        // Se o status for aprovado, garante o disparo do webhook para o N8N Moinho
+        if (updatedData.status === 'aprovado' || res.data.status === 'aprovado') {
+          try {
+            await enviarWebhookNovoClienteMoinho(res.data);
+          } catch (whErr) {
+            console.warn('Erro ao disparar webhook N8N em handleUpdateClient:', whErr);
+          }
+        }
+
         return res;
       }
     } catch (err) {

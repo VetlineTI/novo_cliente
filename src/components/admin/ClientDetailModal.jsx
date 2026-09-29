@@ -31,7 +31,7 @@ import {
   Search
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
-import { fetchSalespeople, fetchSegments } from '../../lib/supabase';
+import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
 
 export const ClientDetailModal = ({
@@ -222,11 +222,12 @@ export const ClientDetailModal = ({
     }));
   };
 
-  // Salvar todas as alterações no banco de dados
+  // Salvar todas as alterações no banco de dados e disparar webhook se aprovado
   const handleSaveAll = async (newStatusOverride = null) => {
     setIsSaving(true);
     setSaveSuccess(false);
     try {
+      const finalStatus = newStatusOverride || formData.status;
       const payloadToSave = {
         ...formData,
         ...(newStatusOverride ? { status: newStatusOverride } : {})
@@ -236,6 +237,20 @@ export const ClientDetailModal = ({
         await onUpdateClient(client.id, payloadToSave);
       } else if (onUpdateStatus) {
         await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
+      }
+
+      // Se o cadastro foi aprovado/confirmado, dispara o webhook para o N8N Moinho
+      if (finalStatus === 'aprovado') {
+        try {
+          const mergedClientForWebhook = {
+            ...client,
+            ...payloadToSave,
+            status: 'aprovado'
+          };
+          await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
+        } catch (whErr) {
+          console.warn('Falha não bloqueante ao disparar webhook N8N:', whErr);
+        }
       }
 
       setFormData(payloadToSave);

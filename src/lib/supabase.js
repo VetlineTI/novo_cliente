@@ -818,3 +818,114 @@ export const deleteClient = async (clientId) => {
 
   return { success: true };
 };
+
+/**
+ * Dispara o webhook no N8N ao confirmar / aprovar o cadastro do cliente no Painel Administrativo
+ * Webhook URL: https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho
+ * @param {Object} clientData Dados completos do cliente aprovado
+ * @returns {Promise<{success: boolean, status?: number, error?: string, response?: any}>}
+ */
+export const enviarWebhookNovoClienteMoinho = async (clientData) => {
+  const WEBHOOK_URL = 'https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho';
+
+  if (!clientData) {
+    return { success: false, error: 'Dados do cliente não informados para o webhook.' };
+  }
+
+  try {
+    const payload = {
+      event: 'CLIENT_APPROVED',
+      action: 'confirmar_cadastro',
+      timestamp: new Date().toISOString(),
+      cliente: {
+        id: clientData.id || null,
+        auth_user_id: clientData.auth_user_id || null,
+        tipo_pessoa: clientData.person_type || clientData.tipo_pessoa || 'PJ',
+        cpf_cnpj: clientData.document_number || clientData.cpf_cnpj || '',
+        razao_social_nome: clientData.full_name || clientData.razao_social_nome || '',
+        nome_fantasia: clientData.trade_name || clientData.nome_fantasia || '',
+        tp_inscricao: clientData.tp_inscricao || (clientData.person_type === 'PF' ? 'I' : 'E'),
+        numero_inscricao: clientData.numero_inscricao || clientData.numero_ie || clientData.ie_number || 'ISENTO',
+        crmv: clientData.crmv || clientData.numero_crmv || null,
+        telefone: clientData.phone || clientData.telefone || '',
+        email: clientData.email || '',
+        segmento: clientData.segment || clientData.segmento || clientData.ram_ativ || '',
+        ram_ativ: clientData.ram_ativ || clientData.segment || clientData.segmento || '',
+        cd_vend: clientData.cd_vend || 'ATENA',
+        tab_pre: clientData.tab_pre || 'VTL01',
+        tp_ped: clientData.tp_ped || 'VTL01',
+        // Endereço Principal / Cadastral
+        cep: clientData.zipcode || clientData.cep || '',
+        logradouro: clientData.street || clientData.logradouro || '',
+        numero: clientData.number || clientData.numero || '',
+        complemento: clientData.complement || clientData.complemento || '',
+        bairro: clientData.neighborhood || clientData.bairro || '',
+        cidade: clientData.city || clientData.cidade || '',
+        uf: clientData.state || clientData.uf || '',
+        // Endereço de Entrega
+        endereco_entrega_diferente: Boolean(clientData.has_different_delivery_address || clientData.endereco_entrega_diferente),
+        entrega_cep: clientData.delivery_zipcode || clientData.entrega_cep || null,
+        entrega_logradouro: clientData.delivery_street || clientData.entrega_logradouro || null,
+        entrega_numero: clientData.delivery_number || clientData.entrega_numero || null,
+        entrega_complemento: clientData.delivery_complement || clientData.entrega_complemento || null,
+        entrega_bairro: clientData.delivery_neighborhood || clientData.entrega_bairro || null,
+        entrega_cidade: clientData.delivery_city || clientData.entrega_cidade || null,
+        entrega_uf: clientData.delivery_state || clientData.entrega_uf || null,
+        // Documentos Anexados
+        doc_contrato_social_url: clientData.doc_contract_url || clientData.doc_contrato_social_url || null,
+        doc_identificacao_url: clientData.doc_photo_id_url || clientData.doc_identificacao_url || null,
+        doc_crmv_url: clientData.doc_crmv_url || null,
+        doc_comprovante_endereco_url: clientData.doc_address_url || clientData.doc_comprovante_endereco_url || null,
+        doc_ie_url: clientData.doc_ie_url || clientData.doc_sintegra_url || null,
+        doc_jucesp_url: clientData.doc_jucesp_url || null,
+        doc_cenprot_url: clientData.doc_cenprot_url || null,
+        nire_jucesp: clientData.nire_jucesp || null,
+        total_protestos: clientData.total_protestos ?? null,
+        // Status e Observações
+        status: 'aprovado',
+        observacoes: clientData.notes || clientData.observacoes || '',
+        approved_at: new Date().toISOString(),
+        created_at: clientData.created_at || null
+      },
+      raw_client: clientData
+    };
+
+    const response = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    let resData = null;
+    try {
+      resData = await response.json();
+    } catch (_) {
+      try {
+        resData = await response.text();
+      } catch (_) {}
+    }
+
+    if (!response.ok) {
+      console.warn(`Webhook N8N retornou status ${response.status}:`, resData);
+      return {
+        success: false,
+        status: response.status,
+        error: `Webhook retornou status ${response.status}`
+      };
+    }
+
+    return {
+      success: true,
+      status: response.status,
+      response: resData
+    };
+  } catch (err) {
+    console.error('Erro ao disparar webhook N8N Moinho:', err);
+    return {
+      success: false,
+      error: err.message || 'Falha de conexão com o Webhook N8N'
+    };
+  }
+};
