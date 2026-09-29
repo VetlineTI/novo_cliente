@@ -31,7 +31,7 @@ import {
   Search
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
-import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
+import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
 
 export const ClientDetailModal = ({
@@ -99,7 +99,8 @@ export const ClientDetailModal = ({
         delivery_city: client.delivery_city || '',
         delivery_state: client.delivery_state || '',
         status: client.status || 'pendente',
-        notes: client.notes || ''
+        notes: client.notes || '',
+        alerta: client.alerta || client.alert || ''
       });
       setIsEditing(false);
       setSaveSuccess(false);
@@ -233,26 +234,31 @@ export const ClientDetailModal = ({
         ...(newStatusOverride ? { status: newStatusOverride } : {})
       };
 
-      if (onUpdateClient) {
-        await onUpdateClient(client.id, payloadToSave);
-      } else if (onUpdateStatus) {
-        await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
-      }
-
       let webhookResult = null;
-      // Se o cadastro foi aprovado/confirmado, dispara o webhook para o N8N Moinho
+      // Se o cadastro foi aprovado/confirmado, gera o texto da coluna ALERTA e dispara o webhook para o N8N Moinho
       if (finalStatus === 'aprovado') {
+        const confirmDate = new Date();
+        const textoAlerta = gerarTextoAlerta({ ...client, ...payloadToSave }, confirmDate);
+        payloadToSave.alerta = textoAlerta;
+
+        if (onUpdateClient) {
+          await onUpdateClient(client.id, payloadToSave);
+        } else if (onUpdateStatus) {
+          await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
+        }
+
         try {
           const mergedClientForWebhook = {
             ...client,
             ...payloadToSave,
-            status: 'aprovado'
+            status: 'aprovado',
+            alerta: textoAlerta
           };
           webhookResult = await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
 
           // Se o webhook retornou um cd_vend ou cd_clien do ERP, atualiza o cadastro
+          const extraFields = { alerta: textoAlerta };
           if (webhookResult && (webhookResult.cd_vend || webhookResult.cd_clien)) {
-            const extraFields = {};
             if (webhookResult.cd_vend) {
               extraFields.cd_vend = webhookResult.cd_vend;
               payloadToSave.cd_vend = webhookResult.cd_vend;
@@ -261,9 +267,9 @@ export const ClientDetailModal = ({
               extraFields.cd_clien = webhookResult.cd_clien;
               payloadToSave.cd_clien = webhookResult.cd_clien;
             }
-            if (onUpdateClient) {
-              await onUpdateClient(client.id, extraFields);
-            }
+          }
+          if (onUpdateClient) {
+            await onUpdateClient(client.id, extraFields);
           }
         } catch (whErr) {
           console.warn('Falha não bloqueante ao disparar webhook N8N:', whErr);
@@ -273,6 +279,12 @@ export const ClientDetailModal = ({
             error: whErr.message || 'Falha de comunicação com o Webhook',
             message: whErr.message || 'Falha de comunicação com o Webhook'
           };
+        }
+      } else {
+        if (onUpdateClient) {
+          await onUpdateClient(client.id, payloadToSave);
+        } else if (onUpdateStatus) {
+          await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
         }
       }
 
@@ -1194,6 +1206,25 @@ export const ClientDetailModal = ({
                         </button>
                       </div>
                     )}
+
+                    {/* Card de Alerta de Auditoria ERP (Jucesp / Cenprot / Receita) */}
+                    <div className="bg-amber-50/90 rounded-xl border border-amber-200 p-3.5 shadow-xs space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-amber-200/80 pb-1.5">
+                        <h4 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Texto da Coluna ALERTA (ERP Moinho)</span>
+                        </h4>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded-full">
+                          {formData.alerta ? 'Gravado ✓' : 'Gerado na Aprovação'}
+                        </span>
+                      </div>
+                      <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/80 font-mono text-[11px] text-slate-800 leading-relaxed break-words">
+                        {formData.alerta || gerarTextoAlerta({ ...client, ...formData }, new Date())}
+                      </div>
+                      <p className="text-[10px] text-amber-800">
+                        * Esta informação é gerada e salva automaticamente no campo <strong>alerta</strong> do ERP ao confirmar o cadastro.
+                      </p>
+                    </div>
 
                     {/* Resumo de Documentos Anexados */}
                     <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2 text-xs">

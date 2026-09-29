@@ -291,6 +291,7 @@ export const normalizeClientRecord = (c) => {
   const doc_identificacao_url = c.doc_identificacao_url || c.doc_photo_id_url || null;
   const doc_crmv_url = c.doc_crmv_url || null;
   const cd_clien = c.cd_clien ?? c.CD_CLIEN ?? c.cd_cliente ?? null;
+  const alerta = c.alerta || c.alert || null;
   const status = c.status || 'pendente';
   const termos_aceitos = c.termos_aceitos !== undefined 
     ? Boolean(c.termos_aceitos) 
@@ -359,6 +360,8 @@ export const normalizeClientRecord = (c) => {
     cd_vend,
     cd_clien,
     client_code: cd_clien,
+    alerta,
+    alert: alerta,
     tab_pre,
     tp_ped,
     storage_bucket,
@@ -504,8 +507,70 @@ export const toPortuguesePayload = (data) => {
     p.observacoes = data.observacoes !== undefined ? data.observacoes : data.notes;
   }
   if (data.auth_user_id !== undefined) p.auth_user_id = data.auth_user_id;
+  if (data.alerta !== undefined || data.alert !== undefined) {
+    p.alerta = data.alerta || data.alert || null;
+  }
 
   return p;
+};
+
+/**
+ * Gera o texto formatado para a coluna 'alerta' conforme regras de negócio do ERP Moinho:
+ * - PJ COM JUCESP:
+ *   DD/MM/YY: Consulta Jucesp (salva), Início: [data]; Capital: [valor]; Sócios: [nomes]; Consulta Cenprot, [nada consta / X protesto(s)] – automacao_cadastro
+ * - PJ SEM JUCESP:
+ *   DD/MM/YY: Consulta Jucesp, não consta; Consulta Receita (salva) data da situação cadastral: [data]; Consulta Cenprot, [nada consta / X protesto(s)]. – automacao_cadastro
+ * - PF:
+ *   DD/MM/YY: Consulta Jucesp, não consta; Consulta Receita (salva) data da situação cadastral: [data]; Consulta Cenprot, [nada consta / X protesto(s)]. – automacao_cadastro
+ * 
+ * @param {Object} client Objeto do cliente
+ * @param {Date|string} [confirmDate] Data do clique em confirmar/subida no ERP
+ * @returns {string}
+ */
+export const gerarTextoAlerta = (client, confirmDate = new Date()) => {
+  if (!client) return '';
+
+  const d = confirmDate instanceof Date ? confirmDate : new Date(confirmDate || Date.now());
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2); // Ex: '26'
+  const dataFormatada = `${day}/${month}/${year}`;
+
+  const isPF = (client.tipo_pessoa || client.person_type) === 'PF';
+  const hasJucesp = Boolean(client.doc_jucesp_url || client.nire_jucesp || client.nire);
+
+  // Cenprot Protestos: Se tiver protesto traz qtd, se não tiver traz texto 'nada consta' / 'sem protesto'
+  const totalProtestos = client.total_protestos;
+  let protestoTxt = 'nada consta';
+  if (totalProtestos !== null && totalProtestos !== undefined && Number(totalProtestos) > 0) {
+    protestoTxt = `${totalProtestos} protesto(s)`;
+  } else {
+    protestoTxt = 'nada consta';
+  }
+
+  const operador = 'automacao_cadastro';
+
+  if (!isPF && hasJucesp) {
+    // PJ COM JUCESP
+    const inicio = client.data_abertura || client.data_inicio_atividade || client.inicio_atividade || '';
+    const capital = client.capital_social || '';
+    let socios = '';
+    if (Array.isArray(client.socios)) {
+      socios = client.socios
+        .map(s => (typeof s === 'string' ? s : (s.nome || s.nome_socio || '')))
+        .filter(Boolean)
+        .join(', ');
+    } else if (typeof client.socios === 'string') {
+      socios = client.socios;
+    }
+
+    return `${dataFormatada}: Consulta Jucesp (salva), Início: ${inicio}; Capital: ${capital}; Sócios: ${socios}; Consulta Cenprot, ${protestoTxt} – ${operador}`;
+  }
+
+  // PJ SEM JUCESP ou PF
+  const dataSituacao = client.data_situacao_cadastral || client.data_situacao || client.data_abertura || dataFormatada;
+
+  return `${dataFormatada}: Consulta Jucesp, não consta; Consulta Receita (salva) data da situação cadastral: ${dataSituacao}; Consulta Cenprot, ${protestoTxt}. – ${operador}`;
 };
 
 /**
@@ -905,7 +970,8 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         doc_jucesp_url: clientData.doc_jucesp_url || null,
         doc_cenprot_url: clientData.doc_cenprot_url || null,
         nire_jucesp: clientData.nire_jucesp || null,
-        total_protestos: clientData.total_protestos ?? null,
+        // Alerta Bureau / Conformidade
+        alerta: clientData.alerta || gerarTextoAlerta(clientData, new Date()),
         // Status e Observações
         status: 'aprovado',
         observacoes: clientData.notes || clientData.observacoes || '',
