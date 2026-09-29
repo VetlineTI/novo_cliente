@@ -723,10 +723,8 @@ export const executarAuditoriaBureau = async (client) => {
         updatePayload.doc_sintegra_url = docSintegraUrl;
       }
       if (inscricaoEstadual) {
-        updatePayload.numero_ie = inscricaoEstadual;
-        updatePayload.ie_number = inscricaoEstadual;
-        updatePayload.possui_ie = true;
-        updatePayload.has_ie = true;
+        updatePayload.tp_inscricao = 'E';
+        updatePayload.numero_inscricao = inscricaoEstadual;
       }
       if (nireJucesp) updatePayload.nire_jucesp = nireJucesp;
       if (totalProtestos !== null && totalProtestos !== undefined) {

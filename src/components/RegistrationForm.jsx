@@ -378,34 +378,6 @@ export const RegistrationForm = ({ onSuccess }) => {
           }
           if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
         }
-        if (data.telefone && !phone) {
-          setPhone(data.telefone);
-          if (errors.phone) setErrors(prev => ({ ...prev, phone: null }));
-        }
-        if (data.email && !email) {
-          setEmail(data.email);
-          if (errors.email) setErrors(prev => ({ ...prev, email: null }));
-        }
-        // Auto-preenchimento do Endereço Principal via Receita Federal
-        if (data.endereco) {
-          if (data.endereco.cep) setZipcode(maskCEP(data.endereco.cep));
-          if (data.endereco.logradouro) setStreet(data.endereco.logradouro);
-          if (data.endereco.numero) setNumber(data.endereco.numero);
-          if (data.endereco.complemento) setComplement(data.endereco.complemento);
-          if (data.endereco.bairro) setNeighborhood(data.endereco.bairro);
-          if (data.endereco.municipio) setCity(data.endereco.municipio);
-          if (data.endereco.uf) setState(data.endereco.uf);
-          setMainCepError('');
-          setErrors(prev => ({
-            ...prev,
-            zipcode: null,
-            street: null,
-            number: null,
-            neighborhood: null,
-            city: null,
-            state: null
-          }));
-        }
         if (!data.isAtiva) {
           setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral} na Receita Federal.`);
         }
@@ -415,7 +387,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         bureauAuditPromiseRef.current = executarAuditoriaBureau({
           cpf_cnpj: clean,
           razao_social_nome: data?.razaoSocial || fullName,
-          uf: data?.endereco?.uf || state || 'SP'
+          uf: state || 'SP'
         }).then(res => {
           bureauAuditResultRef.current = res;
           const ieFound = res?.inscricaoEstadual || res?.data?.sintegra?.ie;
@@ -971,14 +943,9 @@ export const RegistrationForm = ({ onSuccess }) => {
         full_name: fullName,
         nome_fantasia: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
         trade_name: personType === 'PJ' ? (cnpjInfo?.tradeName || cnpjInfo?.nomeFantasia || null) : null,
-        possui_ie: personType === 'PJ' && tpInscricao === 'E',
-        has_ie: personType === 'PJ' && tpInscricao === 'E',
         tp_inscricao: personType === 'PF' ? 'I' : tpInscricao,
-        numero_inscricao: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || 'ISENTO')),
-        numero_ie: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'E' ? (numeroInscricao?.trim() || sintegraIe || null) : (tpInscricao === 'I' ? 'ISENTO' : numeroInscricao?.trim() || null)),
-        ie_number: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'E' ? (numeroInscricao?.trim() || sintegraIe || null) : (tpInscricao === 'I' ? 'ISENTO' : numeroInscricao?.trim() || null)),
+        numero_inscricao: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || sintegraIe || 'ISENTO')),
         crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
-        numero_crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
         telefone: phone,
         phone: phone,
         segmento: segment,

@@ -258,8 +258,6 @@ export const ClientDashboard = ({ onLogout }) => {
         numero_crmv: !isPJ ? (crmv?.trim() || null) : null,
         tp_inscricao: finalTpInscricao,
         numero_inscricao: finalNumeroInscricao,
-        possui_ie: isPJ && finalTpInscricao === 'E',
-        numero_ie: isPJ && finalTpInscricao === 'E' ? finalNumeroInscricao : (finalTpInscricao === 'I' ? 'ISENTO' : finalNumeroInscricao),
         phone: verifiedData.phone || phone,
         email: verifiedData.email || email,
         ram_ativ: segment,

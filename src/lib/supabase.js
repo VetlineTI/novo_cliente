@@ -411,20 +411,12 @@ export const toPortuguesePayload = (data) => {
   if (resolvedTp === 'I' || String(resolvedNum).toUpperCase() === 'ISENTO') {
     p.tp_inscricao = 'I';
     p.numero_inscricao = 'ISENTO';
-    p.numero_ie = 'ISENTO';
-    p.possui_ie = false;
   } else {
     if (resolvedTp) {
       p.tp_inscricao = resolvedTp;
     }
     if (resolvedNum !== undefined) {
-      p.numero_inscricao = resolvedNum || null;
-      p.numero_ie = resolvedNum || null;
-    }
-    if (data.possui_ie !== undefined || data.has_ie !== undefined) {
-      p.possui_ie = data.possui_ie ?? data.has_ie ?? (resolvedTp === 'E');
-    } else {
-      p.possui_ie = resolvedTp === 'E';
+      p.numero_inscricao = resolvedNum || 'ISENTO';
     }
   }
   
