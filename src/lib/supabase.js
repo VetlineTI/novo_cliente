@@ -147,6 +147,37 @@ export const fetchSalespeople = async (forceRefresh = false) => {
   };
 };
 
+// Lista padrão com códigos oficiais ram_ativ da tabela novo_cliente.segmento
+export const DEFAULT_SEGMENTS = [
+  { ram_ativ: 'AGRO', descricao: 'LOJA AGROPECUARIA' },
+  { ram_ativ: 'AS', descricao: 'OUTROS SEGMENTOS' },
+  { ram_ativ: 'ATAC', descricao: 'ATACADISTA' },
+  { ram_ativ: 'BT', descricao: 'BANHO E TOSA' },
+  { ram_ativ: 'CR', descricao: 'CRIADOR' },
+  { ram_ativ: 'CV', descricao: 'CLINICA VETERINARIA' },
+  { ram_ativ: 'DIST', descricao: 'DISTRIBUIDOR' },
+  { ram_ativ: 'E CO', descricao: 'E COMMERCE' },
+  { ram_ativ: 'FUN', descricao: 'FUNCIONARIO' },
+  { ram_ativ: 'FUNM', descricao: 'FUNCIONARIO MP' },
+  { ram_ativ: 'HCLI', descricao: 'HOSPITAL VETERINARIO' },
+  { ram_ativ: 'HTLC', descricao: 'HOTEL/CRECHE' },
+  { ram_ativ: 'IND', descricao: 'INDUSTRIA' },
+  { ram_ativ: 'INST', descricao: 'INSTITUIÇÃO DE ENSINO' },
+  { ram_ativ: 'LAB', descricao: 'LABORATÓRIO DE EXAMES' },
+  { ram_ativ: 'LJ', descricao: 'PET SHOP' },
+  { ram_ativ: 'LJBN', descricao: 'PET SHOP COM BANHO E TOSA' },
+  { ram_ativ: 'LJCL', descricao: 'PET SHOP COM CLINICA' },
+  { ram_ativ: 'LJCO', descricao: 'PET SHOP COMPLETO' },
+  { ram_ativ: 'ONG', descricao: 'ONGs' },
+  { ram_ativ: 'PREF', descricao: 'PREFEITURA' },
+  { ram_ativ: 'PROD', descricao: 'ANIMAIS DE PRODUÇAO' },
+  { ram_ativ: 'GRAN', descricao: 'PET SHOP GRANEL' },
+  { ram_ativ: 'LJVT', descricao: 'PET SHOP COM VETERINARIO' },
+  { ram_ativ: 'RUR', descricao: 'PRODUTOR RURAL' },
+  { ram_ativ: 'TRAN', descricao: 'TRANSPORTADORA' },
+  { ram_ativ: 'VET', descricao: 'VETERINARIO AUTONOMO' }
+];
+
 // Cache em memória para os segmentos
 let cachedSegments = null;
 
@@ -197,42 +228,9 @@ export const fetchSegments = async (forceRefresh = false) => {
     }
   }
 
-  // Lista padrão de fallback caso a tabela esteja vazia ou em modo offline
-  const fallbackList = [
-    { ram_ativ: '1', descricao: 'LOJA AGROPECUARIA' },
-    { ram_ativ: '2', descricao: 'FORNECEDOR' },
-    { ram_ativ: '3', descricao: 'ATACADISTA' },
-    { ram_ativ: '4', descricao: 'BANHO E TOSA' },
-    { ram_ativ: '5', descricao: 'CLÍNICA COM LOJA' },
-    { ram_ativ: '6', descricao: 'CRIADOR' },
-    { ram_ativ: '7', descricao: 'CRECHE' },
-    { ram_ativ: '8', descricao: 'CLINICA VETERINARIA' },
-    { ram_ativ: '9', descricao: 'DISTRIBUIDORA' },
-    { ram_ativ: '10', descricao: 'E-COMMERCE' },
-    { ram_ativ: '11', descricao: 'FUNCIONARIO' },
-    { ram_ativ: '12', descricao: 'HOSPITAL VETERINARIO' },
-    { ram_ativ: '13', descricao: 'HOTEL / CRECHE' },
-    { ram_ativ: '14', descricao: 'INDUSTRIA VLF' },
-    { ram_ativ: '15', descricao: 'INSTITUIÇAO DE ENSINO' },
-    { ram_ativ: '16', descricao: 'LABORATORIO DE EXAMES' },
-    { ram_ativ: '17', descricao: 'PET SHOP COM BANHO E TOSA' },
-    { ram_ativ: '18', descricao: 'PET SHOP COM CLINICA' },
-    { ram_ativ: '19', descricao: 'PET SHOP COMPLETO' },
-    { ram_ativ: '20', descricao: 'ONGs' },
-    { ram_ativ: '21', descricao: 'OUTROS SEGMENTOS' },
-    { ram_ativ: '22', descricao: 'PREFEITURA' },
-    { ram_ativ: '23', descricao: 'ANIMAIS DE PRODUÇAO' },
-    { ram_ativ: '24', descricao: 'PET SHOP GRANEL' },
-    { ram_ativ: '25', descricao: 'PET SHOP COM VETERINARIO' },
-    { ram_ativ: '26', descricao: 'PET SHOP' },
-    { ram_ativ: '27', descricao: 'PRODUTOR RURAL' },
-    { ram_ativ: '28', descricao: 'TRANSPORTADORA' },
-    { ram_ativ: '29', descricao: 'VETERINARIO AUTONOMO' }
-  ];
-
   return { 
     success: true, 
-    data: cachedSegments || fallbackList 
+    data: cachedSegments || DEFAULT_SEGMENTS 
   };
 };
 
@@ -427,8 +425,17 @@ export const toPortuguesePayload = (data) => {
   }
   
   if (data.ram_ativ !== undefined || data.segmento !== undefined || data.segment !== undefined) {
-    const val = data.ram_ativ ?? data.segmento ?? data.segment;
-    p.segmento = val;
+    const rawVal = String(data.ram_ativ ?? data.segmento ?? data.segment ?? '').trim();
+    if (rawVal) {
+      const list = cachedSegments && cachedSegments.length > 0 ? cachedSegments : DEFAULT_SEGMENTS;
+      const matched = list.find(
+        (s) => s.ram_ativ.toUpperCase() === rawVal.toUpperCase() ||
+               s.descricao.toUpperCase() === rawVal.toUpperCase()
+      );
+      p.segmento = matched ? matched.ram_ativ : rawVal;
+    } else {
+      p.segmento = null;
+    }
   }
   if (data.email !== undefined) p.email = data.email;
   
