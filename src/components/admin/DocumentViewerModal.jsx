@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Loader2
 } from 'lucide-react';
+import { getSecureDocumentUrl } from '../../lib/supabase';
 
 const getDecodedHtml = (rawUrl) => {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -43,6 +44,7 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
   const [inlineHtml, setInlineHtml] = useState(null);
   const [blobPdfUrl, setBlobPdfUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState(null);
 
   const activeDoc = docItem || doc;
 
@@ -61,12 +63,33 @@ export const DocumentViewerModal = ({ isOpen, onClose, document: docItem, doc })
     };
   }, [isOpen]);
 
-  const url = activeDoc?.url;
+  const rawUrl = activeDoc?.url;
   const fileName = activeDoc?.fileName;
   const title = activeDoc?.title;
   const verificationBadge = activeDoc?.verificationBadge;
   const category = activeDoc?.category;
   const notes = activeDoc?.notes;
+
+  // Resolve URL assinada segura caso seja do Supabase Storage
+  useEffect(() => {
+    let isCancelled = false;
+    const resolve = async () => {
+      if (!rawUrl) {
+        setResolvedUrl(null);
+        return;
+      }
+      try {
+        const secure = await getSecureDocumentUrl(rawUrl);
+        if (!isCancelled) setResolvedUrl(secure);
+      } catch (e) {
+        if (!isCancelled) setResolvedUrl(rawUrl);
+      }
+    };
+    resolve();
+    return () => { isCancelled = true; };
+  }, [rawUrl]);
+
+  const url = resolvedUrl || rawUrl;
 
   useEffect(() => {
     let isMounted = true;

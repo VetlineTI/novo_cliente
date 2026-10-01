@@ -47,6 +47,66 @@ const fileToDataUrl = (file) => {
  * @param {string} clientDocument CPF ou CNPJ do cliente para nomear a pasta
  * @returns {Promise<string>} URL pública ou DataURL do arquivo salvo
  */
+/**
+ * Transforma uma URL ou Path do Supabase Storage em uma Signed URL segura (temporária)
+ * Se for Data URI ou URL externa comum (ex: directd), retorna a URL original.
+ * @param {string} rawUrl URL ou path do documento
+ * @param {number} expiresInSeconds Tempo de validade da URL assinada (padrão 2 horas = 7200s)
+ * @returns {Promise<string>} URL acessível assinada ou original
+ */
+export const getSecureDocumentUrl = async (rawUrl, expiresInSeconds = 7200) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+
+  // 1. Data URIs e blobs locais não precisam de assinatura
+  if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.startsWith('local-storage://')) {
+    return rawUrl;
+  }
+
+  // 2. Se for uma URL do Supabase Storage ou path com bucket novos_clientes
+  const isSupabaseStorageUrl = 
+    rawUrl.includes('/storage/v1/object/') || 
+    rawUrl.startsWith('supabase://') || 
+    (isSupabaseConfigured && (rawUrl.includes('.supabase.co') || rawUrl.includes('.supabase.in')));
+
+  if (isSupabaseStorageUrl && isSupabaseConfigured && supabase) {
+    try {
+      let bucket = 'novos_clientes';
+      let filePath = '';
+
+      if (rawUrl.startsWith('supabase://')) {
+        const parts = rawUrl.replace('supabase://', '').split('/');
+        bucket = parts[0] || 'novos_clientes';
+        filePath = parts.slice(1).join('/');
+      } else {
+        const match = rawUrl.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/?#]+)\/([^?#]+)/);
+        if (match) {
+          bucket = match[1];
+          filePath = decodeURIComponent(match[2]);
+        } else {
+          const idx = rawUrl.indexOf('novos_clientes/');
+          if (idx !== -1) {
+            filePath = decodeURIComponent(rawUrl.substring(idx + 'novos_clientes/'.length).split('?')[0]);
+          }
+        }
+      }
+
+      if (filePath) {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(filePath, expiresInSeconds);
+
+        if (!error && data?.signedUrl) {
+          return data.signedUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao gerar Signed URL do Supabase Storage:', err);
+    }
+  }
+
+  return rawUrl;
+};
+
 export const uploadDocument = async (file, folder = 'geral', clientDocument = '') => {
   if (!file) return null;
 
@@ -67,13 +127,20 @@ export const uploadDocument = async (file, folder = 'geral', clientDocument = ''
         });
 
       if (data?.path) {
+        // Tenta gerar Signed URL ou URL de storage segura
+        const { data: signedData } = await supabase.storage
+          .from(bucketName)
+          .createSignedUrl(data.path, 7200);
+
         const { data: publicUrlData } = supabase.storage
           .from(bucketName)
           .getPublicUrl(data.path);
 
-        return publicUrlData?.publicUrl || `supabase://${bucketName}/${data.path}`;
+        return signedData?.signedUrl || publicUrlData?.publicUrl || `supabase://${bucketName}/${data.path}`;
       }
-    } catch (err) {}
+    } catch (err) {
+      console.warn('Erro no upload para Supabase Storage:', err);
+    }
   }
 
   // Modo Local/Demonstração: Converte o arquivo real para Data URL para visualização 100% fiel no admin
@@ -292,6 +359,7 @@ export const normalizeClientRecord = (c) => {
   const doc_crmv_url = c.doc_crmv_url || null;
   const cd_clien = c.cd_clien ?? c.CD_CLIEN ?? c.cd_cliente ?? null;
   const alerta = c.alerta || c.alert || null;
+  const ip_origem = c.ip_origem || c.ip_address || null;
   const status = c.status || 'pendente';
   const termos_aceitos = c.termos_aceitos !== undefined 
     ? Boolean(c.termos_aceitos) 
@@ -362,6 +430,8 @@ export const normalizeClientRecord = (c) => {
     client_code: cd_clien,
     alerta,
     alert: alerta,
+    ip_origem,
+    ip_address: ip_origem,
     tab_pre,
     tp_ped,
     storage_bucket,
@@ -376,6 +446,7 @@ export const normalizeClientRecord = (c) => {
     doc_receita_url: c.doc_receita_url || null,
     doc_jucesp_url: c.doc_jucesp_url || null,
     doc_cenprot_url: c.doc_cenprot_url || null,
+    doc_sintegra_url: c.doc_sintegra_url || c.doc_ie_url || null,
     nire_jucesp: c.nire_jucesp || null,
     total_protestos: c.total_protestos !== undefined ? c.total_protestos : null,
     bureau_consulted_at: c.bureau_consulted_at || null,
@@ -510,8 +581,101 @@ export const toPortuguesePayload = (data) => {
   if (data.alerta !== undefined || data.alert !== undefined) {
     p.alerta = data.alerta || data.alert || null;
   }
+  if (data.ip_origem !== undefined || data.ip_address !== undefined || data.client_ip !== undefined) {
+    p.ip_origem = data.ip_origem || data.ip_address || data.client_ip || null;
+  }
 
   return p;
+};
+
+// Cache do IP do cliente em memória
+let cachedClientIp = null;
+
+/**
+ * Obtém o endereço IP público do cliente de forma rápida e com fallback
+ * @returns {Promise<string>} Endereço IP do visitante
+ */
+export const getClientIp = async () => {
+  if (cachedClientIp) return cachedClientIp;
+  try {
+    const sessionIp = typeof window !== 'undefined' ? sessionStorage.getItem('vetline_client_ip') : null;
+    if (sessionIp) {
+      cachedClientIp = sessionIp;
+      return sessionIp;
+    }
+  } catch (e) {}
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    const res = await fetch('https://api.ipify.org?format=json', {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.ip) {
+        cachedClientIp = data.ip;
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('vetline_client_ip', data.ip);
+          }
+        } catch (e) {}
+        return data.ip;
+      }
+    }
+  } catch (err) {
+    try {
+      const res2 = await fetch('https://icanhazip.com');
+      if (res2.ok) {
+        const text = (await res2.text()).trim();
+        if (text) {
+          cachedClientIp = text;
+          return text;
+        }
+      }
+    } catch (e2) {}
+  }
+
+  return '127.0.0.1';
+};
+
+/**
+ * Verifica se o IP do cliente atingiu o limite de requisições no Supabase (Rate Limit)
+ * @param {string} ip Endereço IP
+ * @param {number} maxAttempts Quantidade máxima de tentativas permitidas (padrão 3)
+ * @param {number} windowMinutes Janela de tempo em minutos (padrão 60)
+ * @returns {Promise<{allowed: boolean, message?: string, remaining?: number, retryAfterMinutes?: number}>}
+ */
+export const checkRateLimit = async (ip = null, maxAttempts = 3, windowMinutes = 60) => {
+  const clientIp = ip || (await getClientIp());
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.rpc('check_rate_limit', {
+        p_ip: clientIp,
+        p_max_attempts: maxAttempts,
+        p_window_minutes: windowMinutes
+      });
+
+      if (!error && data) {
+        return {
+          allowed: Boolean(data.allowed),
+          count: data.count || 0,
+          max: data.max || maxAttempts,
+          remaining: data.remaining ?? 0,
+          retryAfterMinutes: data.retry_after_minutes || 0,
+          message: data.message || null
+        };
+      }
+    } catch (err) {
+      console.warn('Erro ao checar rate limit no Supabase:', err);
+    }
+  }
+
+  return { allowed: true, remaining: maxAttempts };
 };
 
 /**
@@ -577,10 +741,33 @@ export const gerarTextoAlerta = (client, confirmDate = new Date()) => {
  * Salva os dados do formulário na tabela novo_cliente.data_new_cliente
  * (Utiliza RPC pública com SECURITY DEFINER direcionada ao schema novo_cliente e fallback direto)
  * @param {Object} clientData Dados formatados para persistência
- * @returns {Promise<{success: boolean, data?: any, error?: any}>}
+ * @returns {Promise<{success: boolean, data?: any, error?: any, isRateLimited?: boolean}>}
  */
 export const submitNewClient = async (clientData) => {
-  const ptPayload = toPortuguesePayload(clientData);
+  // 1. Obtém e anexa o IP real do cliente
+  let clientIp = clientData.ip_origem || clientData.ip_address;
+  if (!clientIp) {
+    clientIp = await getClientIp();
+  }
+
+  const enrichedData = {
+    ...clientData,
+    ip_origem: clientIp
+  };
+
+  // 2. Checagem prévia de Rate Limiting por IP no Supabase
+  if (isSupabaseConfigured && supabase && clientIp && clientIp !== '127.0.0.1' && clientIp !== 'localhost') {
+    const rateCheck = await checkRateLimit(clientIp, 3, 60);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        isRateLimited: true,
+        error: rateCheck.message || 'Limite de cadastros atingido para este dispositivo/IP. Por segurança, tente novamente mais tarde.'
+      };
+    }
+  }
+
+  const ptPayload = toPortuguesePayload(enrichedData);
 
   if (isSupabaseConfigured && supabase) {
     // 1. Método Principal: Função RPC insert_novo_cliente
@@ -591,6 +778,14 @@ export const submitNewClient = async (clientData) => {
 
       if (!rpcError && rpcData) {
         return { success: true, data: [normalizeClientRecord(rpcData)] };
+      }
+
+      if (rpcError && rpcError.message?.includes('RATE_LIMIT_EXCEEDED')) {
+        return {
+          success: false,
+          isRateLimited: true,
+          error: rpcError.message.replace('RATE_LIMIT_EXCEEDED:', '').trim()
+        };
       }
     } catch (errRpc) {}
 

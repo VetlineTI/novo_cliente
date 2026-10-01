@@ -4,14 +4,6 @@ const INFOSIMPLES_TOKEN =
   import.meta.env.VITE_INFOSIMPLES_TOKEN ||
   'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
 
-const JUCESP_LOGIN_CPF =
-  import.meta.env.VITE_JUCESP_LOGIN_CPF ||
-  '41152588885';
-
-const JUCESP_LOGIN_SENHA =
-  import.meta.env.VITE_JUCESP_LOGIN_SENHA ||
-  '@13setCaio';
-
 // Rota com proxy no Vite (localhost) e Vercel (produção)
 const BASE_URL = '/api-infosimples';
 
@@ -391,17 +383,17 @@ export const consultarProtestosCenprot = async (cnpj) => {
 };
 
 /**
- * Consulta Cadastral PJ / JUCESP / Receita Federal com QSA
- * Prioridade: Direct Data (/api/ReceitaPJParticipacaoSocietaria) com comprovante oficial em PDF
- * Fallback: CadastroPessoaJuridicaPlus e JUCESP Oficial (Gov.br)
+ * Consulta Cadastral PJ / Ficha Cadastral / Receita Federal com QSA
+ * Fonte Oficial: Direct Data (/api/ReceitaPJParticipacaoSocietaria) com comprovante oficial em PDF
+ * Fallback: Direct Data (/api/CadastroPessoaJuridicaPlus)
  */
-export const consultarJucespSimplificada = async (cnpj, options = {}) => {
+export const consultarJucespSimplificada = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || cleanCnpj.length !== 14) {
     return { success: false, error: 'CNPJ inválido para consulta.' };
   }
 
-  // 1. Prioridade Oficial: Direct Data (ReceitaPJParticipacaoSocietaria com QSA e Comprovante Oficial PDF)
+  // 1. Fonte Oficial Principal: Direct Data (ReceitaPJParticipacaoSocietaria com QSA e Comprovante Oficial PDF)
   try {
     const directQsaRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanCnpj);
     if (directQsaRes.success && directQsaRes.data) {
@@ -432,56 +424,13 @@ export const consultarJucespSimplificada = async (cnpj, options = {}) => {
       };
     }
   } catch (dErr) {
-    console.warn('Tentativa Direct Data:', dErr);
+    console.warn('Tentativa Direct Data CadastroPessoaJuridicaPlus:', dErr);
   }
 
-  // 2. Fallback: Consulta Oficial JUCESP Ficha Cadastral (com Gov.br)
-  const loginCpf = options.login_cpf || JUCESP_LOGIN_CPF;
-  const loginSenha = options.login_senha || JUCESP_LOGIN_SENHA;
-
-  try {
-    const params = new URLSearchParams();
-    params.append('token', INFOSIMPLES_TOKEN);
-    params.append('cnpj', cleanCnpj);
-    if (loginCpf) params.append('login_cpf', loginCpf);
-    if (loginSenha) params.append('login_senha', loginSenha);
-    params.append('timeout', '180');
-
-    const response = await fetch(`${BASE_URL}/junta-comercial/sp/ficha`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    });
-
-    if (response.ok || response.status === 400 || response.status === 422) {
-      const result = await response.json();
-      if (result.code === 200 && result.data && result.data.length > 0) {
-        const dataItem = result.data[0];
-        const receiptUrl = (result.site_receipts && result.site_receipts[0]) || dataItem.site_receipt || null;
-        const nire = dataItem.nire || dataItem.empresa?.nire || dataItem.numero_nire || null;
-        return {
-          success: true,
-          source: 'infosimples',
-          nire,
-          receiptUrl,
-          data: dataItem,
-          raw: result
-        };
-      }
-      return {
-        success: false,
-        code: result.code,
-        error: result.code_message || (result.errors && result.errors[0]) || 'Falha na consulta',
-        raw: result
-      };
-    }
-    return {
-      success: false,
-      error: `Servidor retornou HTTP ${response.status}`
-    };
-  } catch (e) {
-    return { success: false, error: e.message || 'Erro de conexão na consulta cadastral' };
-  }
+  return {
+    success: false,
+    error: 'Não foi possível obter a ficha cadastral do CNPJ no momento.'
+  };
 };
 
 // Mantém compatibilidade com chamadas anteriores
@@ -589,8 +538,9 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
 };
 
 /**
- * Executa a esteira de Auditoria / Bureau para um cliente PJ
- * Consulta apenas JUCESP (Ficha Cadastral Simplificada) e CENPROT (Protestos)
+ * Executa a esteira de Auditoria / Bureau para um cliente PJ ou PF
+ * - Para PJ: Consulta JUCESP, CENPROT (Protestos) e SINTEGRA
+ * - Para PF: Consulta CENPROT (Protestos CPF) na Direct Data
  * @param {Object} client Objeto do cliente
  * @returns {Promise<Object>} Resultado consolidado
  */
@@ -599,21 +549,23 @@ export const executarAuditoriaBureau = async (client) => {
     return {
       success: false,
       allFailed: true,
-      error: 'Dados do cliente inválidos ou CNPJ não informado.',
-      failedServices: [{ service: 'Geral', error: 'CNPJ não informado' }]
+      error: 'Dados do cliente inválidos ou documento (CPF/CNPJ) não informado.',
+      failedServices: [{ service: 'Geral', error: 'Documento não informado' }]
     };
   }
 
   const rawDoc = client.cpf_cnpj || client.document_number;
   const cleanDoc = String(rawDoc).replace(/\D/g, '');
   const clientId = client.id;
+  const isPF = cleanDoc.length === 11;
+  const isPJ = cleanDoc.length === 14;
 
-  if (cleanDoc.length !== 14) {
+  if (!isPF && !isPJ) {
     return {
       success: false,
       allFailed: true,
-      error: 'CNPJ deve conter exatamente 14 dígitos numéricos.',
-      failedServices: [{ service: 'Geral', error: 'CNPJ com menos de 14 dígitos' }]
+      error: 'Documento deve conter 11 dígitos (CPF) ou 14 dígitos (CNPJ).',
+      failedServices: [{ service: 'Geral', error: 'Documento com tamanho inválido' }]
     };
   }
 
@@ -624,26 +576,35 @@ export const executarAuditoriaBureau = async (client) => {
     consultedAt: new Date().toISOString()
   };
 
-  // 1. Consulta JUCESP Ficha Cadastral Simplificada (Gov.br)
-  try {
-    results.jucesp = await consultarJucespSimplificada(cleanDoc);
-  } catch (e) {
-    results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
-  }
+  if (isPF) {
+    // 1. Para PF: Consulta Protestos no IEPTB / CENPROT via Direct Data (ProtestosOnline)
+    try {
+      results.cenprot = await consultarProtestosCenprot(cleanDoc);
+    } catch (e) {
+      results.cenprot = { success: true, skipped: true, totalProtests: 0 };
+    }
+  } else {
+    // 1. Consulta JUCESP Ficha Cadastral Simplificada (Gov.br)
+    try {
+      results.jucesp = await consultarJucespSimplificada(cleanDoc);
+    } catch (e) {
+      results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
+    }
 
-  // 2. Consulta CENPROT Protestos
-  try {
-    results.cenprot = await consultarProtestosCenprot(cleanDoc);
-  } catch (e) {
-    results.cenprot = { success: true, skipped: true, totalProtests: 0 };
-  }
+    // 2. Consulta CENPROT Protestos (CNPJ)
+    try {
+      results.cenprot = await consultarProtestosCenprot(cleanDoc);
+    } catch (e) {
+      results.cenprot = { success: true, skipped: true, totalProtests: 0 };
+    }
 
-  // 3. Consulta SINTEGRA / CADESP (Inscrição Estadual)
-  try {
-    const ufSearch = client.uf || client.state || client.delivery_state || 'SP';
-    results.sintegra = await consultarDirectDataSintegra(cleanDoc, ufSearch);
-  } catch (e) {
-    results.sintegra = { success: false, error: e.message || 'Erro na consulta do Sintegra' };
+    // 3. Consulta SINTEGRA / CADESP (Inscrição Estadual)
+    try {
+      const ufSearch = client.uf || client.state || client.delivery_state || 'SP';
+      results.sintegra = await consultarDirectDataSintegra(cleanDoc, ufSearch);
+    } catch (e) {
+      results.sintegra = { success: false, error: e.message || 'Erro na consulta do Sintegra' };
+    }
   }
 
   // URLs dos comprovantes válidos
@@ -657,39 +618,59 @@ export const executarAuditoriaBureau = async (client) => {
   const successfulServices = [];
   const failedServices = [];
 
-  if (results.jucesp?.success) {
-    successfulServices.push('JUCESP (Ficha Simplificada)');
-  } else if (results.jucesp?.error) {
-    failedServices.push({
-      service: 'JUCESP',
-      code: results.jucesp?.code,
-      error: results.jucesp?.error
-    });
+  if (isPF) {
+    if (results.cenprot?.success && !results.cenprot?.skipped) {
+      successfulServices.push('CENPROT (Protestos CPF)');
+    } else if (results.cenprot?.error) {
+      failedServices.push({
+        service: 'CENPROT (CPF)',
+        code: results.cenprot?.code,
+        error: results.cenprot?.error
+      });
+    }
+  } else {
+    if (results.jucesp?.success) {
+      successfulServices.push('JUCESP (Ficha Simplificada)');
+    } else if (results.jucesp?.error) {
+      failedServices.push({
+        service: 'JUCESP',
+        code: results.jucesp?.code,
+        error: results.jucesp?.error
+      });
+    }
+
+    if (results.cenprot?.success && !results.cenprot?.skipped) {
+      successfulServices.push('CENPROT (Protestos)');
+    } else if (results.cenprot?.error) {
+      failedServices.push({
+        service: 'CENPROT',
+        code: results.cenprot?.code,
+        error: results.cenprot?.error
+      });
+    }
+
+    if (results.sintegra?.success) {
+      successfulServices.push('SINTEGRA / Cadastro Estadual');
+    } else if (results.sintegra?.error) {
+      failedServices.push({
+        service: 'SINTEGRA',
+        code: results.sintegra?.code,
+        error: results.sintegra?.error
+      });
+    }
   }
 
-  if (results.cenprot?.success && !results.cenprot?.skipped) {
-    successfulServices.push('CENPROT (Protestos)');
-  } else if (results.cenprot?.error) {
-    failedServices.push({
-      service: 'CENPROT',
-      code: results.cenprot?.code,
-      error: results.cenprot?.error
-    });
-  }
+  const allSuccessful = isPF
+    ? Boolean(results.cenprot?.success && !results.cenprot?.skipped)
+    : Boolean(results.jucesp?.success && (results.cenprot?.success || results.cenprot?.skipped) && results.sintegra?.success);
 
-  if (results.sintegra?.success) {
-    successfulServices.push('SINTEGRA / Cadastro Estadual');
-  } else if (results.sintegra?.error) {
-    failedServices.push({
-      service: 'SINTEGRA',
-      code: results.sintegra?.code,
-      error: results.sintegra?.error
-    });
-  }
+  const isPartial = isPF
+    ? false
+    : Boolean(results.jucesp?.success || (results.cenprot?.success && !results.cenprot?.skipped) || results.sintegra?.success);
 
-  const allSuccessful = Boolean(results.jucesp?.success && (results.cenprot?.success || results.cenprot?.skipped) && results.sintegra?.success);
-  const isPartial = Boolean(results.jucesp?.success || (results.cenprot?.success && !results.cenprot?.skipped) || results.sintegra?.success);
-  const allFailed = !results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped) && !results.sintegra?.success;
+  const allFailed = isPF
+    ? !results.cenprot?.success
+    : (!results.jucesp?.success && (!results.cenprot?.success || results.cenprot?.skipped) && !results.sintegra?.success);
 
   // Se nenhum serviço funcionou
   if (allFailed) {
@@ -699,7 +680,7 @@ export const executarAuditoriaBureau = async (client) => {
       allSuccessful: false,
       isPartial: false,
       allFailed: true,
-      error: `Falha na consulta: ${errorDetails}`,
+      error: `Falha na consulta: ${errorDetails || 'Serviço indisponível'}`,
       failedServices,
       successfulServices,
       data: results

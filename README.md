@@ -107,8 +107,10 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/admin/AdminLogin.jsx` | Tela de login administrativo com Supabase Auth e credenciais de emergência. |
 | `src/components/admin/AdminDashboard.jsx` | Painel de controle administrativo com listagem de clientes e gestão de perfis. |
 | `src/components/admin/ClientDetailModal.jsx` | Visualização detalhada do cliente organizada em pastas e aprovações. |
-| `src/components/admin/DocumentViewerModal.jsx` | Visualizador de alta resolução para documentos (zoom, rotação e download). |
+| `src/components/admin/DocumentViewerModal.jsx` | Visualizador de alta resolução para documentos com suporte a URLs assinadas seguras (Signed URLs), zoom, rotação e download. |
 | `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users` e concessão de perfis. |
+| `supabase/setup_storage_private.sql` | Script SQL para configurar o bucket `novos_clientes` como **Privado** no Supabase Storage com políticas de RLS (upload público e leitura autenticada). |
+| `supabase/add_rate_limit.sql` | Script SQL de Rate Limiting por IP (tabela `rate_limit_logs`, RPCs `check_rate_limit` e `log_rate_limit_attempt`) para proteção nativa contra spam e abuso de cadastros. |
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 | `src/utils/documentValidator.js` | Módulo de extração e validação inteligente de documentos (OCR Tesseract, PDF.js e jsQR), cruzamento de CNPJ de anexos contra o formulário e sócios contra o QSA (com suporte ao padrão de máscara LGPD da Receita Federal `***XXXXXX**`). |

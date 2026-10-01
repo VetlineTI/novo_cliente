@@ -44,7 +44,15 @@ import {
   fetchAddressByCEP,
   fetchCNPJDataFromBrasilAPI 
 } from '../utils/validators';
-import { uploadDocument, submitNewClient, updateClientData, fetchSalespeople, fetchSegments } from '../lib/supabase';
+import { 
+  uploadDocument, 
+  submitNewClient, 
+  updateClientData, 
+  fetchSalespeople, 
+  fetchSegments,
+  checkRateLimit,
+  getClientIp
+} from '../lib/supabase';
 
 export const RegistrationForm = ({ onSuccess }) => {
   // Estado do formulário
@@ -397,10 +405,24 @@ export const RegistrationForm = ({ onSuccess }) => {
           }
           return res;
         }).catch(err => {
-          console.warn('Pré-consulta Bureau:', err);
+          console.warn('Pré-consulta Bureau CNPJ:', err);
           return null;
         });
       }
+    } else if (personType === 'PF' && clean.length === 11 && isValidCPF(clean)) {
+      // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
+      bureauAuditResultRef.current = null;
+      bureauAuditPromiseRef.current = executarAuditoriaBureau({
+        cpf_cnpj: clean,
+        razao_social_nome: fullName,
+        uf: state || 'SP'
+      }).then(res => {
+        bureauAuditResultRef.current = res;
+        return res;
+      }).catch(err => {
+        console.warn('Pré-consulta Protestos CPF:', err);
+        return null;
+      });
     }
   };
 
@@ -835,6 +857,14 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
+    // Checagem prévia de Rate Limiting por IP antes de prosseguir
+    const rateCheck = await checkRateLimit(null, 3, 60);
+    if (!rateCheck.allowed) {
+      setSubmitError(rateCheck.message || 'Limite de cadastros excedido para este dispositivo/IP. Por segurança, aguarde alguns minutos antes de tentar novamente.');
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+
     // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
     setShowPasswordModal(true);
   };
@@ -879,7 +909,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Se for PJ, obtém a consulta no Bureau (JUCESP Ficha Simplificada, CENPROT & SINTEGRA)
+      // Obtém a consulta no Bureau / Protestos (CENPROT, Direct Data e JUCESP/SINTEGRA para PJ)
       let docJucespUrl = null;
       let docCenprotUrl = null;
       let docSintegraUrl = sintegraResultRef.current?.receiptUrl || null;
@@ -888,7 +918,7 @@ export const RegistrationForm = ({ onSuccess }) => {
       let totalProtestos = null;
       let bureauConsultedAt = null;
 
-      if (personType === 'PJ' && documentNumber) {
+      if (documentNumber) {
         try {
           let bureauRes = bureauAuditResultRef.current;
           if (!bureauRes && bureauAuditPromiseRef.current) {
@@ -996,6 +1026,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         nire_jucesp: nireJucesp,
         total_protestos: totalProtestos,
         bureau_consulted_at: bureauConsultedAt,
+        ip_origem: await getClientIp(),
         termos_aceitos: true,
         terms_accepted: true,
       };
@@ -1006,9 +1037,9 @@ export const RegistrationForm = ({ onSuccess }) => {
         throw new Error(result.error || 'Erro ao registrar cadastro e criar senha.');
       }
 
-      // Sincronização e garantia de persistência dos documentos de Bureau no painel ADM
+      // Sincronização e garantia de persistência dos documentos de Bureau no painel ADM (PJ e PF)
       const createdClientId = result.client?.id;
-      if (personType === 'PJ' && createdClientId) {
+      if (createdClientId) {
         if (docJucespUrl || docCenprotUrl || docSintegraUrl || nireJucesp || totalProtestos !== null || bureauConsultedAt) {
           updateClientData(createdClientId, {
             doc_jucesp_url: docJucespUrl,
@@ -1021,8 +1052,8 @@ export const RegistrationForm = ({ onSuccess }) => {
           }).catch(err => console.warn('Erro na atualização direta de bureau:', err));
         }
 
-        // Se por qualquer motivo a JUCESP não foi obtida antes, dispara com o ID do cliente criado
-        if (!docJucespUrl) {
+        // Se o documento de protestos ou JUCESP não foi obtido antes, dispara em background com o ID do cliente
+        if (!docCenprotUrl || (personType === 'PJ' && !docJucespUrl)) {
           executarAuditoriaBureau({
             id: createdClientId,
             cpf_cnpj: documentNumber,

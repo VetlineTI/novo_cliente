@@ -467,6 +467,28 @@ export const ClientDetailModal = ({
             notes: `Armazenado em: ${clientStoragePath}/comprovante_endereco/`
           }
         ] : []
+      },
+      {
+        id: 'bureau_certidoes',
+        name: 'Certidão de Protestos (CENPROT)',
+        icon: Search,
+        badge: client.doc_cenprot_url ? 'Consultado ✓' : 'Disponível',
+        hasDocs: Boolean(client.doc_cenprot_url),
+        docs: client.doc_cenprot_url ? [
+          {
+            id: 'doc_cenprot',
+            title: 'Certidão / Consulta de Protestos CENPROT (IEPTB)',
+            category: 'Protestos',
+            fileName: `cenprot_${cleanDoc}.pdf`,
+            bucket: bucketName,
+            path: `${clientStoragePath}/cenprot/`,
+            url: client.doc_cenprot_url,
+            verificationBadge: client.total_protestos !== null && client.total_protestos !== undefined
+              ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta)' : `${client.total_protestos} Protesto(s)`)
+              : 'Consulta CENPROT',
+            notes: `Consulta à Central de Protestos de Títulos (CPF via Direct Data)`
+          }
+        ] : []
       }
     ])
   ];
@@ -1132,81 +1154,85 @@ export const ClientDetailModal = ({
                       </div>
                     </div>
 
-                    {/* Card de Auditoria & Bureau Automático (Infosimples) */}
-                    {isPJ && (
-                      <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl p-3.5 shadow-md space-y-3">
-                        <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                            <h4 className="font-bold text-xs text-white">Bureau & Conformidade (Infosimples)</h4>
-                          </div>
-                          {client.bureau_consulted_at && (
-                            <span className="text-[10px] text-emerald-400 font-mono">
-                              {new Date(client.bureau_consulted_at).toLocaleDateString('pt-BR')}
-                            </span>
-                          )}
+                    {/* Card de Auditoria & Bureau Automático (Direct Data / CENPROT) */}
+                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl p-3.5 shadow-md space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <h4 className="font-bold text-xs text-white">Bureau & Conformidade (Direct Data)</h4>
                         </div>
+                        {client.bureau_consulted_at && (
+                          <span className="text-[10px] text-emerald-400 font-mono">
+                            {new Date(client.bureau_consulted_at).toLocaleDateString('pt-BR')}
+                          </span>
+                        )}
+                      </div>
 
-                        {/* Status resumidos dos serviços principais */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {/* Status resumidos dos serviços principais */}
+                      <div className={`grid ${isPJ ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-2 text-xs`}>
+                        {isPJ && (
                           <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
                             <span className="text-[10px] text-slate-400 block font-medium">JUCESP (Ficha Simplificada)</span>
                             <span className={`font-bold truncate block text-[11px] ${client.doc_jucesp_url ? 'text-emerald-400' : 'text-slate-300'}`}>
                               {client.nire_jucesp ? `NIRE: ${client.nire_jucesp} ✓` : (client.doc_jucesp_url ? 'Ficha Anexada ✓' : 'Disponível')}
                             </span>
                           </div>
-                          <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
-                            <span className="text-[10px] text-slate-400 block font-medium">CENPROT (Protestos)</span>
-                            <span className={`font-bold truncate block text-[11px] ${client.total_protestos === 0
-                              ? 'text-emerald-400'
-                              : (client.total_protestos > 0 ? 'text-amber-400' : (client.doc_cenprot_url ? 'text-emerald-400' : 'text-slate-300'))
-                              }`}>
-                              {client.total_protestos !== null && client.total_protestos !== undefined
-                                ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta) ✓' : `${client.total_protestos} Protesto(s)`)
-                                : (client.doc_cenprot_url ? 'Consultado ✓' : 'Disponível')}
-                            </span>
-                          </div>
-                        </div>
-
-                        {bureauFeedback && (
-                          <div className="space-y-2">
-                            {(Array.isArray(bureauFeedback) ? bureauFeedback : [bureauFeedback]).map((fb, idx) => (
-                              <div
-                                key={idx}
-                                className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${fb.type === 'success'
-                                  ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
-                                  : (fb.type === 'warning'
-                                    ? 'bg-amber-950/90 border-amber-600 text-amber-200'
-                                    : 'bg-red-950/90 border-red-600 text-red-200')
-                                  }`}
-                              >
-                                <span className="flex-1">{fb.message}</span>
-                              </div>
-                            ))}
-                          </div>
                         )}
-
-                        {/* Botão de Disparo */}
-                        <button
-                          type="button"
-                          onClick={handleRunBureauAudit}
-                          disabled={isAuditingBureau}
-                          className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
-                        >
-                          {isAuditingBureau ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Consultando JUCESP & CENPROT...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Search className="w-3.5 h-3.5" />
-                              <span>{client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar (JUCESP & CENPROT)' : 'Consultar Bureau (JUCESP & CENPROT)'}</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+                          <span className="text-[10px] text-slate-400 block font-medium">CENPROT ({isPJ ? 'Protestos CNPJ' : 'Protestos CPF'})</span>
+                          <span className={`font-bold truncate block text-[11px] ${client.total_protestos === 0
+                            ? 'text-emerald-400'
+                            : (client.total_protestos > 0 ? 'text-amber-400' : (client.doc_cenprot_url ? 'text-emerald-400' : 'text-slate-300'))
+                            }`}>
+                            {client.total_protestos !== null && client.total_protestos !== undefined
+                              ? (client.total_protestos === 0 ? '0 Protestos (Nada Consta) ✓' : `${client.total_protestos} Protesto(s)`)
+                              : (client.doc_cenprot_url ? 'Consultado ✓' : 'Disponível')}
+                          </span>
+                        </div>
                       </div>
-                    )}
+
+                      {bureauFeedback && (
+                        <div className="space-y-2">
+                          {(Array.isArray(bureauFeedback) ? bureauFeedback : [bureauFeedback]).map((fb, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${fb.type === 'success'
+                                ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
+                                : (fb.type === 'warning'
+                                  ? 'bg-amber-950/90 border-amber-600 text-amber-200'
+                                  : 'bg-red-950/90 border-red-600 text-red-200')
+                                }`}
+                            >
+                              <span className="flex-1">{fb.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Botão de Disparo */}
+                      <button
+                        type="button"
+                        onClick={handleRunBureauAudit}
+                        disabled={isAuditingBureau}
+                        className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                      >
+                        {isAuditingBureau ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>{isPJ ? 'Consultando JUCESP & CENPROT...' : 'Consultando Protestos (CENPROT)...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Search className="w-3.5 h-3.5" />
+                            <span>
+                              {isPJ
+                                ? (client.doc_cenprot_url || client.doc_jucesp_url ? 'Reconsultar (JUCESP & CENPROT)' : 'Consultar Bureau (JUCESP & CENPROT)')
+                                : (client.doc_cenprot_url ? 'Reconsultar Protestos (CENPROT)' : 'Consultar Protestos (CENPROT)')}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
                     {/* Card de Alerta de Auditoria ERP (Jucesp / Cenprot / Receita) */}
                     <div className="bg-amber-50/90 rounded-xl border border-amber-200 p-3.5 shadow-xs space-y-2 text-xs">
