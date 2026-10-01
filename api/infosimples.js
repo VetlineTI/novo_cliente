@@ -25,19 +25,39 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Parâmetro de serviço não informado na URL.' });
     }
 
-    // Normaliza o corpo da requisição (URL-encoded ou JSON)
-    let bodyData = '';
+    // Normaliza o corpo da requisição (URL-encoded ou JSON) e injeta token do servidor
+    const infosimplesToken = process.env.INFOSIMPLES_TOKEN || 'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
+    const params = new URLSearchParams();
+    let hasToken = false;
+
     if (typeof req.body === 'string') {
-      bodyData = req.body;
-    } else if (req.body && typeof req.body === 'object') {
-      const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(req.body)) {
-        if (value !== undefined && value !== null) {
-          params.append(key, String(value));
+      const parsed = new URLSearchParams(req.body);
+      for (const [key, value] of parsed.entries()) {
+        if (key.toLowerCase() === 'token') {
+          hasToken = true;
+          params.append('token', value || infosimplesToken);
+        } else {
+          params.append(key, value);
         }
       }
-      bodyData = params.toString();
+    } else if (req.body && typeof req.body === 'object') {
+      for (const [key, value] of Object.entries(req.body)) {
+        if (value !== undefined && value !== null) {
+          if (key.toLowerCase() === 'token') {
+            hasToken = true;
+            params.append('token', String(value || infosimplesToken));
+          } else {
+            params.append(key, String(value));
+          }
+        }
+      }
     }
+
+    if (!hasToken && infosimplesToken) {
+      params.append('token', infosimplesToken);
+    }
+
+    const bodyData = params.toString();
 
     const targetUrl = `https://api.infosimples.com/api/v2/consultas/${service}`;
 

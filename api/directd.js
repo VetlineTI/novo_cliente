@@ -18,10 +18,23 @@ export default async function handler(req, res) {
     const service = req.query.service || req.query.path || 'CadastroPessoaJuridicaPlus';
     const queryParams = new URLSearchParams();
 
+    // Injeta o Token do Servidor (Seguro / Oculto do Navegador)
+    const directdToken = process.env.DIRECTD_TOKEN || '12DC14EA-112C-426C-9EC9-05A1280D23D1';
+    let hasToken = false;
+
     for (const [key, value] of Object.entries(req.query)) {
       if (key !== 'service' && key !== 'path' && value !== undefined && value !== null) {
-        queryParams.append(key, String(value));
+        if (key.toUpperCase() === 'TOKEN') {
+          hasToken = true;
+          queryParams.append('TOKEN', String(value || directdToken));
+        } else {
+          queryParams.append(key, String(value));
+        }
       }
+    }
+
+    if (!hasToken && directdToken) {
+      queryParams.append('TOKEN', directdToken);
     }
 
     const targetUrl = `https://apiv3.directd.com.br/api/${service}?${queryParams.toString()}`;
