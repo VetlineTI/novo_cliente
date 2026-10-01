@@ -253,7 +253,6 @@ export const RegistrationForm = ({ onSuccess }) => {
   });
 
   const selectedSalespersonObj = salespeopleList.find((v) => v.cd_vend === selectedSalespersonCode);
-  const isPfBlocked = personType === 'PF' && (!crmvData || !crmvData.isAtivo);
 
   // Seleciona segmento vindo do modal de ajuda mapeando para o ram_ativ
   const handleSelectSegmentFromModal = (selectedValue) => {
@@ -352,6 +351,83 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
+  // Função central de consulta e validação de situação cadastral do CNPJ na Receita Federal
+  const executeCnpjQuery = async (cleanCnpj) => {
+    if (!cleanCnpj || cleanCnpj.length !== 14 || !isValidCNPJ(cleanCnpj)) return;
+
+    setLoadingCnpj(true);
+    setCnpjAlert('');
+    try {
+      const data = await fetchCNPJDataFromBrasilAPI(cleanCnpj);
+      if (data) {
+        setCnpjInfo(data);
+        if (data.isAtiva) {
+          setCnpjAlert('');
+          if (data.razaoSocial) {
+            setFullName(data.razaoSocial);
+            if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+          }
+          if (data.suggestedSegment && !segment) {
+            const matched = segmentsList.find(s => 
+              s.descricao.toLowerCase().includes(data.suggestedSegment.toLowerCase()) || 
+              data.suggestedSegment.toLowerCase().includes(s.descricao.toLowerCase())
+            );
+            if (matched) {
+              setSegment(matched.ram_ativ);
+            } else {
+              setSegment(data.suggestedSegment);
+            }
+            if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+          }
+
+          // Dispara antecipadamente a consulta na JUCESP e CENPROT em segundo plano
+          bureauAuditResultRef.current = null;
+          bureauAuditPromiseRef.current = executarAuditoriaBureau({
+            cpf_cnpj: cleanCnpj,
+            razao_social_nome: data?.razaoSocial || fullName,
+            uf: state || 'SP'
+          }).then(res => {
+            bureauAuditResultRef.current = res;
+            const ieFound = res?.inscricaoEstadual || res?.data?.sintegra?.ie;
+            if (ieFound && ieFound !== 'ISENTO' && ieFound !== 'ISENTA' && ieFound !== '-') {
+              setTpInscricao('E');
+              setNumeroInscricao(ieFound);
+            }
+            return res;
+          }).catch(err => {
+            console.warn('Pré-consulta Bureau CNPJ:', err);
+            return null;
+          });
+        } else {
+          // CNPJ Inapto, Baixado, Suspenso ou Inativo
+          setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral || 'Inapta'} na Receita Federal.`);
+          if (data.razaoSocial) {
+            setFullName(data.razaoSocial);
+          }
+        }
+      } else {
+        setCnpjInfo({ isAtiva: false, situacaoCadastral: 'NÃO LOCALIZADO' });
+        setCnpjAlert('CNPJ não localizado na Receita Federal. Verifique os dígitos informados.');
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar dados do CNPJ:', err);
+      setCnpjInfo({ isAtiva: false, situacaoCadastral: 'ERRO NA CONSULTA' });
+      setCnpjAlert('Não foi possível verificar a situação cadastral do CNPJ na Receita Federal.');
+    } finally {
+      setLoadingCnpj(false);
+    }
+  };
+
+  const handleCnpjBlur = async () => {
+    if (personType !== 'PJ') return;
+    const clean = unmask(documentNumber);
+    if (clean.length === 14 && isValidCNPJ(clean)) {
+      if (!cnpjInfo && !loadingCnpj) {
+        await executeCnpjQuery(clean);
+      }
+    }
+  };
+
   // Formatação automática do documento e busca na BrasilAPI para CNPJ
   const handleDocumentChange = async (e) => {
     const val = e.target.value;
@@ -363,51 +439,12 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
 
     const clean = unmask(formatted);
-    if (personType === 'PJ' && clean.length === 14 && isValidCNPJ(clean)) {
-      setLoadingCnpj(true);
-      const data = await fetchCNPJDataFromBrasilAPI(clean);
-      setLoadingCnpj(false);
-      if (data) {
-        setCnpjInfo(data);
-        if (data.razaoSocial) {
-          setFullName(data.razaoSocial);
-          if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
-        }
-        if (data.suggestedSegment && !segment) {
-          // Busca correspondência na lista de segmentos para atribuir o ram_ativ
-          const matched = segmentsList.find(s => 
-            s.descricao.toLowerCase().includes(data.suggestedSegment.toLowerCase()) || 
-            data.suggestedSegment.toLowerCase().includes(s.descricao.toLowerCase())
-          );
-          if (matched) {
-            setSegment(matched.ram_ativ);
-          } else {
-            setSegment(data.suggestedSegment);
-          }
-          if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
-        }
-        if (!data.isAtiva) {
-          setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral} na Receita Federal.`);
-        }
-
-        // Dispara antecipadamente a consulta na JUCESP e CENPROT em segundo plano
-        bureauAuditResultRef.current = null;
-        bureauAuditPromiseRef.current = executarAuditoriaBureau({
-          cpf_cnpj: clean,
-          razao_social_nome: data?.razaoSocial || fullName,
-          uf: state || 'SP'
-        }).then(res => {
-          bureauAuditResultRef.current = res;
-          const ieFound = res?.inscricaoEstadual || res?.data?.sintegra?.ie;
-          if (ieFound && ieFound !== 'ISENTO' && ieFound !== 'ISENTA' && ieFound !== '-') {
-            setTpInscricao('E');
-            setNumeroInscricao(ieFound);
-          }
-          return res;
-        }).catch(err => {
-          console.warn('Pré-consulta Bureau CNPJ:', err);
-          return null;
-        });
+    if (personType === 'PJ') {
+      if (clean.length < 14) {
+        setCnpjInfo(null);
+        setFullName('');
+      } else if (clean.length === 14 && isValidCNPJ(clean)) {
+        await executeCnpjQuery(clean);
       }
     } else if (personType === 'PF' && clean.length === 11 && isValidCPF(clean)) {
       // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
@@ -542,21 +579,26 @@ export const RegistrationForm = ({ onSuccess }) => {
       newErrors.personType = 'Selecione o tipo de pessoa.';
     }
 
-    // 2. CPF / CNPJ
+    // 2. CPF / CNPJ e Situação Cadastral
     const cleanDoc = unmask(documentNumber);
     if (personType === 'PJ') {
       if (!cleanDoc || cleanDoc.length !== 14 || !isValidCNPJ(cleanDoc)) {
-        newErrors.documentNumber = 'Informe um CNPJ válido.';
+        newErrors.documentNumber = 'Informe um CNPJ válido com 14 dígitos.';
+      } else if (!cnpjInfo || !cnpjInfo.isAtiva) {
+        const sit = cnpjInfo?.situacaoCadastral || 'Inativa / Não Confirmada';
+        newErrors.documentNumber = `CNPJ não permitido: Situação cadastral na Receita Federal consta como "${sit}". O cadastro exige empresa com situação ATIVA.`;
       }
     } else {
       if (!cleanDoc || cleanDoc.length !== 11 || !isValidCPF(cleanDoc)) {
-        newErrors.documentNumber = 'Informe um CPF válido.';
+        newErrors.documentNumber = 'Informe um CPF válido com 11 dígitos.';
+      } else if (!crmvData || !crmvData.isAtivo) {
+        newErrors.crmv = 'O cadastro de Pessoa Física exige validação de CRMV ativo e regular no CFMV.';
       }
     }
 
     // 3. Razão Social / Nome Completo
     if (!fullName.trim()) {
-      newErrors.fullName = personType === 'PJ' ? 'Informe a Razão Social.' : 'Informe o Nome Completo.';
+      newErrors.fullName = personType === 'PJ' ? 'Informe a Razão Social da Empresa.' : 'Informe o Nome Completo.';
     }
 
     // 3.1 Inscrição para PJ / CRMV para PF
@@ -669,6 +711,17 @@ export const RegistrationForm = ({ onSuccess }) => {
     e.preventDefault();
     setSubmitError(null);
 
+    // Bloqueio explícito e imediato se CNPJ (PJ) ou CRMV (PF) não estiverem com situação ATIVA
+    if (personType === 'PJ' && (!cnpjInfo || !cnpjInfo.isAtiva)) {
+      const sit = cnpjInfo?.situacaoCadastral || 'Inapta / Inativa';
+      setSubmitError(`O cadastro não pode ser concluído. O CNPJ informado consta como "${sit}" na Receita Federal. Apenas empresas com situação ATIVA podem se credenciar.`);
+      return;
+    }
+    if (personType === 'PF' && (!crmvData || !crmvData.isAtivo)) {
+      setSubmitError('O cadastro não pode ser concluído. É obrigatório informar e validar um CRMV com situação Ativa e Regular no CFMV.');
+      return;
+    }
+
     if (!validateForm()) {
       // Rola suavemente até o primeiro erro se houver
       const firstErrorEl = document.querySelector('.border-red-400, .text-red-600, .bg-red-50');
@@ -678,7 +731,7 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Validação antecipada de documentos (Contrato Social / Sócio contra QSA) e SINTEGRA
+    // Validação antecipada de documentos (Contrato Social / Sócio contra QSA)
     if (personType === 'PJ') {
       setIsValidatingPartnerDoc(true);
       try {
@@ -1082,6 +1135,13 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
+  // Regras de bloqueio de formulário:
+  // - Para PJ: bloqueia se CNPJ não for informado ou não estiver com situação ATIVA na Receita Federal
+  // - Para PF: bloqueia se CRMV não for informado ou não estiver com situação ATIVA no CFMV
+  const isPjBlocked = personType === 'PJ' && (!cnpjInfo || !cnpjInfo.isAtiva);
+  const isPfBlocked = personType === 'PF' && (!crmvData || !crmvData.isAtivo);
+  const isFormBlocked = personType === 'PJ' ? isPjBlocked : isPfBlocked;
+
   return (
     <div className="w-full bg-white rounded-2xl sm:rounded-3xl shadow-elevated border border-slate-100 p-5 sm:p-8 lg:p-10">
       {/* Título do Formulário */}
@@ -1141,65 +1201,162 @@ export const RegistrationForm = ({ onSuccess }) => {
         </div>
 
         {/* ========================================================================= */}
-        {/* 2. DADOS PRINCIPAIS (CPF/CNPJ E NOME/RAZÃO SOCIAL)                       */}
+        {/* 2. DADOS PRINCIPAIS (CPF/CNPJ E VALIDAÇÃO CADASTRAL OBRIGATÓRIA)           */}
         {/* ========================================================================= */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
-          {/* CNPJ ou CPF */}
+        <div className="space-y-4">
+          {/* Campo CNPJ / CPF e Validações Imediatas */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              {personType === 'PJ' ? 'CNPJ' : 'CPF'} <span className="text-red-500">*</span>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                {personType === 'PJ' ? (
+                  <Building2 className="w-4 h-4 text-brand-green" />
+                ) : (
+                  <User className="w-4 h-4 text-brand-green" />
+                )}
+                <span>{personType === 'PJ' ? 'CNPJ da Empresa' : 'CPF'}</span>
+                <span className="text-red-500">*</span>
+              </span>
+              {personType === 'PJ' && loadingCnpj && (
+                <span className="flex items-center gap-1 text-xs text-brand-green font-normal">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Consultando Receita Federal...
+                </span>
+              )}
+              {personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
+                <span className="flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  CNPJ Ativo
+                </span>
+              )}
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={documentNumber}
-                onChange={handleDocumentChange}
-                placeholder={personType === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
-                maxLength={personType === 'PJ' ? 18 : 14}
-                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
-                  errors.documentNumber ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
-                }`}
-              />
-              {loadingCnpj && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-brand-teal font-medium">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="hidden sm:inline">Buscando Receita...</span>
-                </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={documentNumber}
+                  onChange={handleDocumentChange}
+                  onBlur={personType === 'PJ' ? handleCnpjBlur : undefined}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && personType === 'PJ') {
+                      e.preventDefault();
+                      handleCnpjBlur();
+                    }
+                  }}
+                  placeholder={personType === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
+                  maxLength={personType === 'PJ' ? 18 : 14}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.documentNumber || (personType === 'PJ' && cnpjInfo && !cnpjInfo.isAtiva)
+                      ? 'border-red-400 bg-red-50/20'
+                      : (personType === 'PJ' && cnpjInfo?.isAtiva ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
+                  }`}
+                />
+                {personType === 'PJ' && loadingCnpj && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Loader2 className="w-4 h-4 text-brand-green animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {personType === 'PJ' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const clean = unmask(documentNumber);
+                    if (clean.length === 14) executeCnpjQuery(clean);
+                  }}
+                  disabled={loadingCnpj || unmask(documentNumber).length !== 14}
+                  className="px-4 py-2.5 bg-brand-green hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                  title="Consultar situação do CNPJ na Receita Federal"
+                >
+                  {loadingCnpj ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <Search className="w-4 h-4 text-white" />
+                  )}
+                  <span>Validar CNPJ</span>
+                </button>
               )}
             </div>
+
             {errors.documentNumber && (
               <p className="text-xs text-red-500 mt-1 font-medium">{errors.documentNumber}</p>
             )}
-            {cnpjAlert && (
-              <p className="text-xs text-amber-600 font-medium mt-1">{cnpjAlert}</p>
+
+            {/* Status e Feedback da Consulta na Receita Federal (PJ) */}
+            {personType === 'PJ' && loadingCnpj && (
+              <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-brand-dark flex items-center gap-2 animate-fade-in mt-2">
+                <Loader2 className="w-4 h-4 text-brand-green animate-spin flex-shrink-0" />
+                <span>Consultando situação cadastral na Receita Federal...</span>
+              </div>
+            )}
+
+            {personType === 'PJ' && !loadingCnpj && cnpjInfo && !cnpjInfo.isAtiva && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake mt-2">
+                <div className="flex items-center gap-2 font-bold text-red-700">
+                  <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
+                  <span>CNPJ Inativo / Não Permitido na Receita Federal</span>
+                </div>
+                <p>
+                  Situação cadastral retornada: <strong className="uppercase font-bold text-red-900">{cnpjInfo.situacaoCadastral || 'Inapta / Inativa'}</strong>.
+                </p>
+                <p className="text-[11px] text-red-700">
+                  O credenciamento de Pessoa Jurídica (PJ) exige CNPJ com situação cadastral <strong>Ativa</strong> na Receita Federal. Os demais campos do formulário permanecerão bloqueados até que um CNPJ ativo seja informado.
+                </p>
+              </div>
+            )}
+
+            {personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in mt-2">
+                <div className="flex items-center gap-2 font-bold text-emerald-700">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>CNPJ Ativo na Receita Federal</span>
+                </div>
+                <p className="text-emerald-900">
+                  Razão Social: <strong className="font-semibold">{cnpjInfo.razaoSocial || fullName}</strong> | CNPJ: <strong className="font-semibold">{documentNumber}</strong>
+                </p>
+                <p className="text-[11px] text-emerald-700">
+                  Empresa validada com sucesso! Os campos abaixo foram liberados para preenchimento.
+                </p>
+              </div>
+            )}
+
+            {personType === 'PJ' && !loadingCnpj && !cnpjInfo && (
+              <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/80 text-[11px] text-blue-800 flex items-start gap-2 mt-2">
+                <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <span>
+                  Digite o CNPJ da empresa e clique em <strong>Validar CNPJ</strong> (ou saia do campo). Os demais campos do cadastro serão liberados assim que a situação <strong>ATIVA</strong> for confirmada na Receita Federal.
+                </span>
+              </div>
             )}
           </div>
 
-          {/* Razão Social ou Nome Completo */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              {personType === 'PJ' ? 'Razão Social' : 'Nome Completo'} <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => {
-                setFullName(e.target.value);
-                if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
-              }}
-              placeholder={personType === 'PJ' ? 'Razão Social da Empresa' : 'Seu Nome Completo'}
-              className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
-                errors.fullName ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
-              }`}
-            />
-            {errors.fullName && (
-              <p className="text-xs text-red-500 mt-1 font-medium">{errors.fullName}</p>
-            )}
-          </div>
+          {/* DEMAIS CAMPOS DE IDENTIFICAÇÃO (RAZÃO SOCIAL, INSCRIÇÃO OU NOME/CRMV) */}
+          {/* PARA PJ: SÓ APARECE SE O CNPJ ESTIVER ATIVO (!isPjBlocked) */}
+          {personType === 'PJ' && !isPjBlocked && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 pt-2 animate-fade-in">
+              {/* Razão Social */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Razão Social da Empresa <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+                  }}
+                  placeholder="Razão Social da Empresa"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.fullName ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  }`}
+                />
+                {errors.fullName && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{errors.fullName}</p>
+                )}
+              </div>
 
-          {/* Inscrição Estadual/Municipal para PJ */}
-          {personType === 'PJ' && (
-            <>
               {/* Tipo de Inscrição */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -1257,149 +1414,41 @@ export const RegistrationForm = ({ onSuccess }) => {
                   <p className="text-xs text-red-500 mt-1 font-medium">{errors.numeroInscricao}</p>
                 )}
               </div>
-            </>
-          )}
-
-          {/* CRMV para Pessoa Física */}
-          {personType === 'PF' && (
-            <div className="sm:col-span-2 space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-brand-green" />
-                  <span>CRMV (Registro no Conselho de Medicina Veterinária)</span>
-                  <span className="text-red-500">*</span>
-                </span>
-                {loadingCrmv && (
-                  <span className="flex items-center gap-1 text-xs text-brand-green font-normal">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Consultando CFMV...
-                  </span>
-                )}
-                {!loadingCrmv && crmvData?.isAtivo && (
-                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    CRMV Ativo
-                  </span>
-                )}
-              </label>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={crmv}
-                    onChange={(e) => {
-                      setCrmv(e.target.value);
-                      setCrmvData(null);
-                      setCrmvAlert('');
-                      if (errors.crmv) setErrors(prev => ({ ...prev, crmv: null }));
-                    }}
-                    onBlur={() => handleCrmvBlur()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleCrmvBlur();
-                      }
-                    }}
-                    placeholder="ex: CRMV-SP 12345 ou apenas o número"
-                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
-                      errors.crmv || (crmvData && !crmvData.isAtivo)
-                        ? 'border-red-400 bg-red-50/20'
-                        : (crmvData?.isAtivo ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
-                    }`}
-                  />
-                  {loadingCrmv && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <Loader2 className="w-4 h-4 text-brand-green animate-spin" />
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleCrmvBlur()}
-                  disabled={loadingCrmv || !crmv.trim()}
-                  className="px-4 py-2.5 bg-brand-green hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-                  title="Consultar situação do CRMV no CFMV"
-                >
-                  {loadingCrmv ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <Search className="w-4 h-4 text-white" />
-                  )}
-                  <span>Validar CRMV</span>
-                </button>
-              </div>
-
-              {errors.crmv && (
-                <p className="text-xs text-red-500 font-medium">{errors.crmv}</p>
-              )}
-
-              {/* Status e Feedback da Consulta no CFMV */}
-              {loadingCrmv && (
-                <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-brand-dark flex items-center gap-2 animate-fade-in">
-                  <Loader2 className="w-4 h-4 text-brand-green animate-spin flex-shrink-0" />
-                  <span>Consultando situação cadastral no Conselho Federal de Medicina Veterinária (CFMV)...</span>
-                </div>
-              )}
-
-              {!loadingCrmv && crmvData && !crmvData.isAtivo && (
-                <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake">
-                  <div className="flex items-center gap-2 font-bold text-red-700">
-                    <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
-                    <span>CRMV Inativo / Não Regular no CFMV</span>
-                  </div>
-                  <p>
-                    Situação cadastral retornada: <strong className="uppercase font-bold text-red-900">{crmvData.situacao || crmvData.error || 'Não Localizado / Inativo'}</strong>.
-                  </p>
-                  <p className="text-[11px] text-red-700">
-                    O credenciamento de Pessoa Física exige CRMV com situação cadastral <strong>Ativa e Regular</strong>. Os demais campos do formulário permanecerão bloqueados até que um CRMV ativo seja informado e validado.
-                  </p>
-                </div>
-              )}
-
-              {!loadingCrmv && crmvData?.isAtivo && (
-                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in">
-                  <div className="flex items-center gap-2 font-bold text-emerald-700">
-                    <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>CRMV Ativo e Regular no CFMV</span>
-                  </div>
-                  <p className="text-emerald-900">
-                    Profissional: <strong className="font-semibold">{crmvData.nome || fullName}</strong> | Registro: <strong className="font-semibold">{crmvData.crmv || crmv}</strong> ({crmvData.uf || state || 'UF'})
-                  </p>
-                  <p className="text-[11px] text-emerald-700">
-                    Registro verificado com sucesso! Os campos abaixo foram liberados para preenchimento.
-                  </p>
-                </div>
-              )}
-
-              {!loadingCrmv && !crmvData && (
-                <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/80 text-[11px] text-blue-800 flex items-start gap-2">
-                  <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <span>
-                    Informe seu CRMV e clique em <strong>Validar CRMV</strong> (ou saia do campo). Os demais campos do cadastro serão liberados assim que o registro for confirmado como ativo.
-                  </span>
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* BLOQUEIO DE CAMPOS PARA PESSOA FÍSICA SE O CRMV NÃO ESTIVER ATIVO */}
-        {isPfBlocked ? (
+        {/* BLOQUEIO DE CAMPOS SE CNPJ (PJ) OU CRMV (PF) NÃO ESTIVER ATIVO */}
+        {isFormBlocked ? (
           <div className="p-6 sm:p-8 rounded-2xl bg-amber-50/70 border-2 border-dashed border-amber-200 text-center space-y-3 animate-fade-in my-4">
             <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-2xs">
-              <ShieldCheck className="w-6 h-6 text-amber-600" />
+              {personType === 'PJ' ? (
+                <Building2 className="w-6 h-6 text-amber-600" />
+              ) : (
+                <ShieldCheck className="w-6 h-6 text-amber-600" />
+              )}
             </div>
             <h4 className="text-base font-bold text-amber-900">
-              {crmvData && !crmvData.isAtivo
-                ? 'Campos bloqueados: CRMV Inativo / Não Regular no CFMV'
-                : 'Campos bloqueados: Validação de CRMV Obrigatória'}
+              {personType === 'PJ' ? (
+                cnpjInfo && !cnpjInfo.isAtiva
+                  ? `Campos bloqueados: CNPJ ${cnpjInfo.situacaoCadastral || 'Inativo'} na Receita Federal`
+                  : 'Campos bloqueados: Validação de CNPJ Ativo Obrigatória'
+              ) : (
+                crmvData && !crmvData.isAtivo
+                  ? 'Campos bloqueados: CRMV Inativo / Não Regular no CFMV'
+                  : 'Campos bloqueados: Validação de CRMV Obrigatória'
+              )}
             </h4>
             <p className="text-xs text-amber-700 max-w-md mx-auto leading-relaxed">
-              {crmvData && !crmvData.isAtivo
-                ? `O CRMV informado consta como "${crmvData.situacao || 'Inativo'}" no Conselho de Medicina Veterinária. É necessário informar um CRMV ativo e regular para liberar o formulário.`
-                : 'Para prosseguir com o credenciamento de Pessoa Física, digite seu CRMV acima e clique em "Validar CRMV" para desbloquear os dados de contato, endereço e envio de documentos.'}
+              {personType === 'PJ' ? (
+                cnpjInfo && !cnpjInfo.isAtiva
+                  ? `O CNPJ informado consta com situação cadastral "${cnpjInfo.situacaoCadastral}" na Receita Federal. O cadastro na plataforma é permitido exclusivamente para empresas com situação ATIVA.`
+                  : 'Para prosseguir com o credenciamento de Pessoa Jurídica, digite o CNPJ da empresa acima (14 dígitos) para confirmar a situação ATIVA na Receita Federal e desbloquear os dados de inscrição, contato, endereço e envio de documentos.'
+              ) : (
+                crmvData && !crmvData.isAtivo
+                  ? `O CRMV informado consta como "${crmvData.situacao || 'Inativo'}" no Conselho de Medicina Veterinária. É necessário informar um CRMV ativo e regular para liberar o formulário.`
+                  : 'Para prosseguir com o credenciamento de Pessoa Física, digite seu CRMV acima e clique em "Validar CRMV" para desbloquear os dados de contato, endereço e envio de documentos.'
+              )}
             </p>
           </div>
         ) : (

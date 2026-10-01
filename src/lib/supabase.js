@@ -679,6 +679,45 @@ export const checkRateLimit = async (ip = null, maxAttempts = 3, windowMinutes =
 };
 
 /**
+ * Registra a tentativa ou envio do cadastro no log de rate limiting do Supabase
+ * @param {string} ip Endereço IP do cliente
+ * @param {string} document CPF ou CNPJ
+ * @param {string} action Ação executada (ex: 'cadastro_cliente')
+ */
+export const logRateLimitAttempt = async (ip = null, document = null, action = 'cadastro_cliente') => {
+  const clientIp = ip || (await getClientIp());
+  if (!clientIp) return;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const cleanDoc = document ? String(document).replace(/\D/g, '') : null;
+      
+      // 1. Tenta via RPC pública
+      const { error: rpcErr } = await supabase.rpc('log_rate_limit_attempt', {
+        p_ip: clientIp,
+        p_document: cleanDoc,
+        p_action: action
+      });
+
+      // 2. Se a RPC falhar, tenta inserção direta no schema novo_cliente
+      if (rpcErr) {
+        await supabase
+          .schema('novo_cliente')
+          .from('rate_limit_logs')
+          .insert([{
+            ip_address: clientIp,
+            document_number: cleanDoc,
+            action: action
+          }]);
+      }
+    } catch (err) {
+      console.warn('Erro ao registrar log de rate limit:', err);
+    }
+  }
+};
+
+
+/**
  * Gera o texto formatado para a coluna 'alerta' conforme regras de negócio do ERP Moinho:
  * - PJ COM JUCESP:
  *   DD/MM/YY: Consulta Jucesp (salva), Início: [data]; Capital: [valor]; Sócios: [nomes]; Consulta Cenprot, [nada consta / X protesto(s)] – automacao_cadastro
@@ -777,6 +816,7 @@ export const submitNewClient = async (clientData) => {
       });
 
       if (!rpcError && rpcData) {
+        logRateLimitAttempt(clientIp, enrichedData.cpf_cnpj || enrichedData.document_number, 'cadastro_cliente');
         return { success: true, data: [normalizeClientRecord(rpcData)] };
       }
 
@@ -807,6 +847,7 @@ export const submitNewClient = async (clientData) => {
       }
 
       if (!res.error && res.data && res.data.length > 0) {
+        logRateLimitAttempt(clientIp, enrichedData.cpf_cnpj || enrichedData.document_number, 'cadastro_cliente');
         return { success: true, data: res.data.map(normalizeClientRecord) };
       }
 
