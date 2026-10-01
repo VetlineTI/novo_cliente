@@ -14,6 +14,12 @@ import {
 } from 'lucide-react';
 import { loginClient } from '../../lib/clientAuth';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { 
+  getBruteForceStatus, 
+  recordFailedLogin, 
+  resetBruteForce, 
+  formatRemainingTime 
+} from '../../utils/bruteForceProtector';
 
 export const ClientLogin = ({ 
   onLoginSuccess, 
@@ -28,12 +34,37 @@ export const ClientLogin = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [attemptsLeft, setAttemptsLeft] = useState(5);
 
+  // Checa status de bloqueio por força bruta ao carregar ou digitar e-mail
   useEffect(() => {
     if (initialEmail) {
       setEmail(initialEmail);
     }
   }, [initialEmail]);
+
+  useEffect(() => {
+    const status = getBruteForceStatus(email);
+    setLockoutSeconds(status.remainingSeconds);
+    setAttemptsLeft(status.attemptsLeft);
+  }, [email]);
+
+  // Contador regressivo em tempo real
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          const status = getBruteForceStatus(email);
+          setAttemptsLeft(status.attemptsLeft);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutSeconds, email]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,6 +72,14 @@ export const ClientLogin = ({
 
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
+
+    // 1. Checa se o usuário está em período de bloqueio
+    const currentStatus = getBruteForceStatus(cleanEmail);
+    if (currentStatus.isLocked) {
+      setLockoutSeconds(currentStatus.remainingSeconds);
+      setError(`Acesso bloqueado por excesso de tentativas. Aguarde ${formatRemainingTime(currentStatus.remainingSeconds)} para tentar novamente.`);
+      return;
+    }
 
     if (!cleanEmail) {
       setError('Por favor, informe seu e-mail cadastrado.');
@@ -58,11 +97,24 @@ export const ClientLogin = ({
       const res = await loginClient(cleanEmail, cleanPassword, rememberMe);
 
       if (res.success && res.session) {
+        // Sucesso: reseta o histórico de tentativas
+        resetBruteForce(cleanEmail);
         if (onLoginSuccess) {
           onLoginSuccess(res.session);
         }
       } else {
-        setError(res.error || 'E-mail ou senha incorretos. Verifique suas credenciais.');
+        // Falha: registra tentativa de força bruta
+        const lockRes = recordFailedLogin(cleanEmail);
+        setLockoutSeconds(lockRes.remainingSeconds);
+        setAttemptsLeft(lockRes.attemptsLeft);
+
+        if (lockRes.isLocked) {
+          setError(`Limite de tentativas excedido! Por segurança, o acesso foi bloqueado por 5 minutos. Tente novamente em ${formatRemainingTime(lockRes.remainingSeconds)}.`);
+        } else if (lockRes.attemptsLeft <= 2) {
+          setError(`Senha incorreta. Atenção: restam apenas ${lockRes.attemptsLeft} tentativa(s) antes do bloqueio de segurança.`);
+        } else {
+          setError(res.error || 'E-mail ou senha incorretos. Verifique suas credenciais.');
+        }
       }
     } catch (err) {
       setError('Falha ao conectar com o servidor. Tente novamente.');
@@ -70,6 +122,8 @@ export const ClientLogin = ({
       setLoading(false);
     }
   };
+
+  const isLocked = lockoutSeconds > 0;
 
   return (
     <div className="w-full max-w-xl mx-auto bg-white rounded-2xl sm:rounded-3xl shadow-elevated border border-slate-100 p-6 sm:p-10 animate-fade-in">
@@ -105,6 +159,25 @@ export const ClientLogin = ({
         </p>
       </div>
 
+      {/* Banner de Bloqueio por Força Bruta */}
+      {isLocked && (
+        <div className="mb-6 p-4 rounded-2xl bg-red-50 border-2 border-red-300 text-red-900 space-y-2 animate-shake shadow-xs">
+          <div className="flex items-center gap-2 font-bold text-red-700 text-sm">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <span>Acesso Temporariamente Bloqueado</span>
+          </div>
+          <p className="text-xs text-red-800 leading-relaxed">
+            Por medida de segurança, o acesso foi suspenso devido a 5 tentativas consecutivas incorretas.
+          </p>
+          <div className="flex items-center justify-between p-2.5 bg-red-100/70 border border-red-200 rounded-xl text-xs font-bold text-red-950">
+            <span>Tempo restante para liberação:</span>
+            <span className="font-mono text-base text-red-700 bg-white px-2.5 py-0.5 rounded-lg border border-red-300 shadow-2xs">
+              {formatRemainingTime(lockoutSeconds)}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Formulário */}
       <form onSubmit={handleSubmit} className="space-y-5">
         
@@ -123,8 +196,10 @@ export const ClientLogin = ({
               if (error) setError('');
             }}
             placeholder="seuemail@empresa.com.br"
-            disabled={loading}
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all"
+            disabled={loading || isLocked}
+            className={`w-full px-4 py-3 rounded-xl border text-sm text-slate-800 placeholder-slate-400 transition-all ${
+              isLocked ? 'bg-slate-100 border-slate-300 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green'
+            }`}
           />
         </div>
 
@@ -139,7 +214,8 @@ export const ClientLogin = ({
             <button
               type="button"
               onClick={() => setShowForgotPasswordModal(true)}
-              className="text-[11px] font-semibold text-brand-teal hover:text-brand-dark hover:underline cursor-pointer"
+              disabled={isLocked}
+              className="text-[11px] font-semibold text-brand-teal hover:text-brand-dark hover:underline cursor-pointer disabled:opacity-50"
             >
               Esqueceu a senha?
             </button>
@@ -154,14 +230,17 @@ export const ClientLogin = ({
                 if (error) setError('');
               }}
               placeholder="Digite sua senha cadastrada..."
-              disabled={loading}
-              className="w-full pl-4 pr-11 py-3 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all"
+              disabled={loading || isLocked}
+              className={`w-full pl-4 pr-11 py-3 rounded-xl border text-sm text-slate-800 placeholder-slate-400 transition-all ${
+                isLocked ? 'bg-slate-100 border-slate-300 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green'
+              }`}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               tabIndex="-1"
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              disabled={isLocked}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors disabled:opacity-50"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -175,14 +254,15 @@ export const ClientLogin = ({
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded text-brand-green focus:ring-brand-green/40 border-slate-300"
+              disabled={isLocked}
+              className="w-4 h-4 rounded text-brand-green focus:ring-brand-green/40 border-slate-300 disabled:opacity-50"
             />
             <span>Manter conectado neste dispositivo</span>
           </label>
         </div>
 
         {/* Mensagem de Erro Geral */}
-        {error && (
+        {error && !isLocked && (
           <div className="p-4 rounded-xl border bg-red-50 border-red-200 text-xs text-red-700 flex items-start gap-2.5 animate-shake font-medium">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
             <span className="leading-relaxed">{error}</span>
@@ -192,13 +272,18 @@ export const ClientLogin = ({
         {/* Botão de Entrar */}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full py-3.5 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-lg shadow-[#1d5b79]/25 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
+          disabled={loading || isLocked}
+          className="w-full py-3.5 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-lg shadow-[#1d5b79]/25 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {loading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin text-white" />
               <span>Verificando credenciais...</span>
+            </>
+          ) : isLocked ? (
+            <>
+              <Lock className="w-4 h-4 text-white/80" />
+              <span>Bloqueado ({formatRemainingTime(lockoutSeconds)})</span>
             </>
           ) : (
             <>

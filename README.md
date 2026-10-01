@@ -113,6 +113,8 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/add_rate_limit.sql` | Script SQL de Rate Limiting por IP (tabela `rate_limit_logs`, RPCs `check_rate_limit` e `log_rate_limit_attempt`) para proteção nativa contra spam e abuso de cadastros. |
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
+| `src/utils/bruteForceProtector.js` | Módulo de proteção contra força bruta no login (limite de 5 tentativas com bloqueio temporário de 5 minutos e contagem regressiva). |
+| `src/utils/documentValidator.js` | Validador inteligente de anexos com OCR multi-orientação (0°, 90°, 270°) e leitura de QR Code. |
 | `src/utils/documentValidator.js` | Módulo de extração e validação inteligente de documentos (OCR Tesseract, PDF.js e jsQR), cruzamento de CNPJ de anexos contra o formulário e sócios contra o QSA (com suporte ao padrão de máscara LGPD da Receita Federal `***XXXXXX**`). |
 
 ### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
