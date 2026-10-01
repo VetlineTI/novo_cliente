@@ -74,6 +74,25 @@ function scanQRCodeFromCanvas(canvas, jsQR) {
 }
 
 /**
+ * Rotaciona um Canvas em 90, 180 ou 270 graus para fotos tiradas na vertical/deitadas
+ */
+function rotateCanvas(srcCanvas, degrees) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (degrees === 90 || degrees === 270) {
+    canvas.width = srcCanvas.height;
+    canvas.height = srcCanvas.width;
+  } else {
+    canvas.width = srcCanvas.width;
+    canvas.height = srcCanvas.height;
+  }
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
+  return canvas;
+}
+
+/**
  * Converte um arquivo de imagem para HTMLCanvasElement
  */
 function imageToCanvas(file) {
@@ -172,6 +191,38 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
         logger: () => {} // silencioso
       });
       extractedText += ' ' + (ocrResult?.data?.text || '');
+
+      // Se o texto ainda for insuficiente ou não conter termos da categoria, tenta OCR com rotação (90° e 270°)
+      const relevantKeywords = DOC_KEYWORDS[category] || DOC_KEYWORDS.IDENTIFICATION;
+      const checkHasKeywords = (txt) => {
+        const norm = txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return relevantKeywords.some(kw => norm.includes(kw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+      };
+
+      if ((extractedText.trim().length < 25 || !checkHasKeywords(extractedText)) && !isPdf) {
+        try {
+          // Tentativa 1: Rotacionado 90° (foto em pé / deitada)
+          const canvas90 = rotateCanvas(canvasForOCR, 90);
+          if (jsQR && !qrData) {
+            qrData = scanQRCodeFromCanvas(canvas90, jsQR);
+          }
+          const ocr90 = await Tesseract.recognize(canvas90, 'por', { logger: () => {} });
+          const text90 = ocr90?.data?.text || '';
+          extractedText += ' ' + text90;
+
+          // Se ainda não encontrou termos, tenta 270°
+          if (!checkHasKeywords(extractedText)) {
+            const canvas270 = rotateCanvas(canvasForOCR, 270);
+            if (jsQR && !qrData) {
+              qrData = scanQRCodeFromCanvas(canvas270, jsQR);
+            }
+            const ocr270 = await Tesseract.recognize(canvas270, 'por', { logger: () => {} });
+            extractedText += ' ' + (ocr270?.data?.text || '');
+          }
+        } catch (rotErr) {
+          console.warn('Fallback de OCR multi-orientação:', rotErr);
+        }
+      }
     }
 
     const fullRawText = `${extractedText} ${qrData || ''}`;
