@@ -35,7 +35,7 @@ GRANT ALL ON TABLE novo_cliente.rate_limit_logs TO anon, authenticated, service_
 ALTER TABLE novo_cliente.data_new_cliente 
 ADD COLUMN IF NOT EXISTS ip_origem VARCHAR(50);
 
--- 4. Função RPC: check_rate_limit (no schema novo_cliente e alias no public)
+-- 4. Função RPC: check_rate_limit (no schema novo_cliente)
 -- Verifica se o IP excedeu o limite de requisições na janela de tempo (padrão: 3 envios a cada 60 min)
 CREATE OR REPLACE FUNCTION novo_cliente.check_rate_limit(
     p_ip TEXT,
@@ -44,7 +44,7 @@ CREATE OR REPLACE FUNCTION novo_cliente.check_rate_limit(
 )
 RETURNS JSONB
 SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
+SET search_path = novo_cliente, auth, extensions
 AS $$
 DECLARE
     v_clean_ip VARCHAR(50);
@@ -103,24 +103,7 @@ $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.check_rate_limit(TEXT, INT, INT) TO anon, authenticated, service_role;
 
--- Alias público para compatibilidade com supabase.rpc('check_rate_limit')
-CREATE OR REPLACE FUNCTION public.check_rate_limit(
-    p_ip TEXT,
-    p_max_attempts INT DEFAULT 3,
-    p_window_minutes INT DEFAULT 60
-)
-RETURNS JSONB
-SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
-AS $$
-BEGIN
-    RETURN novo_cliente.check_rate_limit(p_ip, p_max_attempts, p_window_minutes);
-END;
-$$ LANGUAGE plpgsql;
-
-GRANT EXECUTE ON FUNCTION public.check_rate_limit(TEXT, INT, INT) TO anon, authenticated, service_role;
-
--- 5. Função RPC: log_rate_limit_attempt
+-- 5. Função RPC: log_rate_limit_attempt (no schema novo_cliente)
 CREATE OR REPLACE FUNCTION novo_cliente.log_rate_limit_attempt(
     p_ip TEXT,
     p_document TEXT DEFAULT NULL,
@@ -128,7 +111,7 @@ CREATE OR REPLACE FUNCTION novo_cliente.log_rate_limit_attempt(
 )
 RETURNS VOID
 SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
+SET search_path = novo_cliente, auth, extensions
 AS $$
 DECLARE
     v_clean_ip VARCHAR(50);
@@ -150,29 +133,12 @@ $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.log_rate_limit_attempt(TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
 
--- Alias público
-CREATE OR REPLACE FUNCTION public.log_rate_limit_attempt(
-    p_ip TEXT,
-    p_document TEXT DEFAULT NULL,
-    p_action TEXT DEFAULT 'cadastro_cliente'
-)
-RETURNS VOID
-SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
-AS $$
-BEGIN
-    PERFORM novo_cliente.log_rate_limit_attempt(p_ip, p_document, p_action);
-END;
-$$ LANGUAGE plpgsql;
-
-GRANT EXECUTE ON FUNCTION public.log_rate_limit_attempt(TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
-
--- 6. Função RPC: check_client_already_approved (schema novo_cliente e public)
+-- 6. Função RPC: check_client_already_approved (schema novo_cliente)
 -- Verifica se o CPF/CNPJ já consta na tabela com status 'aprovado'
 CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
 RETURNS JSONB
 SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
+SET search_path = novo_cliente, auth, extensions
 AS $$
 DECLARE
     v_clean_doc TEXT;
@@ -214,23 +180,11 @@ $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION public.check_client_already_approved(p_document TEXT)
-RETURNS JSONB
-SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
-AS $$
-BEGIN
-    RETURN novo_cliente.check_client_already_approved(p_document);
-END;
-$$ LANGUAGE plpgsql;
-
-GRANT EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
-
 -- 7. Atualização da RPC insert_novo_cliente no schema novo_cliente
 CREATE OR REPLACE FUNCTION novo_cliente.insert_novo_cliente(client_payload JSONB)
 RETURNS JSONB
 SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
+SET search_path = novo_cliente, auth, extensions
 AS $$
 DECLARE
     new_record JSONB;
@@ -392,16 +346,3 @@ END;
 $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;
-
--- Alias público para insert_novo_cliente
-CREATE OR REPLACE FUNCTION public.insert_novo_cliente(client_payload JSONB)
-RETURNS JSONB
-SECURITY DEFINER
-SET search_path = novo_cliente, public, auth, extensions
-AS $$
-BEGIN
-    RETURN novo_cliente.insert_novo_cliente(client_payload);
-END;
-$$ LANGUAGE plpgsql;
-
-GRANT EXECUTE ON FUNCTION public.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;

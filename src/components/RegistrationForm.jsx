@@ -88,6 +88,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Validação de Duplicidade (Cliente já Aprovado no sistema)
   const [loadingDuplicateCheck, setLoadingDuplicateCheck] = useState(false);
   const [duplicateApprovedClient, setDuplicateApprovedClient] = useState(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   // CRMV Validação (PF)
   const [loadingCrmv, setLoadingCrmv] = useState(false);
@@ -371,6 +372,7 @@ export const RegistrationForm = ({ onSuccess }) => {
 
     if (dupCheck.exists) {
       setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+      setShowDuplicateModal(true);
       setCnpjInfo(null);
       if (dupCheck.client?.razao_social_nome) {
         setFullName(dupCheck.client.razao_social_nome);
@@ -486,6 +488,7 @@ export const RegistrationForm = ({ onSuccess }) => {
 
         if (dupCheck.exists) {
           setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+          setShowDuplicateModal(true);
           if (dupCheck.client?.razao_social_nome) {
             setFullName(dupCheck.client.razao_social_nome);
           }
@@ -2420,6 +2423,77 @@ export const RegistrationForm = ({ onSuccess }) => {
           }
         }}
       />
+
+      {/* Modal de Aviso de Cliente Já Aprovado (Duplicidade Proibida) */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-red-100 space-y-5 animate-scale-in">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0 shadow-xs">
+                <BadgeAlert className="w-7 h-7" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                    Cadastro Existente
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDuplicateModal(false)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mt-1">
+                  Cliente já cadastrado e aprovado
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="font-medium">Documento:</span>
+                <span className="font-mono font-bold text-slate-800">{documentNumber}</span>
+              </div>
+              {duplicateApprovedClient?.razao_social_nome && (
+                <div className="flex justify-between items-start text-slate-600 gap-2">
+                  <span className="font-medium">Razão Social / Nome:</span>
+                  <span className="font-bold text-slate-800 text-right">{duplicateApprovedClient.razao_social_nome}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="font-medium">Status no Sistema:</span>
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md uppercase text-[10px]">
+                  <CheckCircle className="w-3 h-3 text-emerald-600" />
+                  Aprovado / Integrado via Webhook
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Este {personType === 'PJ' ? 'CNPJ' : 'CPF'} já concluiu com sucesso o processo de credenciamento e seus dados estão ativos no ERP. Por regras de conformidade, <strong>não é permitido reenviar um novo cadastro</strong> para o mesmo documento.
+            </p>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>
+                Para solicitar compras, alteração cadastral ou suporte, entre em contato diretamente com seu vendedor ou com nossa central.
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className="w-full py-2.5 px-4 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer text-center"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

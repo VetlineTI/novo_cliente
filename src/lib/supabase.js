@@ -804,16 +804,21 @@ export const checkExistingApprovedClient = async (document) => {
     return { exists: false };
   }
 
+  // Função auxiliar para conferir se um cliente bate o documento e status aprovado
+  const isApprovedMatch = (c) => {
+    if (!c) return false;
+    const cDoc = String(c.cpf_cnpj || c.document_number || '').replace(/\D/g, '');
+    const cStatus = String(c.status || '').toLowerCase().trim();
+    const docMatches = (cDoc === cleanDoc) || (cleanDoc.length >= 11 && cDoc.includes(cleanDoc));
+    const statusMatches = cStatus === 'aprovado' || cStatus === 'approved';
+    return docMatches && statusMatches;
+  };
+
   if (!isSupabaseConfigured || !supabase) {
     // Modo local / demo: checa no localStorage
     try {
       const localClients = JSON.parse(localStorage.getItem('vetline_saved_clients') || '[]');
-      const found = localClients.find(
-        (c) =>
-          (c.status === 'aprovado' || c.status === 'APROVADO') &&
-          (String(c.cpf_cnpj || '').replace(/\D/g, '') === cleanDoc ||
-           String(c.document_number || '').replace(/\D/g, '') === cleanDoc)
-      );
+      const found = localClients.find(isApprovedMatch);
       if (found) {
         return { exists: true, client: found };
       }
@@ -821,31 +826,83 @@ export const checkExistingApprovedClient = async (document) => {
     return { exists: false };
   }
 
-  // 1. Tenta RPC check_client_already_approved no Supabase
+  // 1. Tenta RPC específica no schema novo_cliente
   try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc('check_client_already_approved', {
+    const { data: rpcData, error: rpcError } = await supabase
+      .schema('novo_cliente')
+      .rpc('check_client_already_approved', {
+        p_document: cleanDoc
+      });
+
+    if (!rpcError && rpcData && typeof rpcData.exists === 'boolean') {
+      if (rpcData.exists) {
+        return {
+          exists: true,
+          client: rpcData.client || null
+        };
+      }
+    }
+  } catch (errRpc) {}
+
+  // 1.1 Tenta RPC global se search_path contiver o schema novo_cliente
+  try {
+    const { data: rpcData2, error: rpcError2 } = await supabase.rpc('check_client_already_approved', {
       p_document: cleanDoc
     });
 
-    if (!rpcError && rpcData && typeof rpcData.exists === 'boolean') {
-      return {
-        exists: rpcData.exists,
-        client: rpcData.client || null
-      };
+    if (!rpcError2 && rpcData2 && typeof rpcData2.exists === 'boolean') {
+      if (rpcData2.exists) {
+        return {
+          exists: true,
+          client: rpcData2.client || null
+        };
+      }
     }
-  } catch (errRpc) {
-    // Prossegue para fallback direto
-  }
+  } catch (errRpc2) {}
 
-  // 2. Fallback direto via select no schema novo_cliente
+  // 2. Tenta RPC get_novo_cliente_clients no schema novo_cliente
+  try {
+    let clientsData = null;
+    let clientsError = null;
+
+    const resSchema = await supabase
+      .schema('novo_cliente')
+      .rpc('get_novo_cliente_clients', {
+        p_status: 'aprovado',
+        p_search: cleanDoc
+      });
+
+    if (!resSchema.error && resSchema.data) {
+      clientsData = resSchema.data;
+    } else {
+      const resGlobal = await supabase.rpc('get_novo_cliente_clients', {
+        p_status: 'aprovado',
+        p_search: cleanDoc
+      });
+      clientsData = resGlobal.data;
+      clientsError = resGlobal.error;
+    }
+
+    if (!clientsError && Array.isArray(clientsData) && clientsData.length > 0) {
+      const matched = clientsData.find(isApprovedMatch);
+      if (matched) {
+        return {
+          exists: true,
+          client: matched
+        };
+      }
+    }
+  } catch (errClientsRpc) {}
+
+  // 3. Consulta direta no schema novo_cliente (tabela data_new_cliente ou data_new_client)
   try {
     let res = await supabase
       .schema('novo_cliente')
       .from('data_new_cliente')
       .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
       .eq('status', 'aprovado')
-      .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document}`)
-      .limit(1);
+      .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document},cpf_cnpj.ilike.%${cleanDoc}%`)
+      .limit(5);
 
     if (res.error && res.error.message?.includes('data_new_cliente')) {
       res = await supabase
@@ -853,18 +910,19 @@ export const checkExistingApprovedClient = async (document) => {
         .from('data_new_client')
         .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
         .eq('status', 'aprovado')
-        .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document}`)
-        .limit(1);
+        .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document},cpf_cnpj.ilike.%${cleanDoc}%`)
+        .limit(5);
     }
 
     if (!res.error && res.data && res.data.length > 0) {
+      const matched = res.data.find(isApprovedMatch) || res.data[0];
       return {
         exists: true,
-        client: res.data[0]
+        client: matched
       };
     }
   } catch (errDirect) {
-    console.warn('Erro ao consultar duplicidade de cliente aprovado:', errDirect);
+    console.warn('Erro ao consultar duplicidade no schema novo_cliente:', errDirect);
   }
 
   return { exists: false };
