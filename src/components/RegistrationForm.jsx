@@ -453,7 +453,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     if (personType !== 'PJ') return;
     const clean = unmask(documentNumber);
     if (clean.length === 14 && isValidCNPJ(clean)) {
-      if (!cnpjInfo && !loadingCnpj && !duplicateApprovedClient) {
+      if (!loadingCnpj && !loadingDuplicateCheck) {
         await executeCnpjQuery(clean);
       }
     }

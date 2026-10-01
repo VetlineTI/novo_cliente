@@ -809,7 +809,7 @@ export const checkExistingApprovedClient = async (document) => {
     if (!c) return false;
     const cDoc = String(c.cpf_cnpj || c.document_number || '').replace(/\D/g, '');
     const cStatus = String(c.status || '').toLowerCase().trim();
-    const docMatches = (cDoc === cleanDoc) || (cleanDoc.length >= 11 && cDoc.includes(cleanDoc));
+    const docMatches = (cDoc === cleanDoc) || (cleanDoc.length >= 11 && cDoc.includes(cleanDoc)) || (cDoc.length >= 11 && cleanDoc.includes(cDoc));
     const statusMatches = cStatus === 'aprovado' || cStatus === 'approved';
     return docMatches && statusMatches;
   };
@@ -844,86 +844,92 @@ export const checkExistingApprovedClient = async (document) => {
     }
   } catch (errRpc) {}
 
-  // 1.1 Tenta RPC global se search_path contiver o schema novo_cliente
+  // 2. Consulta direta 1: busca por cpf_cnpj exato (dígitos) com status aprovado
   try {
-    const { data: rpcData2, error: rpcError2 } = await supabase.rpc('check_client_already_approved', {
-      p_document: cleanDoc
-    });
-
-    if (!rpcError2 && rpcData2 && typeof rpcData2.exists === 'boolean') {
-      if (rpcData2.exists) {
-        return {
-          exists: true,
-          client: rpcData2.client || null
-        };
-      }
-    }
-  } catch (errRpc2) {}
-
-  // 2. Tenta RPC get_novo_cliente_clients no schema novo_cliente
-  try {
-    let clientsData = null;
-    let clientsError = null;
-
-    const resSchema = await supabase
-      .schema('novo_cliente')
-      .rpc('get_novo_cliente_clients', {
-        p_status: 'aprovado',
-        p_search: cleanDoc
-      });
-
-    if (!resSchema.error && resSchema.data) {
-      clientsData = resSchema.data;
-    } else {
-      const resGlobal = await supabase.rpc('get_novo_cliente_clients', {
-        p_status: 'aprovado',
-        p_search: cleanDoc
-      });
-      clientsData = resGlobal.data;
-      clientsError = resGlobal.error;
-    }
-
-    if (!clientsError && Array.isArray(clientsData) && clientsData.length > 0) {
-      const matched = clientsData.find(isApprovedMatch);
-      if (matched) {
-        return {
-          exists: true,
-          client: matched
-        };
-      }
-    }
-  } catch (errClientsRpc) {}
-
-  // 3. Consulta direta no schema novo_cliente (tabela data_new_cliente ou data_new_client)
-  try {
-    let res = await supabase
+    let { data, error } = await supabase
       .schema('novo_cliente')
       .from('data_new_cliente')
-      .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
+      .select('*')
       .eq('status', 'aprovado')
-      .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document},cpf_cnpj.ilike.%${cleanDoc}%`)
-      .limit(5);
+      .eq('cpf_cnpj', cleanDoc)
+      .limit(1);
 
-    if (res.error && res.error.message?.includes('data_new_cliente')) {
-      res = await supabase
+    if (error) {
+      const fallback = await supabase
         .schema('novo_cliente')
         .from('data_new_client')
-        .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
+        .select('*')
         .eq('status', 'aprovado')
-        .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document},cpf_cnpj.ilike.%${cleanDoc}%`)
-        .limit(5);
+        .eq('cpf_cnpj', cleanDoc)
+        .limit(1);
+      if (!fallback.error && fallback.data) {
+        data = fallback.data;
+        error = null;
+      }
     }
 
-    if (!res.error && res.data && res.data.length > 0) {
-      const matched = res.data.find(isApprovedMatch) || res.data[0];
-      return {
-        exists: true,
-        client: matched
-      };
+    if (!error && data && data.length > 0) {
+      return { exists: true, client: data[0] };
     }
-  } catch (errDirect) {
-    console.warn('Erro ao consultar duplicidade no schema novo_cliente:', errDirect);
-  }
+  } catch (err1) {}
+
+  // 3. Consulta direta 2: busca por ilike de dígitos no cpf_cnpj com status aprovado
+  try {
+    let { data, error } = await supabase
+      .schema('novo_cliente')
+      .from('data_new_cliente')
+      .select('*')
+      .eq('status', 'aprovado')
+      .ilike('cpf_cnpj', `%${cleanDoc}%`)
+      .limit(5);
+
+    if (error) {
+      const fallback = await supabase
+        .schema('novo_cliente')
+        .from('data_new_client')
+        .select('*')
+        .eq('status', 'aprovado')
+        .ilike('cpf_cnpj', `%${cleanDoc}%`)
+        .limit(5);
+      if (!fallback.error && fallback.data) {
+        data = fallback.data;
+        error = null;
+      }
+    }
+
+    if (!error && data && data.length > 0) {
+      const matched = data.find(isApprovedMatch) || data[0];
+      return { exists: true, client: matched };
+    }
+  } catch (err2) {}
+
+  // 4. Consulta direta 3: busca todos aprovados do schema novo_cliente e filtra em memória
+  try {
+    let { data, error } = await supabase
+      .schema('novo_cliente')
+      .from('data_new_cliente')
+      .select('*')
+      .eq('status', 'aprovado');
+
+    if (error) {
+      const fallback = await supabase
+        .schema('novo_cliente')
+        .from('data_new_client')
+        .select('*')
+        .eq('status', 'aprovado');
+      if (!fallback.error && fallback.data) {
+        data = fallback.data;
+        error = null;
+      }
+    }
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const matched = data.find(isApprovedMatch);
+      if (matched) {
+        return { exists: true, client: matched };
+      }
+    }
+  } catch (err3) {}
 
   return { exists: false };
 };
