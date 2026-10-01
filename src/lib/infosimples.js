@@ -710,6 +710,10 @@ export const executarAuditoriaBureau = async (client) => {
       if (nireJucesp) updatePayload.nire_jucesp = nireJucesp;
       if (totalProtestos !== null && totalProtestos !== undefined) {
         updatePayload.total_protestos = totalProtestos;
+        const numProt = Number(totalProtestos) || 0;
+        const autoLimit = numProt === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
+        updatePayload.limite_credito = autoLimit;
+        updatePayload.credit_limit = autoLimit;
       }
 
       const saveRes = await updateClientData(clientId, updatePayload);

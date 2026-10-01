@@ -91,6 +91,7 @@ export const ClientDetailModal = ({
         cd_vend: client.cd_vend || 'ATENA',
         tab_pre: client.tab_pre || 'VTL01',
         tp_ped: client.tp_ped || 'VTL01',
+        limite_credito: client.limite_credito !== undefined && client.limite_credito !== null ? Number(client.limite_credito) : (client.credit_limit !== undefined && client.credit_limit !== null ? Number(client.credit_limit) : 0),
         has_different_delivery_address: Boolean(client.has_different_delivery_address),
         delivery_zipcode: client.delivery_zipcode || '',
         delivery_street: client.delivery_street || '',
@@ -1146,6 +1147,33 @@ export const ClientDetailModal = ({
                                 : 'bg-emerald-100 text-emerald-800'
                                 }`}>
                                 {formData.cd_vend === 'ATENA' || !formData.cd_vend ? 'Sem Vendedor' : 'Atribuído'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Limite de Crédito */}
+                        <div>
+                          <label className="text-[11px] text-slate-600 font-bold block mb-1">
+                            Limite de Crédito (R$):
+                          </label>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={formData.limite_credito ?? 0}
+                              onChange={(e) => handleChange('limite_credito', parseFloat(e.target.value) || 0)}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green font-mono font-bold text-slate-900 bg-white"
+                              placeholder="0.00"
+                            />
+                          ) : (
+                            <div className="px-3 py-2 rounded-lg bg-emerald-50/50 border border-emerald-200 flex items-center justify-between">
+                              <span className="font-mono font-bold text-emerald-800 text-sm">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(formData.limite_credito) || 0)}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${(Number(formData.limite_credito) || 0) > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {(Number(formData.limite_credito) || 0) > 0 ? 'Liberado' : 'Sem Limite'}
                               </span>
                             </div>
                           )}

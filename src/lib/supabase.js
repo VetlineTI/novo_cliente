@@ -417,6 +417,8 @@ export const normalizeClientRecord = (c) => {
     nire_jucesp: c.nire_jucesp || null,
     total_protestos: c.total_protestos !== undefined ? c.total_protestos : null,
     bureau_consulted_at: c.bureau_consulted_at || null,
+    limite_credito: c.limite_credito !== undefined && c.limite_credito !== null ? Number(c.limite_credito) : (c.credit_limit !== undefined && c.credit_limit !== null ? Number(c.credit_limit) : 0),
+    credit_limit: c.limite_credito !== undefined && c.limite_credito !== null ? Number(c.limite_credito) : (c.credit_limit !== undefined && c.credit_limit !== null ? Number(c.credit_limit) : 0),
     status,
     termos_aceitos,
     terms_accepted: termos_aceitos,
@@ -537,6 +539,9 @@ export const toPortuguesePayload = (data) => {
   if (data.nire_jucesp !== undefined) p.nire_jucesp = data.nire_jucesp;
   if (data.total_protestos !== undefined) p.total_protestos = data.total_protestos;
   if (data.bureau_consulted_at !== undefined) p.bureau_consulted_at = data.bureau_consulted_at;
+  if (data.limite_credito !== undefined || data.credit_limit !== undefined) {
+    p.limite_credito = Number(data.limite_credito ?? data.credit_limit ?? 0);
+  }
   if (data.status) p.status = data.status;
   if (data.termos_aceitos !== undefined || data.terms_accepted !== undefined) {
     p.termos_aceitos = data.termos_aceitos ?? data.terms_accepted ?? true;
@@ -1312,6 +1317,7 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         cd_vend: clientData.cd_vend || 'ATENA',
         tab_pre: clientData.tab_pre || 'VTL01',
         tp_ped: clientData.tp_ped || 'VTL01',
+        limite_credito: Number(clientData.limite_credito ?? clientData.credit_limit ?? 0),
         // Endereço Principal / Cadastral
         cep: clientData.zipcode || clientData.cep || '',
         logradouro: clientData.street || clientData.logradouro || '',

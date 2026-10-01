@@ -1093,6 +1093,14 @@ export const RegistrationForm = ({ onSuccess }) => {
 
       const hasIe = Boolean(sintegraIe && sintegraIe !== 'ISENTO' && sintegraIe !== 'ISENTA' && sintegraIe !== '-');
 
+      // Cálculo do Limite de Crédito inicial conforme regra de negócios:
+      // PJ sem protestos: R$ 3.000,00
+      // PF sem protestos: R$ 1.500,00
+      // Com protestos (>0): R$ 0,00
+      const numProtestos = typeof totalProtestos === 'number' ? totalProtestos : (Number(totalProtestos) || 0);
+      const hasProtestos = numProtestos > 0;
+      const initialCreditLimit = !hasProtestos ? (personType === 'PJ' ? 3000.00 : 1500.00) : 0.00;
+
       // Dados estruturados para tabela novo_cliente.data_new_cliente em Português BR
       const payload = {
         tipo_pessoa: personType,
@@ -1129,6 +1137,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         cd_vend: hasSalesperson ? (selectedSalespersonCode || 'ATENA') : 'ATENA',
         tab_pre: 'VTL01',
         tp_ped: 'VTL01',
+        limite_credito: initialCreditLimit,
+        credit_limit: initialCreditLimit,
         endereco_entrega_diferente: hasDifferentDelivery,
         has_different_delivery_address: hasDifferentDelivery,
         entrega_cep: hasDifferentDelivery ? deliveryCep : null,

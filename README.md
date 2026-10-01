@@ -111,13 +111,19 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users` e concessão de perfis. |
 | `supabase/setup_storage_private.sql` | Script SQL para configurar o bucket `novos_clientes` como **Privado** no Supabase Storage com políticas de RLS (upload público e leitura autenticada). |
 | `supabase/add_rate_limit.sql` | Script SQL de Rate Limiting por IP (tabela `rate_limit_logs`, RPCs `check_rate_limit` e `log_rate_limit_attempt`) para proteção nativa contra spam e abuso de cadastros. |
+| `supabase/add_limite_credito.sql` | Script SQL para adicionar a coluna `limite_credito` (`NUMERIC(12,2) DEFAULT 0.00`) no schema `novo_cliente` com retrocompatibilidade e recálculo inicial. |
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
 | `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
 | `src/utils/bruteForceProtector.js` | Módulo de proteção contra força bruta no login (limite de 5 tentativas com bloqueio temporário de 5 minutos e contagem regressiva). |
 | `src/utils/documentValidator.js` | Validador inteligente de anexos com OCR multi-orientação (0°, 90°, 270°) e leitura de QR Code. |
-| `src/utils/documentValidator.js` | Módulo de extração e validação inteligente de documentos (OCR Tesseract, PDF.js e jsQR), cruzamento de CNPJ de anexos contra o formulário e sócios contra o QSA (com suporte ao padrão de máscara LGPD da Receita Federal `***XXXXXX**`). |
 
-### 6. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
+### 6. 💳 Regras de Concessão de Limite de Crédito Automático
+- Ao submeter um novo cadastro, o sistema avalia o retorno da auditoria de bureau (CENPROT / Direct Data / Cartórios de Protesto):
+  - **Pessoa Jurídica (PJ) sem protestos** (`total_protestos === 0`): Limite de Crédito inicial concedido de **R$ 3.000,00**.
+  - **Pessoa Física (PF) sem protestos** (`total_protestos === 0`): Limite de Crédito inicial concedido de **R$ 1.500,00**.
+- O limite de crédito é de uso estritamente interno: **não é exibido para o cliente**, sendo visualizado e editado exclusivamente pela equipe no **Painel Administrativo** (`ClientDetailModal`) e enviado no payload do webhook para o ERP Moinho.
+
+### 7. 🔍 Auditoria Automatizada & Bureau de Conformidade (Direct Data & Infosimples)
 - Integrado na esteira de análise de crédito e validação documental com a API da **Direct Data** e **Infosimples**:
   - **CFMV / CRMV (Pessoa Física - `/cfmv/cadastro`)**: Consulta e validação em tempo real da situação cadastral do CRMV do profissional (Médico Veterinário) junto ao Conselho Federal de Medicina Veterinária via Infosimples. Garante que o cadastro só seja concluído se o registro profissional estiver constando como **Ativo / Regular**, bloqueando situações suspensas ou canceladas com alerta orientador.
   - **Receita Federal / QSA (`/api/ReceitaPJParticipacaoSocietaria`)**: Extração oficial do comprovante da Receita Federal com Quadro Societário e percentuais de participação, anexando o documento oficial em PDF (`urlComprovante`) ao cadastro do cliente que concluiu o credenciamento com sucesso.
