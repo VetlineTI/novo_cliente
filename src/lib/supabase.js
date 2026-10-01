@@ -260,13 +260,28 @@ export const fetchSegments = async (forceRefresh = false) => {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      // 1. Tenta consulta no schema novo_cliente
+      // 1. Tenta via RPC pública get_segmentos (não requer expor schema no PostgREST)
+      const { data: rpcSegments, error: rpcErr } = await supabase.rpc('get_segmentos');
+      if (!rpcErr && rpcSegments && rpcSegments.length > 0) {
+        const normalized = rpcSegments.map((item) => ({
+          ram_ativ: String(item.ram_ativ ?? item.id ?? '').trim(),
+          descricao: String(item.descricao ?? item.nome ?? '').trim()
+        })).filter(i => i.ram_ativ && i.descricao);
+
+        if (normalized.length > 0) {
+          normalized.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'));
+          cachedSegments = normalized;
+          return { success: true, data: normalized };
+        }
+      }
+
+      // 2. Tenta consulta no schema novo_cliente
       let res = await supabase
         .schema('novo_cliente')
         .from('segmento')
         .select('*');
 
-      // 2. Se falhar ou vier vazio, tenta sem schema explícito / schema public
+      // 3. Se falhar ou vier vazio, tenta sem schema explícito / schema public
       if (res.error || !res.data || res.data.length === 0) {
         res = await supabase
           .from('segmento')
@@ -777,10 +792,89 @@ export const gerarTextoAlerta = (client, confirmDate = new Date()) => {
 };
 
 /**
+ * Verifica se já existe um cliente cadastrado com status 'aprovado' para o CPF ou CNPJ informado.
+ * Cadastros aprovados já foram integrados via webhook e não podem ser reenviados.
+ * @param {string} document CPF ou CNPJ
+ * @returns {Promise<{exists: boolean, client?: any, error?: any}>}
+ */
+export const checkExistingApprovedClient = async (document) => {
+  if (!document) return { exists: false };
+  const cleanDoc = String(document).replace(/\D/g, '');
+  if (cleanDoc.length !== 11 && cleanDoc.length !== 14) {
+    return { exists: false };
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    // Modo local / demo: checa no localStorage
+    try {
+      const localClients = JSON.parse(localStorage.getItem('vetline_saved_clients') || '[]');
+      const found = localClients.find(
+        (c) =>
+          (c.status === 'aprovado' || c.status === 'APROVADO') &&
+          (String(c.cpf_cnpj || '').replace(/\D/g, '') === cleanDoc ||
+           String(c.document_number || '').replace(/\D/g, '') === cleanDoc)
+      );
+      if (found) {
+        return { exists: true, client: found };
+      }
+    } catch (e) {}
+    return { exists: false };
+  }
+
+  // 1. Tenta RPC check_client_already_approved no Supabase
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('check_client_already_approved', {
+      p_document: cleanDoc
+    });
+
+    if (!rpcError && rpcData && typeof rpcData.exists === 'boolean') {
+      return {
+        exists: rpcData.exists,
+        client: rpcData.client || null
+      };
+    }
+  } catch (errRpc) {
+    // Prossegue para fallback direto
+  }
+
+  // 2. Fallback direto via select no schema novo_cliente
+  try {
+    let res = await supabase
+      .schema('novo_cliente')
+      .from('data_new_cliente')
+      .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
+      .eq('status', 'aprovado')
+      .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document}`)
+      .limit(1);
+
+    if (res.error && res.error.message?.includes('data_new_cliente')) {
+      res = await supabase
+        .schema('novo_cliente')
+        .from('data_new_client')
+        .select('id, razao_social_nome, status, criado_em, created_at, cd_vend, cpf_cnpj')
+        .eq('status', 'aprovado')
+        .or(`cpf_cnpj.eq.${cleanDoc},cpf_cnpj.eq.${document}`)
+        .limit(1);
+    }
+
+    if (!res.error && res.data && res.data.length > 0) {
+      return {
+        exists: true,
+        client: res.data[0]
+      };
+    }
+  } catch (errDirect) {
+    console.warn('Erro ao consultar duplicidade de cliente aprovado:', errDirect);
+  }
+
+  return { exists: false };
+};
+
+/**
  * Salva os dados do formulário na tabela novo_cliente.data_new_cliente
  * (Utiliza RPC pública com SECURITY DEFINER direcionada ao schema novo_cliente e fallback direto)
  * @param {Object} clientData Dados formatados para persistência
- * @returns {Promise<{success: boolean, data?: any, error?: any, isRateLimited?: boolean}>}
+ * @returns {Promise<{success: boolean, data?: any, error?: any, isRateLimited?: boolean, isDuplicate?: boolean}>}
  */
 export const submitNewClient = async (clientData) => {
   // 1. Obtém e anexa o IP real do cliente
@@ -794,6 +888,8 @@ export const submitNewClient = async (clientData) => {
     ip_origem: clientIp
   };
 
+  const rawDocument = enrichedData.cpf_cnpj || enrichedData.document_number;
+
   // 2. Checagem prévia de Rate Limiting por IP no Supabase
   if (isSupabaseConfigured && supabase && clientIp && clientIp !== '127.0.0.1' && clientIp !== 'localhost') {
     const rateCheck = await checkRateLimit(clientIp, 3, 60);
@@ -802,6 +898,18 @@ export const submitNewClient = async (clientData) => {
         success: false,
         isRateLimited: true,
         error: rateCheck.message || 'Limite de cadastros atingido para este dispositivo/IP. Por segurança, tente novamente mais tarde.'
+      };
+    }
+  }
+
+  // 3. Checagem prévia de duplicidade de cliente já APROVADO
+  if (rawDocument) {
+    const dupCheck = await checkExistingApprovedClient(rawDocument);
+    if (dupCheck.exists) {
+      return {
+        success: false,
+        isDuplicate: true,
+        error: 'Este CPF/CNPJ já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.'
       };
     }
   }
@@ -825,6 +933,14 @@ export const submitNewClient = async (clientData) => {
           success: false,
           isRateLimited: true,
           error: rpcError.message.replace('RATE_LIMIT_EXCEEDED:', '').trim()
+        };
+      }
+
+      if (rpcError && rpcError.message?.includes('CLIENT_ALREADY_APPROVED')) {
+        return {
+          success: false,
+          isDuplicate: true,
+          error: rpcError.message.replace('CLIENT_ALREADY_APPROVED:', '').trim()
         };
       }
     } catch (errRpc) {}

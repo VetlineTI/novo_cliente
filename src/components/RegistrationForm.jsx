@@ -51,7 +51,8 @@ import {
   fetchSalespeople, 
   fetchSegments,
   checkRateLimit,
-  getClientIp
+  getClientIp,
+  checkExistingApprovedClient
 } from '../lib/supabase';
 
 export const RegistrationForm = ({ onSuccess }) => {
@@ -83,6 +84,10 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [loadingCnpj, setLoadingCnpj] = useState(false);
   const [cnpjInfo, setCnpjInfo] = useState(null);
   const [cnpjAlert, setCnpjAlert] = useState('');
+
+  // Validação de Duplicidade (Cliente já Aprovado no sistema)
+  const [loadingDuplicateCheck, setLoadingDuplicateCheck] = useState(false);
+  const [duplicateApprovedClient, setDuplicateApprovedClient] = useState(null);
 
   // CRMV Validação (PF)
   const [loadingCrmv, setLoadingCrmv] = useState(false);
@@ -165,6 +170,8 @@ export const RegistrationForm = ({ onSuccess }) => {
     setSalespersonSearch('');
     setCnpjInfo(null);
     setCnpjAlert('');
+    setDuplicateApprovedClient(null);
+    setLoadingDuplicateCheck(false);
     bureauAuditPromiseRef.current = null;
     bureauAuditResultRef.current = null;
     sintegraResultRef.current = null;
@@ -282,6 +289,8 @@ export const RegistrationForm = ({ onSuccess }) => {
     setNumeroInscricao(type === 'PJ' ? '' : 'ISENTO');
     setCnpjInfo(null);
     setCnpjAlert('');
+    setDuplicateApprovedClient(null);
+    setLoadingDuplicateCheck(false);
     setErrors({});
     
     // Limpa documentos conforme o tipo
@@ -355,6 +364,26 @@ export const RegistrationForm = ({ onSuccess }) => {
   const executeCnpjQuery = async (cleanCnpj) => {
     if (!cleanCnpj || cleanCnpj.length !== 14 || !isValidCNPJ(cleanCnpj)) return;
 
+    // 1. Checagem prévia se o CNPJ já está APROVADO no sistema
+    setLoadingDuplicateCheck(true);
+    const dupCheck = await checkExistingApprovedClient(cleanCnpj);
+    setLoadingDuplicateCheck(false);
+
+    if (dupCheck.exists) {
+      setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+      setCnpjInfo(null);
+      if (dupCheck.client?.razao_social_nome) {
+        setFullName(dupCheck.client.razao_social_nome);
+      }
+      setCnpjAlert('Este CNPJ já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
+      setErrors((prev) => ({
+        ...prev,
+        documentNumber: 'Este CNPJ já possui cadastro APROVADO e integrado no sistema.'
+      }));
+      return;
+    }
+    setDuplicateApprovedClient(null);
+
     setLoadingCnpj(true);
     setCnpjAlert('');
     try {
@@ -422,7 +451,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     if (personType !== 'PJ') return;
     const clean = unmask(documentNumber);
     if (clean.length === 14 && isValidCNPJ(clean)) {
-      if (!cnpjInfo && !loadingCnpj) {
+      if (!cnpjInfo && !loadingCnpj && !duplicateApprovedClient) {
         await executeCnpjQuery(clean);
       }
     }
@@ -434,6 +463,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     const formatted = personType === 'PJ' ? maskCNPJ(val) : maskCPF(val);
     setDocumentNumber(formatted);
     setCnpjAlert('');
+    setDuplicateApprovedClient(null);
     if (errors.documentNumber) {
       setErrors((prev) => ({ ...prev, documentNumber: null }));
     }
@@ -446,20 +476,42 @@ export const RegistrationForm = ({ onSuccess }) => {
       } else if (clean.length === 14 && isValidCNPJ(clean)) {
         await executeCnpjQuery(clean);
       }
-    } else if (personType === 'PF' && clean.length === 11 && isValidCPF(clean)) {
-      // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
-      bureauAuditResultRef.current = null;
-      bureauAuditPromiseRef.current = executarAuditoriaBureau({
-        cpf_cnpj: clean,
-        razao_social_nome: fullName,
-        uf: state || 'SP'
-      }).then(res => {
-        bureauAuditResultRef.current = res;
-        return res;
-      }).catch(err => {
-        console.warn('Pré-consulta Protestos CPF:', err);
-        return null;
-      });
+    } else if (personType === 'PF') {
+      if (clean.length < 11) {
+        setDuplicateApprovedClient(null);
+      } else if (clean.length === 11 && isValidCPF(clean)) {
+        setLoadingDuplicateCheck(true);
+        const dupCheck = await checkExistingApprovedClient(clean);
+        setLoadingDuplicateCheck(false);
+
+        if (dupCheck.exists) {
+          setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+          if (dupCheck.client?.razao_social_nome) {
+            setFullName(dupCheck.client.razao_social_nome);
+          }
+          setErrors((prev) => ({
+            ...prev,
+            documentNumber: 'Este CPF já possui cadastro APROVADO e integrado no sistema.'
+          }));
+          return;
+        }
+
+        setDuplicateApprovedClient(null);
+
+        // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
+        bureauAuditResultRef.current = null;
+        bureauAuditPromiseRef.current = executarAuditoriaBureau({
+          cpf_cnpj: clean,
+          razao_social_nome: fullName,
+          uf: state || 'SP'
+        }).then(res => {
+          bureauAuditResultRef.current = res;
+          return res;
+        }).catch(err => {
+          console.warn('Pré-consulta Protestos CPF:', err);
+          return null;
+        });
+      }
     }
   };
 
@@ -581,7 +633,9 @@ export const RegistrationForm = ({ onSuccess }) => {
 
     // 2. CPF / CNPJ e Situação Cadastral
     const cleanDoc = unmask(documentNumber);
-    if (personType === 'PJ') {
+    if (duplicateApprovedClient) {
+      newErrors.documentNumber = 'Este documento já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.';
+    } else if (personType === 'PJ') {
       if (!cleanDoc || cleanDoc.length !== 14 || !isValidCNPJ(cleanDoc)) {
         newErrors.documentNumber = 'Informe um CNPJ válido com 14 dígitos.';
       } else if (!cnpjInfo || !cnpjInfo.isAtiva) {
@@ -912,6 +966,16 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
+    // Checagem prévia se o documento informado já possui cadastro APROVADO no sistema
+    const cleanDocToSubmit = unmask(documentNumber);
+    const dupCheck = await checkExistingApprovedClient(cleanDocToSubmit);
+    if (dupCheck.exists) {
+      setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+      setSubmitError('Este CNPJ/CPF já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     // Checagem prévia de Rate Limiting por IP antes de prosseguir
     const rateCheck = await checkRateLimit(null, 3, 60);
     if (!rateCheck.allowed) {
@@ -928,6 +992,17 @@ export const RegistrationForm = ({ onSuccess }) => {
   const handlePasswordSubmit = async (confirmedEmail, password) => {
     setIsSubmitting(true);
     setSubmitError(null);
+
+    // Validação final de segurança para impedir duplicidade de cadastro aprovado
+    const cleanDocFinal = unmask(documentNumber);
+    const dupCheckFinal = await checkExistingApprovedClient(cleanDocFinal);
+    if (dupCheckFinal.exists) {
+      setDuplicateApprovedClient(dupCheckFinal.client || { status: 'aprovado' });
+      setSubmitError('Este CNPJ/CPF já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
+      setShowPasswordModal(false);
+      setIsSubmitting(false);
+      return;
+    }
 
     // Garante extração correta caso venha como 2 parâmetros ou como objeto
     let finalEmail = email;
@@ -1136,11 +1211,12 @@ export const RegistrationForm = ({ onSuccess }) => {
   };
 
   // Regras de bloqueio de formulário:
+  // - Bloqueia se o documento já possui cadastro APROVADO no sistema
   // - Para PJ: bloqueia se CNPJ não for informado ou não estiver com situação ATIVA na Receita Federal
   // - Para PF: bloqueia se CRMV não for informado ou não estiver com situação ATIVA no CFMV
-  const isPjBlocked = personType === 'PJ' && (!cnpjInfo || !cnpjInfo.isAtiva);
-  const isPfBlocked = personType === 'PF' && (!crmvData || !crmvData.isAtivo);
-  const isFormBlocked = personType === 'PJ' ? isPjBlocked : isPfBlocked;
+  const isPjBlocked = personType === 'PJ' && (!!duplicateApprovedClient || !cnpjInfo || !cnpjInfo.isAtiva);
+  const isPfBlocked = personType === 'PF' && (!!duplicateApprovedClient || !crmvData || !crmvData.isAtivo);
+  const isFormBlocked = !!duplicateApprovedClient || (personType === 'PJ' ? isPjBlocked : isPfBlocked);
 
   return (
     <div className="w-full bg-white rounded-2xl sm:rounded-3xl shadow-elevated border border-slate-100 p-5 sm:p-8 lg:p-10">
@@ -1216,16 +1292,28 @@ export const RegistrationForm = ({ onSuccess }) => {
                 <span>{personType === 'PJ' ? 'CNPJ da Empresa' : 'CPF'}</span>
                 <span className="text-red-500">*</span>
               </span>
-              {personType === 'PJ' && loadingCnpj && (
+              {loadingDuplicateCheck && (
+                <span className="flex items-center gap-1 text-xs text-amber-600 font-normal">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Verificando duplicidade...
+                </span>
+              )}
+              {!loadingDuplicateCheck && personType === 'PJ' && loadingCnpj && (
                 <span className="flex items-center gap-1 text-xs text-brand-green font-normal">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   Consultando Receita Federal...
                 </span>
               )}
-              {personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
+              {!loadingDuplicateCheck && !duplicateApprovedClient && personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
                 <span className="flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                   <CheckCircle className="w-3.5 h-3.5" />
                   CNPJ Ativo
+                </span>
+              )}
+              {duplicateApprovedClient && (
+                <span className="flex items-center gap-1 text-xs text-red-600 font-bold bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200">
+                  <BadgeAlert className="w-3.5 h-3.5" />
+                  Já Cadastrado / Aprovado
                 </span>
               )}
             </label>
@@ -1246,12 +1334,12 @@ export const RegistrationForm = ({ onSuccess }) => {
                   placeholder={personType === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
                   maxLength={personType === 'PJ' ? 18 : 14}
                   className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
-                    errors.documentNumber || (personType === 'PJ' && cnpjInfo && !cnpjInfo.isAtiva)
+                    duplicateApprovedClient || errors.documentNumber || (personType === 'PJ' && cnpjInfo && !cnpjInfo.isAtiva)
                       ? 'border-red-400 bg-red-50/20'
                       : (personType === 'PJ' && cnpjInfo?.isAtiva ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
                   }`}
                 />
-                {personType === 'PJ' && loadingCnpj && (
+                {(loadingDuplicateCheck || (personType === 'PJ' && loadingCnpj)) && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                     <Loader2 className="w-4 h-4 text-brand-green animate-spin" />
                   </div>
@@ -1265,7 +1353,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                     const clean = unmask(documentNumber);
                     if (clean.length === 14) executeCnpjQuery(clean);
                   }}
-                  disabled={loadingCnpj || unmask(documentNumber).length !== 14}
+                  disabled={loadingCnpj || loadingDuplicateCheck || unmask(documentNumber).length !== 14}
                   className="px-4 py-2.5 bg-brand-green hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
                   title="Consultar situação do CNPJ na Receita Federal"
                 >
@@ -1279,19 +1367,36 @@ export const RegistrationForm = ({ onSuccess }) => {
               )}
             </div>
 
-            {errors.documentNumber && (
+            {errors.documentNumber && !duplicateApprovedClient && (
               <p className="text-xs text-red-500 mt-1 font-medium">{errors.documentNumber}</p>
             )}
 
+            {/* ALERTA DE DUPLICIDADE: CLIENTE JÁ APROVADO NO SISTEMA */}
+            {duplicateApprovedClient && (
+              <div className="p-4 rounded-xl bg-red-50 border-2 border-red-300 text-xs text-red-900 space-y-2 animate-shake mt-2 shadow-xs">
+                <div className="flex items-center gap-2 font-extrabold text-red-700 text-sm">
+                  <BadgeAlert className="w-5 h-5 text-red-600 flex-shrink-0" />
+                  <span>Cliente Já Cadastrado e Aprovado</span>
+                </div>
+                <p className="text-xs text-red-800 leading-relaxed">
+                  Este {personType === 'PJ' ? 'CNPJ' : 'CPF'} já possui cadastro com status <strong className="uppercase font-bold text-red-950">APROVADO</strong> e integrado em nosso sistema
+                  {duplicateApprovedClient?.razao_social_nome ? ` (${duplicateApprovedClient.razao_social_nome})` : ''}.
+                </p>
+                <div className="p-2.5 rounded-lg bg-red-100/70 border border-red-200 text-[11px] text-red-900 font-medium">
+                  🔒 Por conformidade e integração com o sistema ERP, <strong>não é permitido reenviar novo cadastro</strong> para clientes que já foram aprovados. Se precisar de alteração cadastral ou atendimento, entre em contato com seu vendedor ou com a equipe de suporte.
+                </div>
+              </div>
+            )}
+
             {/* Status e Feedback da Consulta na Receita Federal (PJ) */}
-            {personType === 'PJ' && loadingCnpj && (
+            {!duplicateApprovedClient && personType === 'PJ' && loadingCnpj && (
               <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-brand-dark flex items-center gap-2 animate-fade-in mt-2">
                 <Loader2 className="w-4 h-4 text-brand-green animate-spin flex-shrink-0" />
                 <span>Consultando situação cadastral na Receita Federal...</span>
               </div>
             )}
 
-            {personType === 'PJ' && !loadingCnpj && cnpjInfo && !cnpjInfo.isAtiva && (
+            {!duplicateApprovedClient && personType === 'PJ' && !loadingCnpj && cnpjInfo && !cnpjInfo.isAtiva && (
               <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake mt-2">
                 <div className="flex items-center gap-2 font-bold text-red-700">
                   <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
@@ -1306,7 +1411,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
             )}
 
-            {personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
+            {!duplicateApprovedClient && personType === 'PJ' && !loadingCnpj && cnpjInfo?.isAtiva && (
               <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in mt-2">
                 <div className="flex items-center gap-2 font-bold text-emerald-700">
                   <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
@@ -1321,7 +1426,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
             )}
 
-            {personType === 'PJ' && !loadingCnpj && !cnpjInfo && (
+            {!duplicateApprovedClient && personType === 'PJ' && !loadingCnpj && !cnpjInfo && (
               <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/80 text-[11px] text-blue-800 flex items-start gap-2 mt-2">
                 <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <span>
@@ -1332,7 +1437,7 @@ export const RegistrationForm = ({ onSuccess }) => {
           </div>
 
           {/* DEMAIS CAMPOS DE IDENTIFICAÇÃO (RAZÃO SOCIAL, INSCRIÇÃO OU NOME/CRMV) */}
-          {/* PARA PJ: SÓ APARECE SE O CNPJ ESTIVER ATIVO (!isPjBlocked) */}
+          {/* PARA PJ: SÓ APARECE SE O CNPJ ESTIVER ATIVO E NÃO DUPLICADO */}
           {personType === 'PJ' && !isPjBlocked && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 pt-2 animate-fade-in">
               {/* Razão Social */}
@@ -1418,18 +1523,24 @@ export const RegistrationForm = ({ onSuccess }) => {
           )}
         </div>
 
-        {/* BLOQUEIO DE CAMPOS SE CNPJ (PJ) OU CRMV (PF) NÃO ESTIVER ATIVO */}
+        {/* BLOQUEIO DE CAMPOS SE DUPLICADO APROVADO, CNPJ (PJ) OU CRMV (PF) NÃO ESTIVER ATIVO */}
         {isFormBlocked ? (
           <div className="p-6 sm:p-8 rounded-2xl bg-amber-50/70 border-2 border-dashed border-amber-200 text-center space-y-3 animate-fade-in my-4">
-            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-2xs">
-              {personType === 'PJ' ? (
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto shadow-2xs ${
+              duplicateApprovedClient ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'
+            }`}>
+              {duplicateApprovedClient ? (
+                <BadgeAlert className="w-6 h-6 text-red-600" />
+              ) : personType === 'PJ' ? (
                 <Building2 className="w-6 h-6 text-amber-600" />
               ) : (
                 <ShieldCheck className="w-6 h-6 text-amber-600" />
               )}
             </div>
-            <h4 className="text-base font-bold text-amber-900">
-              {personType === 'PJ' ? (
+            <h4 className="text-base font-bold text-slate-800">
+              {duplicateApprovedClient ? (
+                <span className="text-red-700 font-extrabold">Cadastro Bloqueado: Documento Já Aprovado no Sistema</span>
+              ) : personType === 'PJ' ? (
                 cnpjInfo && !cnpjInfo.isAtiva
                   ? `Campos bloqueados: CNPJ ${cnpjInfo.situacaoCadastral || 'Inativo'} na Receita Federal`
                   : 'Campos bloqueados: Validação de CNPJ Ativo Obrigatória'
@@ -1439,8 +1550,10 @@ export const RegistrationForm = ({ onSuccess }) => {
                   : 'Campos bloqueados: Validação de CRMV Obrigatória'
               )}
             </h4>
-            <p className="text-xs text-amber-700 max-w-md mx-auto leading-relaxed">
-              {personType === 'PJ' ? (
+            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+              {duplicateApprovedClient ? (
+                'Não é possível prosseguir pois este documento já possui cadastro aprovado e integrado no sistema. Para solicitar novos pedidos ou alterações, entre em contato com seu representante comercial.'
+              ) : personType === 'PJ' ? (
                 cnpjInfo && !cnpjInfo.isAtiva
                   ? `O CNPJ informado consta com situação cadastral "${cnpjInfo.situacaoCadastral}" na Receita Federal. O cadastro na plataforma é permitido exclusivamente para empresas com situação ATIVA.`
                   : 'Para prosseguir com o credenciamento de Pessoa Jurídica, digite o CNPJ da empresa acima (14 dígitos) para confirmar a situação ATIVA na Receita Federal e desbloquear os dados de inscrição, contato, endereço e envio de documentos.'

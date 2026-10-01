@@ -167,7 +167,66 @@ $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION public.log_rate_limit_attempt(TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
 
--- 6. Atualização da RPC insert_novo_cliente no schema novo_cliente
+-- 6. Função RPC: check_client_already_approved (schema novo_cliente e public)
+-- Verifica se o CPF/CNPJ já consta na tabela com status 'aprovado'
+CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = novo_cliente, public, auth, extensions
+AS $$
+DECLARE
+    v_clean_doc TEXT;
+    v_record RECORD;
+BEGIN
+    v_clean_doc := regexp_replace(COALESCE(p_document, ''), '\D', '', 'g');
+    
+    IF v_clean_doc = '' THEN
+        RETURN jsonb_build_object('exists', false);
+    END IF;
+
+    SELECT id, razao_social_nome, status, criado_em, cd_vend
+    INTO v_record
+    FROM novo_cliente.data_new_cliente
+    WHERE status = 'aprovado'
+      AND (
+          regexp_replace(cpf_cnpj, '\D', '', 'g') = v_clean_doc
+          OR cpf_cnpj = v_clean_doc
+      )
+    ORDER BY COALESCE(criado_em, created_at) DESC
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN jsonb_build_object(
+            'exists', true,
+            'client', jsonb_build_object(
+                'id', v_record.id,
+                'razao_social_nome', v_record.razao_social_nome,
+                'status', v_record.status,
+                'criado_em', v_record.criado_em,
+                'cd_vend', v_record.cd_vend
+            )
+        );
+    ELSE
+        RETURN jsonb_build_object('exists', false);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.check_client_already_approved(p_document TEXT)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = novo_cliente, public, auth, extensions
+AS $$
+BEGIN
+    RETURN novo_cliente.check_client_already_approved(p_document);
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
+
+-- 7. Atualização da RPC insert_novo_cliente no schema novo_cliente
 CREATE OR REPLACE FUNCTION novo_cliente.insert_novo_cliente(client_payload JSONB)
 RETURNS JSONB
 SECURITY DEFINER
@@ -197,6 +256,20 @@ BEGIN
     v_clean_phone := regexp_replace(COALESCE(client_payload->>'telefone', client_payload->>'phone', ''), '\D', '', 'g');
     v_clean_cep := NULLIF(regexp_replace(COALESCE(client_payload->>'cep', client_payload->>'zipcode', ''), '\D', '', 'g'), '');
     v_clean_del_cep := NULLIF(regexp_replace(COALESCE(client_payload->>'entrega_cep', client_payload->>'delivery_zipcode', ''), '\D', '', 'g'), '');
+
+    -- Checagem de segurança: Se o documento já possui cadastro APROVADO e integrado no sistema
+    IF v_clean_doc <> '' THEN
+        IF EXISTS (
+            SELECT 1 FROM novo_cliente.data_new_cliente
+            WHERE status = 'aprovado'
+              AND (
+                  regexp_replace(cpf_cnpj, '\D', '', 'g') = v_clean_doc
+                  OR cpf_cnpj = v_clean_doc
+              )
+        ) THEN
+            RAISE EXCEPTION 'CLIENT_ALREADY_APPROVED: Este CPF/CNPJ já possui cadastro APROVADO e integrado no sistema.';
+        END IF;
+    END IF;
 
     IF client_payload->>'auth_user_id' IS NOT NULL AND client_payload->>'auth_user_id' ~ '^[0-9a-fA-F-]{36}$' THEN
         v_auth_uuid := (client_payload->>'auth_user_id')::uuid;
