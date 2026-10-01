@@ -258,61 +258,13 @@ export const fetchSegments = async (forceRefresh = false) => {
     return { success: true, data: cachedSegments };
   }
 
-  if (isSupabaseConfigured && supabase) {
-    try {
-      // 1. Tenta via RPC pública get_segmentos (não requer expor schema no PostgREST)
-      const { data: rpcSegments, error: rpcErr } = await supabase.rpc('get_segmentos');
-      if (!rpcErr && rpcSegments && rpcSegments.length > 0) {
-        const normalized = rpcSegments.map((item) => ({
-          ram_ativ: String(item.ram_ativ ?? item.id ?? '').trim(),
-          descricao: String(item.descricao ?? item.nome ?? '').trim()
-        })).filter(i => i.ram_ativ && i.descricao);
-
-        if (normalized.length > 0) {
-          normalized.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'));
-          cachedSegments = normalized;
-          return { success: true, data: normalized };
-        }
-      }
-
-      // 2. Tenta consulta no schema novo_cliente
-      let res = await supabase
-        .schema('novo_cliente')
-        .from('segmento')
-        .select('*');
-
-      // 3. Se falhar ou vier vazio, tenta sem schema explícito / schema public
-      if (res.error || !res.data || res.data.length === 0) {
-        res = await supabase
-          .from('segmento')
-          .select('*');
-      }
-
-      if (res.data && res.data.length > 0) {
-        const normalized = res.data.map((item) => {
-          const id = item.ram_ativ ?? item.RAM_ATIV ?? item.id ?? item.codigo ?? item.cd_segmento ?? '';
-          const desc = item.descricao ?? item.DESCRICAO ?? item.nome ?? item.segmento ?? '';
-          return {
-            ram_ativ: String(id).trim(),
-            descricao: String(desc).trim()
-          };
-        }).filter((item) => item.descricao && item.ram_ativ);
-
-        if (normalized.length > 0) {
-          // Ordena por descrição em ordem alfabética
-          normalized.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'));
-          cachedSegments = normalized;
-          return { success: true, data: normalized };
-        }
-      }
-    } catch (err) {
-      console.warn('Erro ao carregar segmentos do Supabase:', err);
-    }
-  }
-
+  const normalized = [...DEFAULT_SEGMENTS].sort((a, b) => 
+    a.descricao.localeCompare(b.descricao, 'pt-BR')
+  );
+  cachedSegments = normalized;
   return { 
     success: true, 
-    data: cachedSegments || DEFAULT_SEGMENTS 
+    data: normalized 
   };
 };
 
