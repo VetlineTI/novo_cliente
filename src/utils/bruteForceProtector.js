@@ -6,7 +6,7 @@
  */
 
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutos (300.000 ms)
+const LOCKOUT_DURATION_MS = 3 * 60 * 1000; // 5 minutos (300.000 ms)
 
 /**
  * Consulta o status atual de bloqueio de um identificador (e-mail)
@@ -20,7 +20,7 @@ export const getBruteForceStatus = (identifier) => {
 
   const cleanId = identifier.toLowerCase().trim();
   const key = `bf_lock_${cleanId}`;
-  
+
   try {
     const raw = localStorage.getItem(key);
     if (!raw) {
@@ -122,7 +122,7 @@ export const resetBruteForce = (identifier) => {
   const key = `bf_lock_${cleanId}`;
   try {
     localStorage.removeItem(key);
-  } catch (err) {}
+  } catch (err) { }
 };
 
 /**
