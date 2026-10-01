@@ -1524,6 +1524,165 @@ export const RegistrationForm = ({ onSuccess }) => {
               </div>
             </div>
           )}
+
+          {/* PARA PF: RENDERIZA NOME COMPLETO E CRMV COM BOTÃO DE VALIDAÇÃO */}
+          {personType === 'PF' && !duplicateApprovedClient && (
+            <div className="space-y-4 pt-2 animate-fade-in">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                {/* Nome Completo */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <User className="w-4 h-4 text-brand-green" />
+                      <span>Nome Completo</span>
+                      <span className="text-red-500">*</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+                    }}
+                    placeholder="Nome Completo do Médico(a) Veterinário(a)"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                      errors.fullName ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                    }`}
+                  />
+                  {errors.fullName && (
+                    <p className="text-xs text-red-500 mt-1 font-medium">{errors.fullName}</p>
+                  )}
+                </div>
+
+                {/* CRMV (Registro Profissional) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-brand-green" />
+                      <span>CRMV (Registro Profissional)</span>
+                      <span className="text-red-500">*</span>
+                    </span>
+                    {loadingCrmv && (
+                      <span className="flex items-center gap-1 text-xs text-brand-green font-normal">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Consultando CFMV...
+                      </span>
+                    )}
+                    {!loadingCrmv && crmvData?.isAtivo && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        CRMV Ativo
+                      </span>
+                    )}
+                  </label>
+
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={crmv}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setCrmv(v);
+                          setCrmvData(null);
+                          setCrmvAlert('');
+                          if (errors.crmv) setErrors(prev => ({ ...prev, crmv: null }));
+                        }}
+                        onBlur={() => handleCrmvBlur(crmv)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCrmvBlur(crmv);
+                          }
+                        }}
+                        placeholder="Ex: 12345/SP ou 12345"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                          errors.crmv || (crmvData && !crmvData.isAtivo)
+                            ? 'border-red-400 bg-red-50/20'
+                            : (crmvData?.isAtivo ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
+                        }`}
+                      />
+                      {loadingCrmv && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <Loader2 className="w-4 h-4 text-brand-green animate-spin" />
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCrmvBlur(crmv)}
+                      disabled={loadingCrmv || !crmv.trim()}
+                      className="px-4 py-2.5 bg-brand-green hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                      title="Consultar situação do CRMV no CFMV"
+                    >
+                      {loadingCrmv ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <Search className="w-4 h-4 text-white" />
+                      )}
+                      <span>Validar CRMV</span>
+                    </button>
+                  </div>
+
+                  {errors.crmv && (
+                    <p className="text-xs text-red-500 mt-1 font-medium">{errors.crmv}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Feedback CRMV: Loading */}
+              {loadingCrmv && (
+                <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-brand-dark flex items-center gap-2 animate-fade-in">
+                  <Loader2 className="w-4 h-4 text-brand-green animate-spin flex-shrink-0" />
+                  <span>Consultando registro do CRMV no Conselho Federal de Medicina Veterinária (CFMV)...</span>
+                </div>
+              )}
+
+              {/* Feedback CRMV: Inativo ou Inválido */}
+              {!loadingCrmv && crmvData && !crmvData.isAtivo && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake">
+                  <div className="flex items-center gap-2 font-bold text-red-700">
+                    <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
+                    <span>CRMV Inativo ou Não Localizado</span>
+                  </div>
+                  <p>
+                    Situação retornada: <strong className="uppercase font-bold text-red-900">{crmvData.situacao || 'Inativo / Não Regular'}</strong>.
+                  </p>
+                  <p className="text-[11px] text-red-700">
+                    {crmvData.error || 'O credenciamento de Pessoa Física exige CRMV com situação Ativa e Regular no CFMV para desbloquear o formulário.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Feedback CRMV: Ativo / Sucesso */}
+              {!loadingCrmv && crmvData?.isAtivo && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in">
+                  <div className="flex items-center gap-2 font-bold text-emerald-700">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>CRMV Ativo e Regular no CFMV</span>
+                  </div>
+                  <p className="text-emerald-900">
+                    Profissional: <strong className="font-semibold">{crmvData.nome || fullName}</strong> | CRMV: <strong className="font-semibold">{crmvData.crmv || crmv}</strong> {crmvData.uf ? `(${crmvData.uf})` : ''}
+                  </p>
+                  <p className="text-[11px] text-emerald-700">
+                    Registro validado com sucesso! Os campos abaixo foram liberados para preenchimento.
+                  </p>
+                </div>
+              )}
+
+              {/* Feedback CRMV: Dica Inicial */}
+              {!loadingCrmv && !crmvData && (
+                <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/80 text-[11px] text-blue-800 flex items-start gap-2">
+                  <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Digite o número do seu <strong>CRMV</strong> e clique em <strong>Validar CRMV</strong> (ou saia do campo). Os demais campos do cadastro serão liberados assim que a situação <strong>ATIVA</strong> for confirmada no Conselho Federal de Medicina Veterinária.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* BLOQUEIO DE CAMPOS SE DUPLICADO APROVADO, CNPJ (PJ) OU CRMV (PF) NÃO ESTIVER ATIVO */}
