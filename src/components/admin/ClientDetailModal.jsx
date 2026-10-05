@@ -91,6 +91,7 @@ export const ClientDetailModal = ({
         cd_vend: client.cd_vend || 'ATENA',
         tab_pre: client.tab_pre || 'VTL01',
         tp_ped: client.tp_ped || 'VTL01',
+        cd_clien: client.cd_clien || client.client_code || null,
         limite_credito: client.limite_credito !== undefined && client.limite_credito !== null ? Number(client.limite_credito) : (client.credit_limit !== undefined && client.credit_limit !== null ? Number(client.credit_limit) : 0),
         has_different_delivery_address: Boolean(client.has_different_delivery_address),
         delivery_zipcode: client.delivery_zipcode || '',
@@ -499,6 +500,8 @@ export const ClientDetailModal = ({
     setIsViewerOpen(true);
   };
 
+  const clientCode = formData.cd_clien || client.cd_clien || client.client_code;
+  const isAlreadyApprovedAndIntegrated = (formData.status === 'aprovado' || client.status === 'aprovado') && Boolean(clientCode);
   const currentFolderData = folders.find((f) => f.id === activeFolder) || folders[0];
   const getCleanPhone = (phone) => phone ? phone.replace(/\D/g, '') : '';
   const whatsAppUrl = formData.phone ? `https://wa.me/55${getCleanPhone(formData.phone)}?text=Ol%C3%A1%2C%20falamos%20da%20Vetline%20Distribuidora%20sobre%20o%20seu%20cadastro.` : null;
@@ -540,6 +543,13 @@ export const ClientDetailModal = ({
                       formData.status === 'recusado' ? 'Recusado' :
                         formData.status === 'em_analise' ? 'Em Análise' : 'Pendente'}
                   </span>
+
+                  {/* Badge Código ERP se já gerado */}
+                  {clientCode && (
+                    <span className="px-2 py-0.2 rounded-full text-[11px] font-bold bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 flex items-center gap-1">
+                      <span>Cód: {clientCode}</span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 truncate mt-0.5">
@@ -1479,30 +1489,37 @@ export const ClientDetailModal = ({
                 <span>Recusar</span>
               </button>
 
-              {/* Botão: Confirmar / Aprovar */}
-              <button
-                type="button"
-                onClick={() => handleSaveAll('aprovado')}
-                disabled={isSaving}
-                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  isSaving ? 'opacity-80 cursor-wait' : ''
-                } ${formData.status === 'aprovado'
-                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                  }`}
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Aprovando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Confirmar & Aprovar</span>
-                  </>
-                )}
-              </button>
+              {/* Botão: Confirmar / Aprovar (Ocultado quando já aprovado e gerou o código do cliente) */}
+              {isAlreadyApprovedAndIntegrated ? (
+                <div className="px-3.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center gap-1.5 shadow-xs select-none">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Cadastrado no ERP (Cód: {clientCode})</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSaveAll('aprovado')}
+                  disabled={isSaving}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isSaving ? 'opacity-80 cursor-wait' : ''
+                  } ${formData.status === 'aprovado'
+                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                    }`}
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Aprovando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Confirmar & Aprovar</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
