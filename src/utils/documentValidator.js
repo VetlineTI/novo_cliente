@@ -765,6 +765,50 @@ export async function validateCrmvAttachment(file, { expectedCrmv = '', expected
       };
     }
 
+    // 2. CHECAGEM DE CPF NO DOCUMENTO DO CRMV (Se presente na carteira profissional)
+    if (cleanExpectedCpf && cleanExpectedCpf.length === 11) {
+      const foundCpfs = [];
+      const cpfRegexes = [
+        /\b\d{3}\.?\d{3}\.?\d{3}[-\/]?\d{2}\b/g,
+        /\b\d{9}[-\/]\d{2}\b/g,
+        /\b\d{11}\b/g,
+        /cpf[^\d]*(\d{9,11}[-\/]?\d{0,2})/gi
+      ];
+      cpfRegexes.forEach(rgx => {
+        const matches = fullRawText.match(rgx) || [];
+        matches.forEach(m => {
+          const clean = unmask(m);
+          if (clean.length === 11 && !foundCpfs.includes(clean)) {
+            foundCpfs.push(clean);
+          }
+        });
+      });
+
+      if (qrData) {
+        const qrCpfMatches = qrData.match(/\b\d{11}\b/g) || [];
+        qrCpfMatches.forEach(c => {
+          const clean = unmask(c);
+          if (clean.length === 11 && !foundCpfs.includes(clean)) {
+            foundCpfs.push(clean);
+          }
+        });
+      }
+
+      // Se encontrou CPFs no documento do CRMV e nenhum deles coincide com o CPF informado no cadastro
+      if (foundCpfs.length > 0 && !foundCpfs.includes(cleanExpectedCpf) && !unmask(fullRawText).includes(cleanExpectedCpf)) {
+        const divergentCpf = foundCpfs[0];
+        return {
+          isValid: false,
+          isVerified: false,
+          isWarning: true,
+          reasons: [
+            `O documento anexado apresenta o CPF ${maskCPF(divergentCpf)}, divergente do CPF informado no cadastro (${maskCPF(cleanExpectedCpf)}).`,
+            'Por favor, anexe a carteira ou certidão do CRMV pertencente ao titular informado no cadastro.'
+          ]
+        };
+      }
+    }
+
     // Se o CRMV coincidiu
     if (hasMatchingCrmv) {
       return {

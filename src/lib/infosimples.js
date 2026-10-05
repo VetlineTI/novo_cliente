@@ -538,6 +538,147 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
 };
 
 /**
+ * Validação rigorosa e cruzamento de CRMV com CPF e Situação Cadastral no CFMV via Infosimples
+ * @param {string} crmv Número ou termo do CRMV informado
+ * @param {string} cpf CPF do profissional (11 dígitos)
+ * @param {string} uf Estado / UF do conselho regional
+ * @param {string} nomeCompleto Nome completo informado no formulário
+ * @returns {Promise<{success: boolean, isValid: boolean, isAtivo: boolean, isMismatch: boolean, situacao: string, nome?: string, crmv?: string, uf?: string, error?: string, raw?: any}>}
+ */
+export const validarCRMVComCPF = async (crmv, cpf = '', uf = '', nomeCompleto = '') => {
+  if (!crmv || !String(crmv).trim()) {
+    return {
+      success: false,
+      isValid: false,
+      isAtivo: false,
+      isMismatch: false,
+      error: 'Informe o número do CRMV para validação.'
+    };
+  }
+
+  const cleanCrmvDigits = String(crmv).replace(/\D/g, '');
+  const cleanCpfDigits = String(cpf || '').replace(/\D/g, '');
+  let cleanUf = String(uf || '').trim().toUpperCase();
+
+  // 1. Consulta o CRMV diretamente no CFMV
+  const crmvRes = await consultarCRMV(crmv, cleanUf);
+  
+  if (!crmvRes || !crmvRes.success) {
+    return {
+      success: false,
+      isValid: false,
+      isAtivo: false,
+      isMismatch: false,
+      situacao: 'Não Localizado',
+      error: crmvRes?.error || 'Profissional / CRMV não localizado no CFMV para este estado.'
+    };
+  }
+
+  // 2. Checa se o CRMV está ATIVO no CFMV
+  if (!crmvRes.isAtivo) {
+    return {
+      success: true,
+      isValid: false,
+      isAtivo: false,
+      isMismatch: false,
+      situacao: crmvRes.situacao || 'Inativo',
+      nome: crmvRes.nome,
+      crmv: crmvRes.crmv,
+      uf: crmvRes.uf,
+      error: `O CRMV ${crmvRes.crmv || cleanCrmvDigits} consta como "${crmvRes.situacao}" no CFMV. Somente profissionais com registro ATIVO podem se cadastrar.`
+    };
+  }
+
+  // 3. Cruzamento direto com CPF se retornado no registro do CFMV
+  const crmvRawData = crmvRes.data || {};
+  const crmvReturnedCpf = String(crmvRawData.cpf || crmvRawData.cpf_cnpj || crmvRawData.documento || '').replace(/\D/g, '');
+  
+  if (cleanCpfDigits.length === 11 && crmvReturnedCpf.length === 11) {
+    if (crmvReturnedCpf !== cleanCpfDigits) {
+      return {
+        success: true,
+        isValid: false,
+        isAtivo: true,
+        isMismatch: true,
+        situacao: crmvRes.situacao,
+        nome: crmvRes.nome,
+        crmv: crmvRes.crmv,
+        uf: crmvRes.uf,
+        error: `O CRMV informado (${crmvRes.crmv}) pertence a outro CPF e não corresponde ao CPF cadastrado.`
+      };
+    }
+  }
+
+  // 4. Se o CPF informado tiver 11 dígitos, fazemos a busca cruzada pelo CPF no CFMV para confirmar se pertence a este CRMV
+  if (cleanCpfDigits.length === 11) {
+    try {
+      const cpfCfmvRes = await consultarCRMV(cleanCpfDigits, cleanUf);
+      if (cpfCfmvRes && cpfCfmvRes.success && cpfCfmvRes.crmv) {
+        const crmvFromCpfDigits = String(cpfCfmvRes.crmv).replace(/\D/g, '');
+        // Se a busca por CPF no CFMV retornou um CRMV e ele não bate com o CRMV informado
+        if (crmvFromCpfDigits && cleanCrmvDigits && !crmvFromCpfDigits.includes(cleanCrmvDigits) && !cleanCrmvDigits.includes(crmvFromCpfDigits)) {
+          return {
+            success: true,
+            isValid: false,
+            isAtivo: true,
+            isMismatch: true,
+            situacao: crmvRes.situacao,
+            nome: crmvRes.nome,
+            crmv: crmvRes.crmv,
+            uf: crmvRes.uf,
+            error: `O CPF informado está registrado com outro CRMV (${cpfCfmvRes.crmv}) no CFMV, diferente do CRMV digitado (${crmv}).`
+          };
+        }
+      }
+    } catch (cpfCheckErr) {
+      console.warn('Verificação secundária por CPF no CFMV não conclusiva:', cpfCheckErr);
+    }
+  }
+
+  // 5. Cruzamento por Nome (se nome digitado e nome do titular no CFMV forem fornecidos)
+  if (nomeCompleto && nomeCompleto.trim().length >= 3 && crmvRes.nome) {
+    const cleanInputName = nomeCompleto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const cleanCfmvName = crmvRes.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    
+    const inputTokens = cleanInputName.split(/\s+/).filter(t => t.length > 2);
+    const cfmvTokens = cleanCfmvName.split(/\s+/).filter(t => t.length > 2);
+    
+    const matchingTokens = inputTokens.filter(t => cfmvTokens.includes(t));
+    const isFirstTokenMatch = inputTokens[0] && cfmvTokens[0] && inputTokens[0] === cfmvTokens[0];
+
+    // Se ambos tiverem pelo menos 2 partes de nome e nenhum token bater nem o primeiro nome
+    if (inputTokens.length >= 2 && cfmvTokens.length >= 2 && matchingTokens.length === 0 && !isFirstTokenMatch) {
+      return {
+        success: true,
+        isValid: false,
+        isAtivo: true,
+        isMismatch: true,
+        situacao: crmvRes.situacao,
+        nome: crmvRes.nome,
+        crmv: crmvRes.crmv,
+        uf: crmvRes.uf,
+        error: `O titular deste CRMV no CFMV é "${crmvRes.nome}", diferente do titular informado no cadastro ("${nomeCompleto}").`
+      };
+    }
+  }
+
+  return {
+    success: true,
+    isValid: true,
+    isAtivo: true,
+    isMismatch: false,
+    situacao: crmvRes.situacao,
+    nome: crmvRes.nome,
+    crmv: crmvRes.crmv,
+    uf: crmvRes.uf,
+    tipo: crmvRes.tipo,
+    receiptUrl: crmvRes.receiptUrl,
+    data: crmvRes.data,
+    raw: crmvRes.raw
+  };
+};
+
+/**
  * Executa a esteira de Auditoria / Bureau para um cliente PJ ou PF
  * - Para PJ: Consulta JUCESP, CENPROT (Protestos) e SINTEGRA
  * - Para PF: Consulta CENPROT (Protestos CPF) na Direct Data

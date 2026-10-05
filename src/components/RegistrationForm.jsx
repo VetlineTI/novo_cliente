@@ -28,7 +28,7 @@ import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
-import { executarAuditoriaBureau, consultarSintegra, consultarCRMV } from '../lib/infosimples';
+import { executarAuditoriaBureau, consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
 import { 
   maskCPF, 
@@ -304,7 +304,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
-  // Validação em tempo real do CRMV no CFMV via Infosimples
+  // Validação em tempo real do CRMV no CFMV via Infosimples e cruzamento obrigatório com CPF
   const handleCrmvBlur = async (crmvValOverride = null) => {
     const valToQuery = typeof crmvValOverride === 'string' ? crmvValOverride : crmv;
     if (!valToQuery || !valToQuery.trim()) {
@@ -317,29 +317,30 @@ export const RegistrationForm = ({ onSuccess }) => {
     setCrmvAlert('');
     try {
       const ufSearch = state || 'SP';
-      const res = await consultarCRMV(valToQuery, ufSearch);
-      if (res && res.success) {
+      const cleanCpf = personType === 'PF' ? unmask(documentNumber) : '';
+      const res = await validarCRMVComCPF(valToQuery, cleanCpf, ufSearch, fullName);
+      if (res && res.success && res.isValid && res.isAtivo && !res.isMismatch) {
         setCrmvData(res);
-        if (!res.isAtivo) {
-          setCrmvAlert(`Atenção: Este CRMV consta como "${res.situacao}" no CFMV.`);
-        } else {
-          setCrmvAlert('');
-          // Sugere o nome do profissional se o campo de Nome Completo estiver vazio
-          if (res.nome && !fullName.trim()) {
-            setFullName(res.nome);
-            if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
-          }
-          if (res.uf && !state) {
-            setState(res.uf);
-          }
+        setCrmvAlert('');
+        // Sugere o nome do profissional se o campo de Nome Completo estiver vazio
+        if (res.nome && !fullName.trim()) {
+          setFullName(res.nome);
+          if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+        }
+        if (res.uf && !state) {
+          setState(res.uf);
         }
         return res;
       } else {
         const fallbackObj = {
-          success: false,
-          isAtivo: false,
-          situacao: res?.error || 'Não Localizado / Inativo',
-          error: res?.error || 'Não foi possível confirmar o CRMV no CFMV.'
+          success: res?.success || false,
+          isValid: false,
+          isAtivo: res?.isAtivo || false,
+          isMismatch: res?.isMismatch || false,
+          situacao: res?.situacao || 'Inválido / Divergente',
+          nome: res?.nome || '',
+          crmv: res?.crmv || valToQuery,
+          error: res?.error || 'Não foi possível confirmar a regularidade do CRMV no CFMV ou houve divergência com o CPF informado.'
         };
         setCrmvData(fallbackObj);
         setCrmvAlert(fallbackObj.error);
@@ -349,7 +350,9 @@ export const RegistrationForm = ({ onSuccess }) => {
       console.warn('Erro ao consultar CRMV:', err);
       const errObj = {
         success: false,
+        isValid: false,
         isAtivo: false,
+        isMismatch: false,
         situacao: 'Erro de Comunicação',
         error: 'Não foi possível consultar o CRMV no momento. Tente novamente.'
       };
@@ -481,6 +484,10 @@ export const RegistrationForm = ({ onSuccess }) => {
     } else if (personType === 'PF') {
       if (clean.length < 11) {
         setDuplicateApprovedClient(null);
+        if (crmvData) {
+          setCrmvData(null);
+          setCrmvAlert('');
+        }
       } else if (clean.length === 11 && isValidCPF(clean)) {
         setLoadingDuplicateCheck(true);
         const dupCheck = await checkExistingApprovedClient(clean);
@@ -500,6 +507,11 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
 
         setDuplicateApprovedClient(null);
+
+        // Se o CRMV já estiver preenchido, revalida o cruzamento entre o novo CPF e o CRMV
+        if (crmv && crmv.trim()) {
+          handleCrmvBlur(crmv);
+        }
 
         // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
         bureauAuditResultRef.current = null;
@@ -648,8 +660,8 @@ export const RegistrationForm = ({ onSuccess }) => {
     } else {
       if (!cleanDoc || cleanDoc.length !== 11 || !isValidCPF(cleanDoc)) {
         newErrors.documentNumber = 'Informe um CPF válido com 11 dígitos.';
-      } else if (!crmvData || !crmvData.isAtivo) {
-        newErrors.crmv = 'O cadastro de Pessoa Física exige validação de CRMV ativo e regular no CFMV.';
+      } else if (!crmvData || !crmvData.isValid || !crmvData.isAtivo || crmvData.isMismatch) {
+        newErrors.crmv = crmvData?.error || 'O cadastro de Pessoa Física exige validação de CRMV ativo, regular no CFMV e correspondente ao CPF do titular.';
       }
     }
 
@@ -910,23 +922,23 @@ export const RegistrationForm = ({ onSuccess }) => {
       }
     }
 
-    // Validação de CRMV (Situação no CFMV e Cruzamento com Documento Anexado) para Pessoa Física
+    // Validação de CRMV (Situação no CFMV, Cruzamento com CPF e Documento Anexado) para Pessoa Física
     if (personType === 'PF') {
       setIsValidatingPartnerDoc(true);
       try {
-        // 1. Checagem de situação ativa no CFMV via Infosimples
+        // 1. Checagem de situação ativa no CFMV e cruzamento com CPF via Infosimples
         let crmvRes = crmvData;
-        if (!crmvRes) {
-          crmvRes = await handleCrmvBlur();
+        if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
+          crmvRes = await handleCrmvBlur(crmv);
         }
-        if (crmvRes && crmvRes.success && !crmvRes.isAtivo) {
+        if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
           setPartnerMismatchData({
             title: 'O cadastro não foi concluído',
             subtitle: 'Divergência identificada no Conselho de Medicina Veterinária (CFMV)',
             reasons: [
-              `Situação no CFMV: "${crmvRes.situacao}".`,
-              'O cadastro como Pessoa Física exige registro profissional ativo e regular no CRMV.',
-              `Profissional consultado: ${crmvRes.nome || fullName || 'Não identificado'}.`
+              crmvRes?.error || 'Não foi possível confirmar a regularidade do CRMV ou houve divergência com o CPF informado.',
+              'O cadastro como Pessoa Física exige registro profissional ATIVO no CRMV e correspondente ao CPF do titular.',
+              `Profissional consultado: ${crmvRes?.nome || fullName || 'Não identificado'}.`
             ],
             authorizedPartners: [],
             hideReupload: true,
@@ -1226,9 +1238,9 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Regras de bloqueio de formulário:
   // - Bloqueia se o documento já possui cadastro APROVADO no sistema
   // - Para PJ: bloqueia se CNPJ não for informado ou não estiver com situação ATIVA na Receita Federal
-  // - Para PF: bloqueia se CRMV não for informado ou não estiver com situação ATIVA no CFMV
+  // - Para PF: bloqueia se CRMV não for informado, não estiver ATIVO no CFMV ou divergir do CPF informado
   const isPjBlocked = personType === 'PJ' && (!!duplicateApprovedClient || !cnpjInfo || !cnpjInfo.isAtiva);
-  const isPfBlocked = personType === 'PF' && (!!duplicateApprovedClient || !crmvData || !crmvData.isAtivo);
+  const isPfBlocked = personType === 'PF' && (!!duplicateApprovedClient || !crmvData || !crmvData.isValid || !crmvData.isAtivo || crmvData.isMismatch);
   const isFormBlocked = !!duplicateApprovedClient || (personType === 'PJ' ? isPjBlocked : isPfBlocked);
 
   return (
@@ -1650,34 +1662,36 @@ export const RegistrationForm = ({ onSuccess }) => {
                 </div>
               )}
 
-              {/* Feedback CRMV: Inativo ou Inválido */}
-              {!loadingCrmv && crmvData && !crmvData.isAtivo && (
+              {/* Feedback CRMV: Inativo, Inválido ou Divergente de CPF */}
+              {!loadingCrmv && crmvData && (!crmvData.isAtivo || !crmvData.isValid || crmvData.isMismatch) && (
                 <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake">
                   <div className="flex items-center gap-2 font-bold text-red-700">
                     <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
-                    <span>CRMV Inativo ou Não Localizado</span>
+                    <span>
+                      {crmvData.isMismatch ? 'CRMV Divergente do CPF Cadastrado' : 'CRMV Inativo ou Não Localizado'}
+                    </span>
                   </div>
                   <p>
-                    Situação retornada: <strong className="uppercase font-bold text-red-900">{crmvData.situacao || 'Inativo / Não Regular'}</strong>.
+                    Situação / Status: <strong className="uppercase font-bold text-red-900">{crmvData.situacao || 'Inválido / Divergente'}</strong>.
                   </p>
                   <p className="text-[11px] text-red-700">
-                    {crmvData.error || 'O credenciamento de Pessoa Física exige CRMV com situação Ativa e Regular no CFMV para desbloquear o formulário.'}
+                    {crmvData.error || 'O credenciamento de Pessoa Física exige CRMV com situação Ativa e Regular no CFMV pertencente ao CPF do titular.'}
                   </p>
                 </div>
               )}
 
               {/* Feedback CRMV: Ativo / Sucesso */}
-              {!loadingCrmv && crmvData?.isAtivo && (
+              {!loadingCrmv && crmvData?.isAtivo && crmvData?.isValid && !crmvData?.isMismatch && (
                 <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in">
                   <div className="flex items-center gap-2 font-bold text-emerald-700">
                     <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>CRMV Ativo e Regular no CFMV</span>
+                    <span>CRMV Ativo e Vinculado ao Titular no CFMV</span>
                   </div>
                   <p className="text-emerald-900">
                     Profissional: <strong className="font-semibold">{crmvData.nome || fullName}</strong> | CRMV: <strong className="font-semibold">{crmvData.crmv || crmv}</strong> {crmvData.uf ? `(${crmvData.uf})` : ''}
                   </p>
                   <p className="text-[11px] text-emerald-700">
-                    Registro validado com sucesso! Os campos abaixo foram liberados para preenchimento.
+                    Registro profissional validado e vinculado ao titular com sucesso! Os campos abaixo foram liberados para preenchimento.
                   </p>
                 </div>
               )}
