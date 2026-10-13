@@ -28,6 +28,7 @@ import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
+import { sendWhatsAppSignupConfirmation } from '../lib/zapi';
 import { executarAuditoriaBureau, consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
 import {
@@ -1218,6 +1219,22 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
+      // Dispara o envio de confirmação com link oficial via Z-API (WhatsApp)
+      sendWhatsAppSignupConfirmation({
+        email: finalEmail || email,
+        phone: phone,
+        fullName: fullName || payload.full_name,
+        password: finalPassword
+      }).then(res => {
+        if (res.success) {
+          console.log('Link oficial de confirmação enviado via WhatsApp Z-API:', res.phone);
+        } else {
+          console.warn('Alerta no envio de WhatsApp Z-API:', res.error);
+        }
+      }).catch(err => {
+        console.warn('Erro ao chamar Z-API de WhatsApp:', err);
+      });
+
       // Atualiza o e-mail no formulário caso tenha sido ajustado na modal
       if (finalEmail !== email) {
         setEmail(finalEmail);
@@ -1225,7 +1242,12 @@ export const RegistrationForm = ({ onSuccess }) => {
 
       setShowPasswordModal(false);
       if (onSuccess) {
-        onSuccess(result.client || payload, result.session);
+        const clientWithContact = {
+          ...(result.client || payload),
+          phone: phone,
+          email: finalEmail || email
+        };
+        onSuccess(clientWithContact, result.session);
       }
     } catch (err) {
       setSubmitError(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');

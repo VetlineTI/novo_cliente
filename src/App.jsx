@@ -7,7 +7,7 @@ import { SuccessModal } from './components/SuccessModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
-import { getClientSession, logoutClient } from './lib/clientAuth';
+import { getClientSession, logoutClient, confirmClientWhatsApp } from './lib/clientAuth';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ShieldCheck, Lock, ExternalLink } from 'lucide-react';
 
@@ -39,7 +39,7 @@ export function App() {
     const urlSearch = window.location.search || '';
     const urlHash = window.location.hash || '';
 
-    // 1. Detecta parâmetros de ativação de conta (link recebido no e-mail)
+    // 1. Detecta parâmetros de ativação de conta (link recebido no WhatsApp / e-mail)
     const isSignupConfirmed =
       urlSearch.includes('type=signup-confirmed') ||
       urlSearch.includes('type=signup') ||
@@ -49,7 +49,10 @@ export function App() {
 
     if (isSignupConfirmed) {
       setPortalTab('login');
-      setActivationMessage('🎉 Cadastro ativado com sucesso! Seu e-mail foi confirmado. Informe seu e-mail e senha abaixo para acessar seu painel.');
+      setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe seu e-mail e senha abaixo para entrar.');
+
+      // Marca o WhatsApp como confirmado
+      confirmClientWhatsApp().catch(() => {});
       
       // Limpa qualquer sessão temporária criada pelo link para forçar login explícito
       if (isSupabaseConfigured && supabase) {

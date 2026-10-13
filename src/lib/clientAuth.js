@@ -195,6 +195,7 @@ export const registerClientWithAuth = async (clientData, password) => {
             role: 'cliente',
             document_number: clientData.document_number || '',
             phone: clientData.phone || '',
+            whatsapp_confirmed: false
           }
         }
       });
@@ -288,26 +289,21 @@ export const registerClientWithAuth = async (clientData, password) => {
     localStorage.setItem(CLIENT_ACCOUNTS_LOCAL_KEY, JSON.stringify(accs));
   } catch (e) {}
 
-  // Cria a sessão para permitir login ou acesso direto imediato
-  const clientSession = {
-    isAuthenticated: true,
-    authUserId: authUser?.id || savedClient.auth_user_id || `user-${savedClient.id}`,
-    email: cleanEmail,
-    fullName: savedClient.full_name || savedClient.trade_name || cleanEmail.split('@')[0],
-    client: savedClient,
-    loginTime: new Date().toISOString(),
-    isSupabaseAuth: !!authUser
-  };
-
-  try {
-    localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clientSession));
-  } catch (e) {}
+  // Por regra obrigatória, a sessão só é liberada após o cliente clicar no link do WhatsApp
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {}
+  }
+  localStorage.removeItem(CLIENT_STORAGE_KEY);
+  sessionStorage.removeItem(CLIENT_STORAGE_KEY);
 
   return {
     success: true,
     client: savedClient,
-    session: clientSession,
-    requiresActivation: false,
+    session: null,
+    requiresWhatsAppConfirmation: true,
+    requiresActivation: true,
     email: cleanEmail
   };
 };
@@ -373,6 +369,19 @@ export const loginClient = async (email, password, rememberMe = true) => {
 
       if (!authError && authData?.user) {
         authUser = authData.user;
+        const meta = authUser.user_metadata || {};
+
+        // Regra Obrigatória: Cliente deve ter confirmado pelo WhatsApp antes de acessar
+        if (meta.role === 'cliente' && meta.whatsapp_confirmed === false) {
+          await supabase.auth.signOut().catch(() => {});
+          return {
+            success: false,
+            isWhatsAppPending: true,
+            email: cleanEmail,
+            phone: meta.phone || '',
+            error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
+          };
+        }
       } else if (authError) {
         // Se der 'Email not confirmed' (caso tenha sido criado anteriormente com confirmação pendente),
         // atualiza via RPC ensure_client_auth_user para liberar imediatamente
@@ -625,6 +634,37 @@ export const updateUserPassword = async (newPassword) => {
     } catch (err) {
       return { success: false, error: err.message || 'Erro ao salvar nova senha.' };
     }
+  }
+
+  return { success: true };
+};
+
+/**
+ * Marca o cliente como confirmado via WhatsApp
+ * @param {string} [email] E-mail do cliente
+ * @returns {Promise<{success: boolean}>}
+ */
+export const confirmClientWhatsApp = async (email = '') => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.auth.updateUser({
+        data: { whatsapp_confirmed: true }
+      });
+    } catch (e) {
+      console.warn('Atualização de metadata do WhatsApp local:', e);
+    }
+
+    try {
+      if (cleanEmail) {
+        await fetch('/api/send-whatsapp-signup?action=confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail })
+        });
+      }
+    } catch (e) {}
   }
 
   return { success: true };

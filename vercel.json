@@ -5,6 +5,9 @@
     },
     "api/directd.js": {
       "maxDuration": 60
+    },
+    "api/send-whatsapp-signup.js": {
+      "maxDuration": 30
     }
   },
   "headers": [

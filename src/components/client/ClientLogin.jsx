@@ -10,9 +10,11 @@ import {
   Loader2, 
   Sparkles,
   UserPlus,
-  CheckCircle2
+  CheckCircle2,
+  MessageCircle
 } from 'lucide-react';
 import { loginClient } from '../../lib/clientAuth';
+import { sendWhatsAppSignupConfirmation } from '../../lib/zapi';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { 
   getBruteForceStatus, 
@@ -36,6 +38,32 @@ export const ClientLogin = ({
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [attemptsLeft, setAttemptsLeft] = useState(5);
+  const [whatsAppPending, setWhatsAppPending] = useState(false);
+  const [pendingPhone, setPendingPhone] = useState('');
+  const [resendingWhatsApp, setResendingWhatsApp] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState('');
+
+  const handleResendWhatsApp = async () => {
+    if (!email) return;
+    setResendingWhatsApp(true);
+    setResendSuccess('');
+    setError('');
+    try {
+      const res = await sendWhatsAppSignupConfirmation({
+        email: email.trim(),
+        phone: pendingPhone || '55'
+      });
+      if (res.success) {
+        setResendSuccess('✓ Novo link de ativação enviado com sucesso para o seu WhatsApp!');
+      } else {
+        setError(res.error || 'Não foi possível reenviar a mensagem. Verifique suas credenciais.');
+      }
+    } catch (err) {
+      setError('Falha ao comunicar com o serviço de WhatsApp.');
+    } finally {
+      setResendingWhatsApp(false);
+    }
+  };
 
   // Checa status de bloqueio por força bruta ao carregar ou digitar e-mail
   useEffect(() => {
@@ -99,11 +127,18 @@ export const ClientLogin = ({
       if (res.success && res.session) {
         // Sucesso: reseta o histórico de tentativas
         resetBruteForce(cleanEmail);
+        setWhatsAppPending(false);
         if (onLoginSuccess) {
           onLoginSuccess(res.session);
         }
+      } else if (res.isWhatsAppPending) {
+        // Cadastro existente com senha correta, mas pendente de clique no WhatsApp
+        setWhatsAppPending(true);
+        setPendingPhone(res.phone || '');
+        setError('');
       } else {
         // Falha: registra tentativa de força bruta
+        setWhatsAppPending(false);
         const lockRes = recordFailedLogin(cleanEmail);
         setLockoutSeconds(lockRes.remainingSeconds);
         setAttemptsLeft(lockRes.attemptsLeft);
@@ -139,6 +174,56 @@ export const ClientLogin = ({
             <p className="text-emerald-800 mt-0.5 leading-relaxed">
               {activationSuccessMessage}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de Pendência Obrigatória do WhatsApp */}
+      {whatsAppPending && (
+        <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-950 space-y-3 shadow-xs animate-fade-in">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-extrabold text-amber-950 text-sm sm:text-base flex items-center gap-2">
+                <span>Ativação via WhatsApp Obrigatória</span>
+              </h4>
+              <p className="text-xs sm:text-sm text-amber-900 leading-relaxed">
+                Por motivos de segurança, você precisa <strong>tocar no link oficial que enviamos para o seu WhatsApp</strong> para ativar seu acesso à Área do Cliente.
+              </p>
+            </div>
+          </div>
+
+          {resendSuccess && (
+            <div className="p-2.5 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+              <span>{resendSuccess}</span>
+            </div>
+          )}
+
+          <div className="pt-1 flex flex-col sm:flex-row items-center gap-2.5 justify-between">
+            <span className="text-xs text-amber-800">
+              Não encontrou a mensagem no WhatsApp?
+            </span>
+            <button
+              type="button"
+              onClick={handleResendWhatsApp}
+              disabled={resendingWhatsApp}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {resendingWhatsApp ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Reenviando...</span>
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Reenviar link no WhatsApp</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}

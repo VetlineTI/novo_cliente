@@ -11,12 +11,16 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
   - **Aba "Já sou cliente"**: Formulário de login direto com e-mail e senha cadastrados no Supabase Auth, permitindo acesso imediato à Área do Cliente.
   - **Aba "Ainda não sou"**: Formulário completo de credenciamento e apresentação institucional da Vetline.
 
-### 2. 🛡️ Criação de Senha & Acesso Imediato à Área do Cliente
+### 2. 🛡️ Criação de Senha & Confirmação Obrigatória via WhatsApp (Z-API)
 - Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
 - O usuário confirma o **e-mail para login** e define sua **senha de acesso**.
-- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com ativação direta e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
-- **Acesso Imediato (Sem bloqueio de e-mail)**: O cliente é liberado imediatamente sem dependência de link de confirmação por e-mail, evitando limites de envio (rate limits) de provedores de e-mail.
-- **Login Rápido**: O cliente pode acessar a Área do Cliente a qualquer momento na aba **"Já sou cliente"** informando seu e-mail e senha cadastrados.
+- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com metadado `whatsapp_confirmed: false` e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
+- **Disparo Automático via Z-API**: Gera o link oficial de signup com token do Supabase Admin e dispara a mensagem no WhatsApp do cliente.
+- **Ativação Obrigatória no App**:
+  - Para acessar a Área do Cliente, é **obrigatório** tocar no link seguro enviado no WhatsApp.
+  - Se tentar logar antes de clicar no link, o sistema exibe alerta amigável de pendência e oferece o botão para **"Reenviar link no WhatsApp"**.
+  - Ao clicar no link do WhatsApp, a aplicação detecta o token, marca a conta como ativada (`whatsapp_confirmed: true`) e libera o acesso à Área do Cliente.
+  - **Zero impacto nos demais sistemas**: A verificação é controlada na camada da aplicação, mantendo a flag global do Supabase desligada para não interferir em outros apps.
 
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
 - Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:
@@ -82,10 +86,12 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
 | `api/directd.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Direct Data (evita CORS). |
+| `api/send-whatsapp-signup.js` | Serverless Function para Vercel: Gera link oficial de ativação via Supabase Admin e dispara confirmação via WhatsApp pela Z-API. |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
+| `src/lib/zapi.js` | Módulo de integração com a Z-API para disparo do link de confirmação de cadastro no WhatsApp do cliente. |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/lib/infosimples.js` | Módulo de integração com APIs de bureau (JUCESP Ficha Simplificada, CENPROT Protestos e SINTEGRA). |
 | `src/lib/directd.js` | Módulo de integração com a API Direct Data: `ReceitaPJParticipacaoSocietaria` (Ficha Oficial da Receita com QSA e Participações), `CadastroPessoaJuridicaPlus`, `ProtestosOnline` (IEPTB / CENPROT Nacional) e `Sintegra` (Consulta e validação cadastral estadual com comprovante em PDF). |

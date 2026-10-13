@@ -7,7 +7,8 @@ import {
   ArrowRight, 
   Sparkles,
   KeyRound,
-  FileCheck
+  FileCheck,
+  MessageCircle
 } from 'lucide-react';
 
 export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
@@ -57,31 +58,43 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
           </p>
         </div>
 
-        {/* BOX DE ACESSO IMEDIATO LIBERADO */}
+        {/* BOX DE CONFIRMAÇÃO VIA WHATSAPP / E-MAIL */}
         <div className="bg-linear-to-b from-emerald-50/70 to-blue-50/50 rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 text-left space-y-3 shadow-xs">
           <div className="flex items-center gap-2.5 text-emerald-800 font-extrabold text-sm sm:text-base">
             <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
-              <KeyRound className="w-4 h-4" />
+              <MessageCircle className="w-4 h-4" />
             </div>
-            <span>Acesso à Área do Cliente Criado!</span>
+            <span>Confirmação Enviada via WhatsApp!</span>
           </div>
 
           <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
-            Sua conta está criada e vinculada ao e-mail:
+            Para sua comodidade e segurança, enviamos o link oficial de confirmação de cadastro para o seu WhatsApp:
           </p>
 
-          <div className="p-2.5 bg-white rounded-xl border border-emerald-200 text-xs font-bold text-slate-800 flex items-center justify-between break-all">
+          {data?.phone ? (
+            <div className="p-2.5 bg-white rounded-xl border border-emerald-200 text-xs font-bold text-slate-800 flex items-center justify-between break-all">
+              <div className="flex items-center gap-2 truncate">
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                <span className="truncate">{data.phone}</span>
+              </div>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
+                WhatsApp Enviado
+              </span>
+            </div>
+          ) : null}
+
+          <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between break-all">
             <div className="flex items-center gap-2 truncate">
-              <Mail className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+              <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
               <span className="truncate">{data?.email || 'seu e-mail'}</span>
             </div>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
-              Acesso Liberado
+            <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
+              Acesso Criado
             </span>
           </div>
 
           <p className="text-xs text-slate-600 leading-relaxed">
-            Você já pode acessar a <strong>Área do Cliente</strong> a qualquer momento utilizando este e-mail e a senha que acabou de cadastrar para acompanhar seu status e gerenciar documentos.
+            Basta <strong>tocar no link recebido no WhatsApp</strong> para confirmar sua conta e ativar seu acesso. Você também pode acessar diretamente com seu e-mail e senha cadastrados.
           </p>
         </div>
 
@@ -115,16 +128,19 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
           </div>
         </div>
 
-        {/* Botão de Ação: Ir para a Área do Cliente */}
+        {/* Botão de Ação: Ir para o Login */}
         <div className="pt-2 space-y-2">
           <button
             type="button"
             onClick={handleConfirm}
             className="w-full py-3.5 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] text-white font-bold text-sm sm:text-base shadow-lg shadow-[#1d5b79]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Acessar Área do Cliente</span>
+            <span>Entendi, Ir para a Tela de Login</span>
             <ArrowRight className="w-4 h-4 text-emerald-300" />
           </button>
+          <p className="text-[11px] text-slate-400">
+            Abra seu WhatsApp e toque no link oficial para validar seu cadastro antes de entrar.
+          </p>
         </div>
       </div>
     </div>
