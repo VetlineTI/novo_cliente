@@ -93,6 +93,77 @@ function rotateCanvas(srcCanvas, degrees) {
 }
 
 /**
+ * Distância de Levenshtein para comparação tolerante a erros de OCR
+ */
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const v0 = new Array(b.length + 1);
+  const v1 = new Array(b.length + 1);
+  for (let i = 0; i <= b.length; i++) v0[i] = i;
+  for (let i = 0; i < a.length; i++) {
+    v1[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+  }
+  return v1[b.length];
+}
+
+/**
+ * Normaliza erros comuns de leitura de OCR em documentos brasileiros
+ * (Ex: substitui número zero por letra O em nomes, 1 por i/l, etc.)
+ */
+function normalizeOcrName(text) {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/[|!]/g, 'i')
+    .replace(/5/g, 's')
+    .replace(/8/g, 'b')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Pré-processa o canvas aumentando o contraste e convertendo para escala de cinza
+ * Remove ruídos do fundo texturizado/esverdeado de CNHs e clareia o texto para o Tesseract
+ */
+function preprocessCanvasForOCR(srcCanvas) {
+  const scale = srcCanvas.width < 1000 ? 1.5 : 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(srcCanvas.width * scale);
+  canvas.height = Math.round(srcCanvas.height * scale);
+  const ctx = canvas.getContext('2d');
+  
+  ctx.drawImage(srcCanvas, 0, 0, canvas.width, canvas.height);
+  
+  try {
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      // Intensifica pretos e clareia o fundo verde texturizado da CNH
+      const enhanced = gray < 135 ? Math.max(0, gray * 0.6) : Math.min(255, gray * 1.3);
+      data[i] = enhanced;
+      data[i + 1] = enhanced;
+      data[i + 2] = enhanced;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } catch (e) {}
+
+  return canvas;
+}
+
+/**
  * Converte um arquivo de imagem para HTMLCanvasElement
  */
 function imageToCanvas(file) {
@@ -191,6 +262,17 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
         logger: () => {} // silencioso
       });
       extractedText += ' ' + (ocrResult?.data?.text || '');
+
+      // Executa também com contraste aprimorado para destacar nomes em fundos verdes de CNH
+      if (!isPdf) {
+        try {
+          const enhancedCanvas = preprocessCanvasForOCR(canvasForOCR);
+          const ocrEnhanced = await Tesseract.recognize(enhancedCanvas, 'por', { logger: () => {} });
+          if (ocrEnhanced?.data?.text) {
+            extractedText += ' ' + ocrEnhanced.data.text;
+          }
+        } catch (e) {}
+      }
 
       // Se o texto ainda for insuficiente ou não conter termos da categoria, tenta OCR com rotação (90° e 270°)
       const relevantKeywords = DOC_KEYWORDS[category] || DOC_KEYWORDS.IDENTIFICATION;
@@ -890,67 +972,102 @@ export function matchPartnerWithDocument(partner, { foundCpfs = [], fullRawText 
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-  // 1. CHECAGEM POR CPF (Suporta Máscara LGPD da Receita Federal: ex ***570869** e CPF de 11 dígitos)
+  // 1. CHECAGEM POR CPF (Suporta Máscara LGPD da Receita Federal: ex ***743408** e CPF de 11 dígitos)
   if (partnerDocDigits) {
+    const rawNumbers = unmask(fullRawText);
+    const cleanedDigitsFromText = fullRawText
+      .replace(/[oO]/g, '0')
+      .replace(/[iIl|!]/g, '1')
+      .replace(/[sS]/g, '5')
+      .replace(/[bB]/g, '8')
+      .replace(/\D/g, '');
+
     // Caso A: CPF completo de 11 dígitos
     if (partnerDocDigits.length === 11) {
-      if (foundCpfs.includes(partnerDocDigits) || unmask(normalizedText).includes(partnerDocDigits)) {
+      if (
+        foundCpfs.includes(partnerDocDigits) ||
+        rawNumbers.includes(partnerDocDigits) ||
+        cleanedDigitsFromText.includes(partnerDocDigits)
+      ) {
         return { matched: true, matchType: 'CPF_EXACT', partnerName, matchedPartner: partner };
       }
     }
-    // Caso B: Padrão Oficial LGPD da Receita Federal (6 dígitos do meio: ex 570869 de ***570869**)
+    // Caso B: Padrão Oficial LGPD da Receita Federal (6 dígitos do meio: ex 743408 de ***.743.408-**)
     else if (partnerDocDigits.length === 6) {
-      // Checa contra todos os CPFs de 11 dígitos extraídos da CNH / QR Code
-      for (const extractedCpf of foundCpfs) {
-        if (extractedCpf.length === 11) {
-          // Posição canônica na CNH/RG: XXX.570.869-XX (substring índice 3 a 9)
-          if (extractedCpf.substring(3, 9) === partnerDocDigits || extractedCpf.includes(partnerDocDigits)) {
-            return { matched: true, matchType: 'CPF_LGPD_MASK', partnerName, matchedPartner: partner };
-          }
-        }
-      }
-      // Checa se os 6 dígitos aparecem no texto bruto da CNH / documento
-      if (unmask(fullRawText).includes(partnerDocDigits)) {
-        return { matched: true, matchType: 'CPF_LGPD_TEXT', partnerName, matchedPartner: partner };
+      if (
+        foundCpfs.some(c => c.includes(partnerDocDigits) || c.substring(3, 9) === partnerDocDigits) ||
+        rawNumbers.includes(partnerDocDigits) ||
+        cleanedDigitsFromText.includes(partnerDocDigits)
+      ) {
+        return { matched: true, matchType: 'CPF_LGPD_MASK', partnerName, matchedPartner: partner };
       }
     }
     // Caso C: Outras máscaras parciais (>= 4 dígitos)
     else if (partnerDocDigits.length >= 4) {
-      for (const extractedCpf of foundCpfs) {
-        if (extractedCpf.includes(partnerDocDigits)) {
-          return { matched: true, matchType: 'CPF_PARTIAL', partnerName, matchedPartner: partner };
-        }
-      }
-      if (unmask(fullRawText).includes(partnerDocDigits)) {
-        return { matched: true, matchType: 'CPF_PARTIAL_TEXT', partnerName, matchedPartner: partner };
+      if (
+        foundCpfs.some(c => c.includes(partnerDocDigits)) ||
+        rawNumbers.includes(partnerDocDigits) ||
+        cleanedDigitsFromText.includes(partnerDocDigits)
+      ) {
+        return { matched: true, matchType: 'CPF_PARTIAL', partnerName, matchedPartner: partner };
       }
     }
   }
 
   // 2. CHECAGEM POR NOME DO SÓCIO
   if (cleanPartnerName.length > 3) {
-    // Se o nome completo estiver contido no texto
+    // 2.1 Match Exato do Nome Completo
     if (normalizedText.includes(cleanPartnerName)) {
       return { matched: true, matchType: 'NAME_FULL', partnerName, matchedPartner: partner };
     }
 
+    // 2.2 Match com normalização de OCR (substitui zeros por 'o', 1 por 'i', etc.)
+    const ocrNormalizedText = normalizeOcrName(fullRawText);
+    const ocrCleanPartnerName = normalizeOcrName(cleanPartnerName);
+    if (ocrNormalizedText.includes(ocrCleanPartnerName)) {
+      return { matched: true, matchType: 'NAME_OCR_NORMALIZED', partnerName, matchedPartner: partner };
+    }
+
+    // 2.3 Decomposição em tokens de nome
     const stopwords = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'junior', 'filho', 'neto', 'sobrinho']);
-    const nameTokens = cleanPartnerName
+    const nameTokens = ocrCleanPartnerName
       .split(/\s+/)
       .filter(t => t.length > 2 && !stopwords.has(t));
 
     if (nameTokens.length >= 2) {
-      const matchedTokens = nameTokens.filter(token => normalizedText.includes(token));
-      const matchCount = matchedTokens.length;
-      const matchRatio = matchCount / nameTokens.length;
+      // 2.3.1 Checa tokens exatos no texto normalizado e no texto OCR
+      const matchedTokens = nameTokens.filter(token => 
+        normalizedText.includes(token) || ocrNormalizedText.includes(token)
+      );
 
-      // Se pelo menos 2 tokens significativos baterem (ex: "domingos" e "soares", ou "domingos" e "silva")
-      // OU se a proporção for >= 50%
-      if (matchCount >= 2 || matchRatio >= 0.5) {
+      if (matchedTokens.length >= 2 || (matchedTokens.length / nameTokens.length) >= 0.5) {
         return { matched: true, matchType: 'NAME_TOKENS', partnerName, matchedPartner: partner };
       }
+
+      // 2.3.2 Checa tokens com tolerância a erros (Levenshtein) contra as palavras do documento
+      const docWords = Array.from(new Set(ocrNormalizedText.split(/\s+/).filter(w => w.length >= 3)));
+      let fuzzyMatches = 0;
+
+      for (const token of nameTokens) {
+        const maxDist = token.length <= 4 ? 1 : 2;
+        const foundWord = docWords.some(w => {
+          if (w === token || w.includes(token) || token.includes(w)) return true;
+          if (Math.abs(w.length - token.length) <= maxDist) {
+            return levenshtein(w, token) <= maxDist;
+          }
+          return false;
+        });
+        if (foundWord) {
+          fuzzyMatches++;
+        }
+      }
+
+      if (fuzzyMatches >= 2 || (fuzzyMatches / nameTokens.length) >= 0.5) {
+        return { matched: true, matchType: 'NAME_FUZZY', partnerName, matchedPartner: partner };
+      }
     } else if (nameTokens.length === 1 && nameTokens[0].length >= 4) {
-      if (normalizedText.includes(nameTokens[0])) {
+      const single = nameTokens[0];
+      if (normalizedText.includes(single) || ocrNormalizedText.includes(single)) {
         return { matched: true, matchType: 'NAME_SINGLE_TOKEN', partnerName, matchedPartner: partner };
       }
     }
