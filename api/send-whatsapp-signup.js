@@ -29,27 +29,6 @@ async function getEnvConfig() {
   };
 }
 
-async function shortenUrl(longUrl) {
-  if (!longUrl) return '';
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (res.ok) {
-      const short = (await res.text()).trim();
-      if (short.startsWith('http://') || short.startsWith('https://')) {
-        return short;
-      }
-    }
-  } catch (err) {
-    console.warn('Falha ao encurtar URL, mantendo link direto:', err?.message || err);
-  }
-  return longUrl;
-}
-
 export default async function handler(req, res) {
   // Configuração de CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -64,35 +43,73 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
+  // Parse de query parameters
+  let query = req.query || {};
+  if (req.url && req.url.includes('?')) {
+    try {
+      const urlObj = new URL(req.url, 'http://localhost');
+      query = { ...Object.fromEntries(urlObj.searchParams.entries()), ...query };
+    } catch (e) {}
+  }
+
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch (e) {
+      body = {};
+    }
+  }
+  body = body || {};
+
+  const isConfirmRedirect = 
+    query.action === 'confirm_redirect' || 
+    body.action === 'confirm_redirect';
+
+  const isConfirmAction = 
+    isConfirmRedirect ||
+    query.action === 'confirm' || 
+    body.action === 'confirm';
+
+  if (req.method !== 'POST' && !isConfirmAction) {
     return res.status(405).json({ success: false, error: 'Método não permitido. Use POST.' });
   }
 
   try {
-    let body = req.body;
-    if (typeof body === 'string') {
-      try {
-        body = JSON.parse(body);
-      } catch (e) {
-        body = {};
-      }
-    }
-    body = body || {};
-
-    const isConfirmAction = 
-      body.action === 'confirm' || 
-      (req.query && req.query.action === 'confirm');
-
-    const cleanEmail = String(body.email || (req.query && req.query.email) || '').trim().toLowerCase();
-
+    const cleanEmail = String(body.email || query.email || '').trim().toLowerCase();
     const config = await getEnvConfig();
     const { supabaseUrl, supabaseServiceKey, zapiInstanceId, zapiToken, zapiClientToken } = config;
 
-    // 0. Ação de Confirmação (ao clicar no link do WhatsApp)
+    // Define a URL base pública de produção
+    let baseUrl = process.env.APP_URL || process.env.VITE_APP_URL || '';
+    if (!baseUrl) {
+      const incoming = (req.headers.origin || '').trim();
+      if (incoming && !incoming.includes('localhost') && !incoming.includes('127.0.0.1')) {
+        baseUrl = incoming;
+      } else {
+        baseUrl = 'https://novocliente-ten.vercel.app';
+      }
+    }
+
+    // 0. Ação de Confirmação (ao clicar no link do WhatsApp ou chamada direta via API)
     if (isConfirmAction && cleanEmail) {
       if (supabaseUrl && supabaseServiceKey) {
         try {
-          // Busca o usuário pelo e-mail
+          // 1. Atualiza a coluna whatsapp_confirmed na tabela novo_cliente.data_new_cliente via service_role
+          await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': supabaseServiceKey,
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal',
+              'Accept-Profile': 'novo_cliente',
+              'Content-Profile': 'novo_cliente'
+            },
+            body: JSON.stringify({ whatsapp_confirmed: true })
+          }).catch(errTab => console.warn('Erro ao atualizar tabela data_new_cliente:', errTab));
+
+          // 2. Atualiza o usuário no Supabase Auth
           const listRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users`, {
             headers: {
               'apikey': supabaseServiceKey,
@@ -119,26 +136,32 @@ export default async function handler(req, res) {
                   email_confirm: true
                 })
               });
+
+              // Atualiza também buscando por auth_user_id se necessário
+              await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?auth_user_id=eq.${encodeURIComponent(foundUser.id)}`, {
+                method: 'PATCH',
+                headers: {
+                  'apikey': supabaseServiceKey,
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=minimal',
+                  'Accept-Profile': 'novo_cliente',
+                  'Content-Profile': 'novo_cliente'
+                },
+                body: JSON.stringify({ whatsapp_confirmed: true })
+              }).catch(() => {});
             }
           }
-
-          // Atualiza também a coluna whatsapp_confirmed na tabela novo_cliente.data_new_cliente
-          await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}`, {
-            method: 'PATCH',
-            headers: {
-              'apikey': supabaseServiceKey,
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal',
-              'Accept-Profile': 'novo_cliente',
-              'Content-Profile': 'novo_cliente'
-            },
-            body: JSON.stringify({ whatsapp_confirmed: true })
-          }).catch(errTab => console.warn('Erro ao atualizar tabela data_new_cliente:', errTab));
-
         } catch (e) {
           console.warn('Erro ao atualizar usuário como confirmado:', e);
         }
+      }
+
+      // Se for o redirecionamento oficial ao clicar no link do WhatsApp, joga direto para a tela de login
+      if (isConfirmRedirect) {
+        const destUrl = `${baseUrl.replace(/\/$/, '')}/?tab=login&activated=true&email=${encodeURIComponent(cleanEmail)}`;
+        res.setHeader('Location', destUrl);
+        return res.status(302).end();
       }
 
       return res.status(200).json({ success: true, message: 'WhatsApp confirmado com sucesso!' });
@@ -183,7 +206,6 @@ export default async function handler(req, res) {
 
     // 1. Gera o link de ativação via Supabase Admin REST API
     // Define a URL base pública de produção (evita enviar link de localhost para o WhatsApp do cliente)
-    let baseUrl = process.env.APP_URL || process.env.VITE_APP_URL || '';
     if (!baseUrl) {
       const incoming = (req.headers.origin || redirectUrl || '').trim();
       if (incoming && !incoming.includes('localhost') && !incoming.includes('127.0.0.1')) {
@@ -194,11 +216,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Garante que a URL direciona diretamente para a tela de login com o e-mail pré-identificado
+    // Garante que o redirecionamento passe pela rota confirm_redirect da API para atualizar a coluna no banco na hora
     const cleanBase = baseUrl.replace(/\/$/, '');
-    const targetRedirect = cleanBase.includes('?') 
-      ? `${cleanBase}&tab=login&email=${encodeURIComponent(cleanEmail)}&confirmed=whatsapp` 
-      : `${cleanBase}/?tab=login&email=${encodeURIComponent(cleanEmail)}&confirmed=whatsapp`;
+    const targetRedirect = `${cleanBase}/api/send-whatsapp-signup?action=confirm_redirect&email=${encodeURIComponent(cleanEmail)}`;
 
     let generatePayload = {
       type: 'signup',
@@ -306,10 +326,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2. Encurta o link para uma URL limpa e amigável no WhatsApp
-    const displayLink = await shortenUrl(actionLink);
-
-    // Monta a mensagem personalizada da Vetline
+    // 2. Monta a mensagem personalizada da Vetline com o link oficial do Supabase
     const message = [
       `Olá, *${cleanName}*! 👋`,
       '',
@@ -318,7 +335,7 @@ export default async function handler(req, res) {
       'Recebemos seu cadastro e preparamos seu acesso à *Área do Cliente*.',
       'Para confirmar sua conta e liberar seu acesso, clique no link seguro abaixo:',
       '',
-      `👉 ${displayLink}`,
+      `👉 ${actionLink}`,
       '',
       '_Mensagem automática do Sistema de Credenciamento Vetline._'
     ].join('\n');

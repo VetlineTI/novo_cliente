@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => {
         server.middlewares.use(async (req, res, next) => {
           if (req.url && req.url.startsWith('/api/send-whatsapp-signup')) {
             try {
+              const urlObj = new URL(req.url, 'http://localhost');
+              req.query = Object.fromEntries(urlObj.searchParams.entries());
+
               let bodyStr = '';
               req.on('data', chunk => {
                 bodyStr += chunk;
