@@ -1,5 +1,33 @@
-// Serverless Function para Vercel e Node: Proxy para envio de confirmação de cadastro via Z-API (WhatsApp)
-// Gera o link oficial de signup via Supabase Admin (service_role) e envia via Z-API
+async function getEnvConfig() {
+  const supabaseUrl = 
+    process.env.SUPABASE_URL || 
+    process.env.VITE_SUPABASE_URL || 
+    'https://zmojbzhqqoaliaeifwmz.supabase.co';
+
+  const supabaseServiceKey = 
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inptb2piemhxcW9hbGlhZWlmd216Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Mzg4OTA0NCwiZXhwIjoyMDY5NDY1MDQ0fQ.orcSorHFRjWN5kDrcsn_WY8cZkJguPnVG8TcQsdpTXQ';
+
+  const zapiInstanceId = 
+    process.env.ZAPI_INSTANCE_ID || 
+    '3FA30904FD3EB1CCD6A45A091FE8472E';
+
+  const zapiToken = 
+    process.env.ZAPI_TOKEN || 
+    '3788FECBD27166EF12E5E25F';
+
+  const zapiClientToken = 
+    process.env.ZAPI_CLIENT_TOKEN || 
+    'Fa6f8a0296d0542feabea4def38cc34edS';
+
+  return {
+    supabaseUrl,
+    supabaseServiceKey,
+    zapiInstanceId,
+    zapiToken,
+    zapiClientToken
+  };
+}
 
 export default async function handler(req, res) {
   // Configuração de CORS
@@ -36,11 +64,11 @@ export default async function handler(req, res) {
 
     const cleanEmail = String(body.email || (req.query && req.query.email) || '').trim().toLowerCase();
 
+    const config = await getEnvConfig();
+    const { supabaseUrl, supabaseServiceKey, zapiInstanceId, zapiToken, zapiClientToken } = config;
+
     // 0. Ação de Confirmação (ao clicar no link do WhatsApp)
     if (isConfirmAction && cleanEmail) {
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
-
       if (supabaseUrl && supabaseServiceKey) {
         try {
           // Busca o usuário pelo e-mail
@@ -101,32 +129,6 @@ export default async function handler(req, res) {
         formattedPhone = `55${formattedPhone}`;
       }
     }
-
-    // Variáveis de ambiente
-    const supabaseUrl =
-      process.env.SUPABASE_URL ||
-      process.env.VITE_SUPABASE_URL ||
-      '';
-
-    const supabaseServiceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_KEY ||
-      '';
-
-    const zapiInstanceId =
-      process.env.ZAPI_INSTANCE_ID ||
-      process.env.VITE_ZAPI_INSTANCE_ID ||
-      '';
-
-    const zapiToken =
-      process.env.ZAPI_TOKEN ||
-      process.env.VITE_ZAPI_TOKEN ||
-      '';
-
-    const zapiClientToken =
-      process.env.ZAPI_CLIENT_TOKEN ||
-      process.env.VITE_ZAPI_CLIENT_TOKEN ||
-      '';
 
     // Valida se as credenciais mínimas estão configuradas
     if (!supabaseUrl || !supabaseServiceKey) {
