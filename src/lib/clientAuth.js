@@ -374,20 +374,34 @@ export const loginClient = async (email, password, rememberMe = true) => {
         // Busca o registro do cliente na tabela para verificar o status de whatsapp_confirmed
         const clientRec = await fetchClientRecord(authUser.id, cleanEmail);
 
-        // Regra Estrita: O acesso à Área do Cliente SÓ é liberado se whatsapp_confirmed for explicitamente true
-        // (na tabela do banco OU no user_metadata do Supabase Auth)
-        const isWhatsAppConfirmed = Boolean(
-          meta.whatsapp_confirmed === true || 
-          clientRec?.whatsapp_confirmed === true
+        // Regra Soberana: Se a coluna whatsapp_confirmed do banco for false/null, BLOQUEIA IMEDIATAMENTE!
+        const isDbConfirmed = Boolean(
+          clientRec && (
+            clientRec.whatsapp_confirmed === true || 
+            clientRec.whatsapp_confirmed === 'true' || 
+            clientRec.whatsapp_confirmed === 1
+          )
         );
 
-        if (!isWhatsAppConfirmed) {
+        if (clientRec && !isDbConfirmed) {
           await supabase.auth.signOut().catch(() => {});
           return {
             success: false,
             isWhatsAppPending: true,
             email: cleanEmail,
-            phone: meta.phone || clientRec?.telefone || clientRec?.phone || '',
+            phone: clientRec.telefone || clientRec.phone || meta.phone || '',
+            error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
+          };
+        }
+
+        // Se não encontrou registro na tabela ainda, verifica no user_metadata
+        if (!clientRec && meta.whatsapp_confirmed !== true) {
+          await supabase.auth.signOut().catch(() => {});
+          return {
+            success: false,
+            isWhatsAppPending: true,
+            email: cleanEmail,
+            phone: meta.phone || '',
             error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
           };
         }
@@ -484,6 +498,28 @@ export const loginClient = async (email, password, rememberMe = true) => {
     return {
       success: false,
       error: 'Cadastro não encontrado para este e-mail. Caso ainda não seja nosso cliente, faça seu cadastro na aba "Ainda não sou cliente".'
+    };
+  }
+
+  // Validação Soberana: Se a coluna whatsapp_confirmed da tabela do banco for false/null, BLOQUEIA IMEDIATAMENTE!
+  const isFinalDbConfirmed = Boolean(
+    clientRecord && (
+      clientRecord.whatsapp_confirmed === true || 
+      clientRecord.whatsapp_confirmed === 'true' || 
+      clientRecord.whatsapp_confirmed === 1
+    )
+  );
+
+  if (clientRecord && !isFinalDbConfirmed) {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut().catch(() => {});
+    }
+    return {
+      success: false,
+      isWhatsAppPending: true,
+      email: cleanEmail,
+      phone: clientRecord.telefone || clientRecord.phone || '',
+      error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
     };
   }
 
