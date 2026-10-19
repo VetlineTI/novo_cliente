@@ -371,8 +371,13 @@ export const loginClient = async (email, password, rememberMe = true) => {
         authUser = authData.user;
         const meta = authUser.user_metadata || {};
 
-        // Regra Obrigatória: O acesso à Área do Cliente SÓ é liberado se whatsapp_confirmed for explicitamente true
-        const isWhatsAppConfirmed = Boolean(meta.whatsapp_confirmed === true);
+        // Regra Obrigatória: O acesso à Área do Cliente SÓ é liberado se o link do WhatsApp foi confirmado
+        const isEmailConfirmed = Boolean(authUser.email_confirmed_at);
+        const isWhatsAppConfirmed = Boolean(meta.whatsapp_confirmed === true) || isEmailConfirmed;
+
+        if (isEmailConfirmed && !meta.whatsapp_confirmed) {
+          confirmClientWhatsApp(cleanEmail).catch(() => {});
+        }
 
         if (!isWhatsAppConfirmed) {
           await supabase.auth.signOut().catch(() => {});
@@ -681,7 +686,7 @@ export const confirmClientWhatsApp = async (email = '') => {
         await fetch('/api/send-whatsapp-signup?action=confirm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail })
+          body: JSON.stringify({ action: 'confirm', email: cleanEmail })
         });
       }
     } catch (e) {}

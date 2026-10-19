@@ -37,15 +37,20 @@ export function App() {
     if (typeof window === 'undefined') return;
 
     const urlSearch = window.location.search || '';
-    const urlHash = window.location.hash || '';
+    const urlParams = new URLSearchParams(window.location.search);
+    const emailFromUrl = (urlParams.get('email') || '').trim();
 
     // Abre direto na aba de Login se solicitado pela URL
-    if (urlSearch.includes('tab=login') || urlHash.includes('tab=login') || urlHash.includes('#login')) {
+    if (urlSearch.includes('tab=login') || urlHash.includes('tab=login') || urlHash.includes('#login') || urlParams.get('confirmed') === 'whatsapp') {
       setPortalTab('login');
+      if (emailFromUrl) {
+        setInitialLoginEmail(emailFromUrl);
+      }
     }
 
     // 1. Detecta parâmetros de ativação de conta (link recebido no WhatsApp / e-mail)
     const isSignupConfirmed =
+      urlParams.get('confirmed') === 'whatsapp' ||
       urlSearch.includes('type=signup') ||
       urlSearch.includes('type=magiclink') ||
       urlSearch.includes('type=signup-confirmed') ||
@@ -56,12 +61,13 @@ export function App() {
 
     const handleAccountActivation = async (userEmail = '') => {
       setPortalTab('login');
-      setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe seu e-mail e senha abaixo para entrar.');
-      if (userEmail) {
-        setInitialLoginEmail(userEmail);
+      setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe sua senha abaixo para entrar.');
+      const finalEmail = userEmail || emailFromUrl;
+      if (finalEmail) {
+        setInitialLoginEmail(finalEmail);
       }
       try {
-        await confirmClientWhatsApp(userEmail);
+        await confirmClientWhatsApp(finalEmail);
       } catch (e) {
         console.warn('Erro ao confirmar WhatsApp do cliente:', e);
       }
@@ -75,7 +81,9 @@ export function App() {
     };
 
     if (isSignupConfirmed) {
-      if (isSupabaseConfigured && supabase) {
+      if (emailFromUrl) {
+        handleAccountActivation(emailFromUrl);
+      } else if (isSupabaseConfigured && supabase) {
         supabase.auth.getUser().then(({ data }) => {
           const userEmail = data?.user?.email || '';
           handleAccountActivation(userEmail);

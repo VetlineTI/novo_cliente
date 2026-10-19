@@ -179,11 +179,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // Garante que a URL direciona diretamente para a tela de login
+    // Garante que a URL direciona diretamente para a tela de login com o e-mail pré-identificado
     const cleanBase = baseUrl.replace(/\/$/, '');
     const targetRedirect = cleanBase.includes('?') 
-      ? `${cleanBase}&tab=login` 
-      : `${cleanBase}/?tab=login`;
+      ? `${cleanBase}&tab=login&email=${encodeURIComponent(cleanEmail)}&confirmed=whatsapp` 
+      : `${cleanBase}/?tab=login&email=${encodeURIComponent(cleanEmail)}&confirmed=whatsapp`;
 
     let generatePayload = {
       type: 'signup',
