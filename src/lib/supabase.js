@@ -446,7 +446,8 @@ export const normalizeClientRecord = (c) => {
     terms_accepted: termos_aceitos,
     observacoes,
     notes: observacoes,
-    auth_user_id
+    auth_user_id,
+    whatsapp_confirmed: Boolean(c.whatsapp_confirmed === true || c.whatsapp_confirmed === 'true' || c.whatsapp_confirmed === 1)
   };
 };
 

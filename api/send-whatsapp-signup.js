@@ -121,6 +121,21 @@ export default async function handler(req, res) {
               });
             }
           }
+
+          // Atualiza também a coluna whatsapp_confirmed na tabela novo_cliente.data_new_cliente
+          await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': supabaseServiceKey,
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal',
+              'Accept-Profile': 'novo_cliente',
+              'Content-Profile': 'novo_cliente'
+            },
+            body: JSON.stringify({ whatsapp_confirmed: true })
+          }).catch(errTab => console.warn('Erro ao atualizar tabela data_new_cliente:', errTab));
+
         } catch (e) {
           console.warn('Erro ao atualizar usuário como confirmado:', e);
         }

@@ -371,17 +371,18 @@ export const loginClient = async (email, password, rememberMe = true) => {
         authUser = authData.user;
         const meta = authUser.user_metadata || {};
 
-        // Regra Obrigatória: O acesso à Área do Cliente SÓ é liberado se o link do WhatsApp foi confirmado
-        const isEmailConfirmed = Boolean(authUser.email_confirmed_at);
-        const isWhatsAppConfirmed = Boolean(meta.whatsapp_confirmed === true) || isEmailConfirmed;
+        // Busca o registro do cliente na tabela para verificar o status de whatsapp_confirmed
+        const clientRec = await fetchClientRecord(authUser.id, cleanEmail);
 
-        if (isEmailConfirmed && !meta.whatsapp_confirmed) {
-          confirmClientWhatsApp(cleanEmail).catch(() => {});
-        }
+        // Regra Estrita: O acesso à Área do Cliente SÓ é liberado se whatsapp_confirmed for explicitamente true
+        // (na tabela do banco OU no user_metadata do Supabase Auth)
+        const isWhatsAppConfirmed = Boolean(
+          meta.whatsapp_confirmed === true || 
+          clientRec?.whatsapp_confirmed === true
+        );
 
         if (!isWhatsAppConfirmed) {
           await supabase.auth.signOut().catch(() => {});
-          const clientRec = await fetchClientRecord(authUser.id, cleanEmail);
           return {
             success: false,
             isWhatsAppPending: true,
@@ -680,6 +681,16 @@ export const confirmClientWhatsApp = async (email = '') => {
     } catch (e) {
       console.warn('Atualização de metadata do WhatsApp local:', e);
     }
+
+    try {
+      if (cleanEmail) {
+        await supabase
+          .schema('novo_cliente')
+          .from('data_new_cliente')
+          .update({ whatsapp_confirmed: true })
+          .ilike('email', cleanEmail);
+      }
+    } catch (e) {}
 
     try {
       if (cleanEmail) {
