@@ -118,12 +118,43 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/setup_storage_private.sql` | Script SQL para configurar o bucket `novos_clientes` como **Privado** no Supabase Storage com políticas de RLS (upload público e leitura autenticada). |
 | `supabase/add_rate_limit.sql` | Script SQL de Rate Limiting por IP (tabela `rate_limit_logs`, RPCs `check_rate_limit` e `log_rate_limit_attempt`) para proteção nativa contra spam e abuso de cadastros. |
 | `supabase/add_limite_credito.sql` | Script SQL para adicionar a coluna `limite_credito` (`NUMERIC(12,2) DEFAULT 0.00`) no schema `novo_cliente` com retrocompatibilidade e recálculo inicial. |
+| `supabase/add_cnae_columns.sql` | Script SQL para adicionar as colunas de CNAE (`cnae`, `cnae_codigo`, `cnae_descricao`) no schema `novo_cliente` com atualização da view de compatibilidade. |
 | `src/utils/masks.js` | Funções de máscara para CPF, CNPJ, Telefone, CEP e tamanhos de arquivo. |
-| `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail e consulta de CEP. |
+| `src/utils/validators.js` | Algoritmos de validação de CPF, CNPJ, e-mail, extração padronizada de CNAE e consulta de CEP. |
+| `src/utils/cnaeValidator.js` | Módulo de validação e catálogo com os 24 CNAEs homologados pela Vetline, formatação e verificação de não-conformidade. |
 | `src/utils/bruteForceProtector.js` | Módulo de proteção contra força bruta no login (limite de 5 tentativas com bloqueio temporário de 5 minutos e contagem regressiva). |
 | `src/utils/documentValidator.js` | Validador inteligente de anexos com OCR multi-orientação (0°, 90°, 270°) e leitura de QR Code. |
 
-### 6. 💳 Regras de Concessão de Limite de Crédito Automático
+### 6. ⚠️ Validação de CNAEs Permitidos & Alerta no Painel Administrativo
+- O sistema extrai automaticamente o CNAE Principal da empresa via API da Receita Federal (Direct Data / Minha Receita / BrasilAPI / CNPJ.ws) durante o cadastro.
+- No **Painel Administrativo** (`AdminDashboard` e `ClientDetailModal`), o CNAE é confrontado com a lista oficial de 24 atividades econômicas homologadas:
+  - **4789-0/04** - Comércio varejista de animais vivos e de artigos e alimentos para animais de estimação
+  - **4771-7/04** - Comércio varejista de medicamentos veterinários
+  - **9609-2/08** - Higiene e embelezamento de animais domésticos
+  - **7500-1/00** - Atividades veterinárias
+  - **4623-1/01** - Comércio atacadista de animais vivos
+  - **4623-1/09** - Comércio atacadista de matérias-primas agrícolas não especificadas anteriormente
+  - **4632-0/01** - Comércio atacadista de cereais e leguminosas beneficiados
+  - **4646-0/02** - Comércio atacadista de produtos de higiene, limpeza e conservação domiciliar
+  - **4646-0/01** - Comércio atacadista de cosméticos e produtos de perfumaria
+  - **4644-3/02** - Comércio atacadista de medicamentos e drogas de uso veterinário
+  - **4669-9/99** - Comércio atacadista de outras máquinas e equipamentos não especificados anteriormente
+  - **4712-1/00** - Comércio varejista de mercadorias em geral, com predominância de produtos alimentícios
+  - **4789-0/02** - Comércio varejista de plantas e flores naturais
+  - **0151-2/01** - Criação de bovinos para reprodução
+  - **0153-9/01** - Criação de suínos
+  - **0155-5/01** - Criação de frangos para corte
+  - **0155-5/02** - Produção de ovos
+  - **1099-6/99** - Fabricação de outros produtos alimentícios não especificados anteriormente
+  - **2123-8/00** - Fabricação de preparações farmacêuticas
+  - **4930-2/02** - Transporte rodoviário de produtos em geral, municipal
+  - **8411-6/00** - Administração pública em geral
+  - **9430-8/00** - Atividades de associações de defesa de direitos sociais
+  - **8599-6/99** - Outras atividades de ensino não especificadas anteriormente
+  - **8640-2/02** - Laboratórios clínicos
+- **Alerta em Amarelo para o Administrador**: Se o CNAE extraído do cliente for diferente dos homologados, o sistema exibe um aviso em destaque amarelo no card do cliente e no modal de detalhes: **"Cliente com CNAE fora do permitido, analisar"**, exibindo o código e descrição exata do CNAE para tomada de decisão pela gerência.
+
+### 7. 💳 Regras de Concessão de Limite de Crédito Automático
 - Ao submeter um novo cadastro, o sistema avalia o retorno da auditoria de bureau (CENPROT / Direct Data / Cartórios de Protesto):
   - **Pessoa Jurídica (PJ) sem protestos** (`total_protestos === 0`): Limite de Crédito inicial concedido de **R$ 3.000,00**.
   - **Pessoa Física (PF) sem protestos** (`total_protestos === 0`): Limite de Crédito inicial concedido de **R$ 1.500,00**.

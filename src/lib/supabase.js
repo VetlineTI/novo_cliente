@@ -335,6 +335,25 @@ export const normalizeClientRecord = (c) => {
   const auth_user_id = c.auth_user_id || null;
   const criado_em = c.criado_em || c.created_at || new Date().toISOString();
 
+  // CNAE: extrai de colunas dedicadas ou analisa o campo de observações
+  let cnae = c.cnae || c.cnae_principal || null;
+  let cnae_codigo = c.cnae_codigo || null;
+  let cnae_descricao = c.cnae_descricao || null;
+
+  if (!cnae && observacoes) {
+    const cnaeMatch = String(observacoes).match(/\[CNAE:\s*([^\]]+)\]/i);
+    if (cnaeMatch) {
+      cnae = cnaeMatch[1].trim();
+      const hyphenIdx = cnae.indexOf(' - ');
+      if (hyphenIdx !== -1) {
+        cnae_codigo = cnae.slice(0, hyphenIdx).trim();
+        cnae_descricao = cnae.slice(hyphenIdx + 3).trim();
+      } else {
+        cnae_codigo = cnae;
+      }
+    }
+  }
+
   return {
     id: c.id,
     criado_em,
@@ -395,6 +414,9 @@ export const normalizeClientRecord = (c) => {
     cd_vend,
     cd_clien,
     client_code: cd_clien,
+    cnae,
+    cnae_codigo,
+    cnae_descricao,
     alerta,
     alert: alerta,
     ip_origem,
@@ -555,6 +577,15 @@ export const toPortuguesePayload = (data) => {
   }
   if (data.ip_origem !== undefined || data.ip_address !== undefined || data.client_ip !== undefined) {
     p.ip_origem = data.ip_origem || data.ip_address || data.client_ip || null;
+  }
+  if (data.cnae !== undefined) p.cnae = data.cnae;
+  if (data.cnae_codigo !== undefined) p.cnae_codigo = data.cnae_codigo;
+  if (data.cnae_descricao !== undefined) p.cnae_descricao = data.cnae_descricao;
+
+  // Garante que se tiver CNAE, ele também seja salvo em observações como fallback seguro
+  const cnaeToSave = data.cnae || (data.cnae_codigo ? `${data.cnae_codigo} - ${data.cnae_descricao || ''}` : data.cnae_descricao);
+  if (cnaeToSave && !String(p.observacoes || '').includes('[CNAE:')) {
+    p.observacoes = p.observacoes ? `${p.observacoes} | [CNAE: ${cnaeToSave}]` : `[CNAE: ${cnaeToSave}]`;
   }
 
   return p;
@@ -974,6 +1005,16 @@ export const submitNewClient = async (clientData) => {
         .insert([ptPayload])
         .select();
 
+      // Se der erro por ausência de coluna cnae na tabela física, tenta sem os campos dedicados (mantendo em observações)
+      if (res.error && res.error.message?.includes('cnae')) {
+        const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
+        res = await supabase
+          .schema('novo_cliente')
+          .from('data_new_cliente')
+          .insert([safePayload])
+          .select();
+      }
+
       // Se der erro por nome da tabela antiga, tenta data_new_client
       if (res.error && res.error.message?.includes('relation') && res.error.message?.includes('data_new_cliente')) {
         res = await supabase
@@ -981,6 +1022,15 @@ export const submitNewClient = async (clientData) => {
           .from('data_new_client')
           .insert([ptPayload])
           .select();
+
+        if (res.error && res.error.message?.includes('cnae')) {
+          const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
+          res = await supabase
+            .schema('novo_cliente')
+            .from('data_new_client')
+            .insert([safePayload])
+            .select();
+        }
       }
 
       if (!res.error && res.data && res.data.length > 0) {
@@ -1174,6 +1224,16 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
         .eq('id', clientId)
         .select();
 
+      if (res.error && res.error.message?.includes('cnae')) {
+        const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
+        res = await supabase
+          .schema('novo_cliente')
+          .from('data_new_cliente')
+          .update(safePayload)
+          .eq('id', clientId)
+          .select();
+      }
+
       if (res.error) {
         lastError = res.error.message;
         res = await supabase
@@ -1182,6 +1242,16 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
           .update(ptPayload)
           .eq('id', clientId)
           .select();
+
+        if (res.error && res.error.message?.includes('cnae')) {
+          const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
+          res = await supabase
+            .schema('novo_cliente')
+            .from('data_new_client')
+            .update(safePayload)
+            .eq('id', clientId)
+            .select();
+        }
       }
 
       if (!res.error && res.data && res.data.length > 0) {

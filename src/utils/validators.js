@@ -1,5 +1,6 @@
 import { unmask, maskPhone, maskCEP } from './masks';
 import { consultarDirectDataReceitaPJParticipacaoSocietaria } from '../lib/directd';
+import { parseCnae, formatCnaeCode } from './cnaeValidator';
 
 /**
  * Validação real de CPF (Algoritmo Módulo 11)
@@ -105,14 +106,22 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     const directRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(clean);
     if (directRes && directRes.success && (directRes.razaoSocial || directRes.data)) {
       const d = directRes.data || {};
+      const rawCnae = d.atividadeEconomicaPrincipal || d.cnaeDescricao || '';
+      const parsed = parseCnae(d.cnaeCodigo ? `${d.cnaeCodigo} - ${rawCnae}` : rawCnae);
+      const cnaeCode = parsed.code || formatCnaeCode(d.cnaeCodigo) || '';
+      const cnaeDesc = parsed.description || d.cnaeDescricao || rawCnae;
+      const fullCnae = parsed.formatted || (cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc));
+
       return {
         razaoSocial: directRes.razaoSocial || d.nomeEmpresarial || d.razaoSocial || '',
         nomeFantasia: directRes.nomeFantasia || d.nomeFantasia || '',
         situacaoCadastral: directRes.situacaoCadastral || d.situacaoCadastral || 'ATIVA',
         isAtiva: (directRes.situacaoCadastral || d.situacaoCadastral || '').toUpperCase().includes('ATIVA'),
         dataAbertura: directRes.dataAbertura || d.dataAbertura || d.dataFundacao || '',
-        cnaeDescricao: d.atividadeEconomicaPrincipal || d.cnaeDescricao || '',
-        suggestedSegment: mapSegment(d.atividadeEconomicaPrincipal || d.cnaeDescricao),
+        cnaeCodigo: cnaeCode,
+        cnaeDescricao: cnaeDesc,
+        cnae: fullCnae,
+        suggestedSegment: mapSegment(cnaeDesc),
         socios: (directRes.socios || []).map(s => ({
           nome: s.nome || s.nomeEntidade || '',
           qualificacao: s.qualificacao || 'Sócio',
@@ -144,14 +153,20 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     if (response.ok) {
       const data = await response.json();
       if (data && data.razao_social) {
+        const cnaeCode = formatCnaeCode(data.cnae_fiscal);
+        const cnaeDesc = data.cnae_fiscal_descricao || '';
+        const fullCnae = cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc);
+
         return {
           razaoSocial: data.razao_social || '',
           nomeFantasia: data.nome_fantasia || '',
           situacaoCadastral: data.descricao_situacao_cadastral || 'ATIVA',
           isAtiva: (data.descricao_situacao_cadastral || '').toUpperCase() === 'ATIVA' || data.situacao_cadastral === 2,
           dataAbertura: data.data_inicio_atividade || '',
-          cnaeDescricao: data.cnae_fiscal_descricao || '',
-          suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
+          cnaeCodigo: cnaeCode,
+          cnaeDescricao: cnaeDesc,
+          cnae: fullCnae,
+          suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.qsa || data.socios || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',
             qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',
@@ -183,14 +198,20 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     if (response.ok) {
       const data = await response.json();
       if (data && data.razao_social) {
+        const cnaeCode = formatCnaeCode(data.cnae_fiscal);
+        const cnaeDesc = data.cnae_fiscal_descricao || '';
+        const fullCnae = cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc);
+
         return {
           razaoSocial: data.razao_social || '',
           nomeFantasia: data.nome_fantasia || '',
           situacaoCadastral: data.descricao_situacao_cadastral || 'ATIVA',
           isAtiva: (data.descricao_situacao_cadastral || '').toUpperCase() === 'ATIVA',
           dataAbertura: data.data_inicio_atividade || '',
-          cnaeDescricao: data.cnae_fiscal_descricao || '',
-          suggestedSegment: mapSegment(data.cnae_fiscal_descricao),
+          cnaeCodigo: cnaeCode,
+          cnaeDescricao: cnaeDesc,
+          cnae: fullCnae,
+          suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.qsa || data.socios || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',
             qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',
@@ -224,14 +245,21 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
       const est = data.estabelecimento || {};
       if (data.razao_social) {
         const fullPhone = est.ddd1 && est.telefone1 ? `${est.ddd1}${est.telefone1}` : '';
+        const rawCode = est.atividade_principal?.subclasse || est.atividade_principal?.id || '';
+        const cnaeCode = formatCnaeCode(rawCode);
+        const cnaeDesc = est.atividade_principal?.descricao || '';
+        const fullCnae = cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc);
+
         return {
           razaoSocial: data.razao_social || '',
           nomeFantasia: est.nome_fantasia || '',
           situacaoCadastral: est.situacao_cadastral || 'Ativa',
           isAtiva: (est.situacao_cadastral || '').toLowerCase() === 'ativa',
           dataAbertura: est.data_inicio_atividade || '',
-          cnaeDescricao: est.atividade_principal?.descricao || '',
-          suggestedSegment: mapSegment(est.atividade_principal?.descricao),
+          cnaeCodigo: cnaeCode,
+          cnaeDescricao: cnaeDesc,
+          cnae: fullCnae,
+          suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.socios || data.qsa || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',
             qualificacao: s.qualificacao_socio?.descricao || s.qualificacao_socio || s.qualificacao_do_socio || s.qualificacao || '',

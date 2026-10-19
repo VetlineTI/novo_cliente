@@ -34,6 +34,8 @@ import {
 import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
+import { checkCnaePermitted } from '../../utils/cnaeValidator';
+import { fetchCNPJDataFromBrasilAPI } from '../../utils/validators';
 
 export const ClientDetailModal = ({
   isOpen,
@@ -49,6 +51,10 @@ export const ClientDetailModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Validação e Extração de CNAE
+  const [cnaeValidation, setCnaeValidation] = useState(null);
+  const [loadingCnae, setLoadingCnae] = useState(false);
 
   // Lista de vendedores para seleção
   const [salespeopleList, setSalespeopleList] = useState([]);
@@ -74,6 +80,9 @@ export const ClientDetailModal = ({
         document_number: client.document_number || '',
         phone: client.phone || '',
         email: client.email || '',
+        cnae: client.cnae || '',
+        cnae_codigo: client.cnae_codigo || '',
+        cnae_descricao: client.cnae_descricao || '',
         ram_ativ: client.ram_ativ || client.segmento || client.segment || '',
         segment: client.ram_ativ || client.segmento || client.segment || '',
         has_ie: Boolean(client.has_ie),
@@ -109,6 +118,62 @@ export const ClientDetailModal = ({
       setSaveSuccess(false);
     }
   }, [client]);
+
+  // Checagem de CNAE para clientes PJ (utiliza dados já extraídos ou busca na API)
+  useEffect(() => {
+    if (!isOpen || !client) {
+      setCnaeValidation(null);
+      return;
+    }
+
+    const cleanDoc = String(client.document_number || client.cpf_cnpj || '').replace(/\D/g, '');
+    const isClientPJ = client.person_type === 'PJ' || cleanDoc.length === 14;
+
+    if (!isClientPJ) {
+      setCnaeValidation(null);
+      return;
+    }
+
+    // 1. Se já possui CNAE registrado no próprio cliente ou nas observações
+    const existingCnae = client.cnae || client.cnae_codigo || (client.observacoes && client.observacoes.match(/\[CNAE:\s*([^\]]+)\]/i)?.[1]);
+    if (existingCnae) {
+      const checked = checkCnaePermitted(existingCnae, client.cnae_descricao);
+      setCnaeValidation(checked);
+      return;
+    }
+
+    // 2. Se não possuir CNAE registrado, extrai via API da Receita Federal
+    let isCancelled = false;
+    const fetchCnae = async () => {
+      setLoadingCnae(true);
+      try {
+        const data = await fetchCNPJDataFromBrasilAPI(cleanDoc);
+        if (!isCancelled && data) {
+          const rawCnae = data.cnae || (data.cnaeCodigo ? `${data.cnaeCodigo} - ${data.cnaeDescricao}` : data.cnaeDescricao);
+          const checked = checkCnaePermitted(data.cnaeCodigo || rawCnae, data.cnaeDescricao);
+          setCnaeValidation(checked);
+
+          if (rawCnae && onUpdateClient && client.id) {
+            onUpdateClient(client.id, {
+              cnae: rawCnae,
+              cnae_codigo: data.cnaeCodigo || null,
+              cnae_descricao: data.cnaeDescricao || null
+            }).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao consultar CNAE via API:', err);
+      } finally {
+        if (!isCancelled) setLoadingCnae(false);
+      }
+    };
+
+    fetchCnae();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, client?.id, client?.cnae, client?.document_number]);
 
   // Carrega vendedores e segmentos
   useEffect(() => {
@@ -633,6 +698,53 @@ export const ClientDetailModal = ({
           {/* 3. Conteúdo Central (Scroll Suave e Espaçamento Otimizado) */}
           <div className="p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-50/50">
 
+            {/* ALERTA EM AMARELO: Cliente com CNAE fora do permitido, analisar */}
+            {cnaeValidation?.hasCnae && !cnaeValidation.isPermitted && (
+              <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center flex-shrink-0 text-amber-700 shadow-xs mt-0.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 border border-amber-300">
+                        Alerta de Auditoria
+                      </span>
+                      <h4 className="font-black text-amber-950 text-sm sm:text-base">
+                        Cliente com CNAE fora do permitido, analisar
+                      </h4>
+                    </div>
+                    <p className="text-xs text-amber-900 mt-1 font-medium">
+                      O CNAE da atividade principal extraído da Receita Federal não consta na lista de CNAEs autorizados para atendimento pela Vetline.
+                    </p>
+
+                    {/* Exibição detalhada do CNAE extraído */}
+                    <div className="mt-2.5 p-3 rounded-xl bg-white border border-amber-300 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                          CNAE Principal Extraído via API:
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {cnaeValidation.cnaeCode && (
+                            <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                              {cnaeValidation.cnaeCode}
+                            </span>
+                          )}
+                          <span className="text-xs font-bold text-slate-900">
+                            {cnaeValidation.cnaeDescription || cnaeValidation.formattedCnae || 'CNAE não especificado'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300 whitespace-nowrap self-start sm:self-auto">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Análise da Gerência Obrigatória</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* SE FOR A FICHA CADASTRAL & DADOS COMERCIAIS */}
             {activeFolder === 'ficha' ? (
               <div className="space-y-3.5">
@@ -812,6 +924,40 @@ export const ClientDetailModal = ({
                                   {formData.tp_inscricao === 'I' ? 'ISENTO' : (formData.numero_inscricao || formData.ie_number || 'Não informada')}
                                 </div>
                               )}
+                            </div>
+
+                            {/* CNAE Principal com indicação se está permitido ou fora do permitido */}
+                            <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5">
+                                  <span>CNAE Principal (Receita Federal):</span>
+                                  {loadingCnae && <Loader2 className="w-3 h-3 animate-spin text-brand-green" />}
+                                </label>
+                                {cnaeValidation?.hasCnae && (
+                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                    cnaeValidation.isPermitted
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                      : 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                                  }`}>
+                                    {cnaeValidation.isPermitted ? 'Permitido ✓' : 'CNAE Fora do Permitido (Analisar)'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                                cnaeValidation?.hasCnae && !cnaeValidation.isPermitted
+                                  ? 'bg-amber-50/80 border-amber-300 text-amber-950 font-bold'
+                                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                              }`}>
+                                <span className="font-mono font-bold text-slate-900">
+                                  {cnaeValidation?.formattedCnae || client.cnae || (loadingCnae ? 'Consultando via API Receita Federal...' : 'Não extraído')}
+                                </span>
+                                {cnaeValidation?.hasCnae && !cnaeValidation.isPermitted && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-200 text-amber-900 rounded text-[11px] font-black whitespace-nowrap">
+                                    <AlertTriangle className="w-3 h-3 text-amber-700" />
+                                    Analisar
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </>
                         ) : (

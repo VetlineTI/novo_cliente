@@ -1,12 +1,16 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    {
-      name: 'api-serverless-local',
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  Object.assign(process.env, env);
+
+  return {
+    plugins: [
+      react(),
+      {
+        name: 'api-serverless-local',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           if (req.url && req.url.startsWith('/api/send-whatsapp-signup')) {
@@ -61,6 +65,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api-directd/, '')
       }
     }
-  },
-})
+  }
+};
+});
+
+
 

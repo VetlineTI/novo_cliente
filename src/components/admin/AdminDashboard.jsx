@@ -26,12 +26,14 @@ import {
   Tag,
   Receipt,
   X,
-  Users
+  Users,
+  AlertTriangle
 } from 'lucide-react';
 import logoImg from '../../assets/vetline-logo.png';
 import { fetchClients, updateClientStatus, updateClientData, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UserManagementView } from './UserManagementView';
+import { checkCnaePermitted } from '../../utils/cnaeValidator';
 
 export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [activeMainTab, setActiveMainTab] = useState('cadastros'); // 'cadastros' | 'usuarios'
@@ -600,6 +602,26 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                                 <span>Tp: {client.tp_ped || 'VTL01'}</span>
                               </span>
                             </div>
+
+                            {/* Alerta em Amarelo para PJ com CNAE fora do permitido */}
+                            {isPJ && (() => {
+                              const cnaeVal = checkCnaePermitted(client.cnae || client.cnae_codigo, client.cnae_descricao);
+                              if (cnaeVal.hasCnae && !cnaeVal.isPermitted) {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold mt-1">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 animate-pulse" />
+                                    <span className="font-bold">Cliente com CNAE fora do permitido, analisar:</span>
+                                    <span className="font-mono text-[11px] font-black bg-amber-200/90 text-amber-950 px-1.5 py-0.2 rounded border border-amber-300">
+                                      {cnaeVal.cnaeCode || cnaeVal.cleanCode || 'CNAE'}
+                                    </span>
+                                    <span className="text-[11px] text-amber-800 font-medium truncate max-w-[280px]">
+                                      {cnaeVal.cnaeDescription || cnaeVal.formattedCnae}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
 
                           </div>
                         </div>
