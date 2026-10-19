@@ -37,6 +37,7 @@ export function App() {
     if (typeof window === 'undefined') return;
 
     const urlSearch = window.location.search || '';
+    const urlHash = window.location.hash || '';
     const urlParams = new URLSearchParams(window.location.search);
     const emailFromUrl = (urlParams.get('email') || '').trim();
 
