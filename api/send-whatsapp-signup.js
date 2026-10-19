@@ -147,7 +147,7 @@ export default async function handler(req, res) {
 
     // 1. Gera o link de ativação via Supabase Admin REST API
     const targetRedirect = redirectUrl || (req.headers.origin ? `${req.headers.origin}/` : 'https://vetline.com.br/');
-    const generatePayload = {
+    let generatePayload = {
       type: 'signup',
       email: cleanEmail,
       options: {
@@ -162,7 +162,7 @@ export default async function handler(req, res) {
       generatePayload.password = String(password);
     }
 
-    const genRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`, {
+    let genRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`, {
       method: 'POST',
       headers: {
         'apikey': supabaseServiceKey,
@@ -172,7 +172,70 @@ export default async function handler(req, res) {
       body: JSON.stringify(generatePayload)
     });
 
-    const genData = await genRes.json();
+    let genData = await genRes.json().catch(() => ({}));
+
+    // Se o usuário já estiver cadastrado no Supabase (status 422 "already been registered"),
+    // atualizamos os metadados/senha se fornecidos e geramos um link de login/recuperação (magiclink)
+    if (!genRes.ok && (genRes.status === 422 || String(genData.message || genData.msg || '').toLowerCase().includes('already been registered'))) {
+      console.log(`Usuário ${cleanEmail} já existente no Supabase Auth. Atualizando e gerando magiclink...`);
+      
+      try {
+        const listRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users`, {
+          headers: {
+            'apikey': supabaseServiceKey,
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          }
+        });
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const users = listData.users || [];
+          const foundUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+          if (foundUser) {
+            const updatePayload = {
+              user_metadata: {
+                ...(foundUser.user_metadata || {}),
+                full_name: cleanName || foundUser.user_metadata?.full_name || 'Cliente'
+              }
+            };
+            if (password) {
+              updatePayload.password = String(password);
+            }
+            await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users/${foundUser.id}`, {
+              method: 'PUT',
+              headers: {
+                'apikey': supabaseServiceKey,
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(updatePayload)
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao atualizar usuário existente no Supabase:', err);
+      }
+
+      // Gera link de magiclink para o usuário existente
+      const magicPayload = {
+        type: 'magiclink',
+        email: cleanEmail,
+        options: {
+          redirect_to: targetRedirect
+        }
+      };
+
+      genRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`, {
+        method: 'POST',
+        headers: {
+          'apikey': supabaseServiceKey,
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(magicPayload)
+      });
+
+      genData = await genRes.json().catch(() => ({}));
+    }
 
     if (!genRes.ok) {
       console.error('Erro ao gerar link no Supabase Admin:', genData);
