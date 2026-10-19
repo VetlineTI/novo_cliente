@@ -39,38 +39,52 @@ export function App() {
     const urlSearch = window.location.search || '';
     const urlHash = window.location.hash || '';
 
+    // Abre direto na aba de Login se solicitado pela URL
+    if (urlSearch.includes('tab=login') || urlHash.includes('tab=login') || urlHash.includes('#login')) {
+      setPortalTab('login');
+    }
+
     // 1. Detecta parâmetros de ativação de conta (link recebido no WhatsApp / e-mail)
     const isSignupConfirmed =
-      urlSearch.includes('type=signup-confirmed') ||
       urlSearch.includes('type=signup') ||
+      urlSearch.includes('type=magiclink') ||
+      urlSearch.includes('type=signup-confirmed') ||
       urlSearch.includes('account_confirmed=true') ||
       urlHash.includes('type=signup') ||
-      urlHash.includes('type=signup-confirmed');
+      urlHash.includes('type=magiclink') ||
+      urlHash.includes('access_token=');
 
-    if (isSignupConfirmed) {
+    const handleAccountActivation = async (userEmail = '') => {
       setPortalTab('login');
       setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe seu e-mail e senha abaixo para entrar.');
+      if (userEmail) {
+        setInitialLoginEmail(userEmail);
+      }
+      try {
+        await confirmClientWhatsApp(userEmail);
+      } catch (e) {
+        console.warn('Erro ao confirmar WhatsApp do cliente:', e);
+      }
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {}
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
-      // Marca o WhatsApp como confirmado obtendo o e-mail do link
+    if (isSignupConfirmed) {
       if (isSupabaseConfigured && supabase) {
         supabase.auth.getUser().then(({ data }) => {
           const userEmail = data?.user?.email || '';
-          if (userEmail) {
-            setInitialLoginEmail(userEmail);
-          }
-          confirmClientWhatsApp(userEmail).catch(() => {});
-          supabase.auth.signOut().catch(() => {});
+          handleAccountActivation(userEmail);
         }).catch(() => {
-          confirmClientWhatsApp().catch(() => {});
-          supabase.auth.signOut().catch(() => {});
+          handleAccountActivation('');
         });
       } else {
-        confirmClientWhatsApp().catch(() => {});
+        handleAccountActivation('');
       }
-
-      // Limpa os parâmetros de hash/query da URL
-      window.history.replaceState({}, '', window.location.pathname);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // 2. Detecta parâmetros de recuperação de senha
@@ -85,15 +99,22 @@ export function App() {
 
     // 3. Listener do Supabase Auth
     if (isSupabaseConfigured && supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
           setIsResetPasswordOpen(true);
-        } else if (event === 'USER_UPDATED' || event === 'SIGNED_IN') {
-          // Se o usuário veio de um clique de confirmação de e-mail
-          if (window.location.hash.includes('type=signup') || window.location.search.includes('type=signup')) {
-            setPortalTab('login');
-            setActivationMessage('🎉 Cadastro ativado com sucesso! Seu e-mail foi confirmado. Faça seu login abaixo com sua senha.');
-            window.history.replaceState({}, '', window.location.pathname);
+        } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+          const currentHash = window.location.hash || '';
+          const currentSearch = window.location.search || '';
+          const isActivationFlow = 
+            currentHash.includes('type=signup') || 
+            currentHash.includes('type=magiclink') || 
+            currentHash.includes('access_token=') ||
+            currentSearch.includes('type=signup') ||
+            currentSearch.includes('type=magiclink');
+
+          if (isActivationFlow) {
+            const userEmail = session?.user?.email || '';
+            await handleAccountActivation(userEmail);
           }
         }
       });

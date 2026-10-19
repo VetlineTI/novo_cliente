@@ -648,11 +648,11 @@ export const getClientIp = async () => {
 /**
  * Verifica se o IP do cliente atingiu o limite de requisições no Supabase (Rate Limit)
  * @param {string} ip Endereço IP
- * @param {number} maxAttempts Quantidade máxima de tentativas permitidas (padrão 3)
- * @param {number} windowMinutes Janela de tempo em minutos (padrão 60)
+ * @param {number} maxAttempts Quantidade máxima de tentativas permitidas (padrão 5)
+ * @param {number} windowMinutes Janela de tempo em minutos (padrão 5)
  * @returns {Promise<{allowed: boolean, message?: string, remaining?: number, retryAfterMinutes?: number}>}
  */
-export const checkRateLimit = async (ip = null, maxAttempts = 3, windowMinutes = 60) => {
+export const checkRateLimit = async (ip = null, maxAttempts = 5, windowMinutes = 5) => {
   const clientIp = ip || (await getClientIp());
 
   if (isSupabaseConfigured && supabase) {
@@ -944,7 +944,7 @@ export const submitNewClient = async (clientData) => {
 
   // 2. Checagem prévia de Rate Limiting por IP no Supabase
   if (isSupabaseConfigured && supabase && clientIp && clientIp !== '127.0.0.1' && clientIp !== 'localhost') {
-    const rateCheck = await checkRateLimit(clientIp, 3, 60);
+    const rateCheck = await checkRateLimit(clientIp, 5, 5);
     if (!rateCheck.allowed) {
       return {
         success: false,

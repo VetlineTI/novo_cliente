@@ -36,11 +36,11 @@ ALTER TABLE novo_cliente.data_new_cliente
 ADD COLUMN IF NOT EXISTS ip_origem VARCHAR(50);
 
 -- 4. Função RPC: check_rate_limit (no schema novo_cliente)
--- Verifica se o IP excedeu o limite de requisições na janela de tempo (padrão: 3 envios a cada 60 min)
+-- Verifica se o IP excedeu o limite de requisições na janela de tempo (padrão: 5 envios a cada 5 min)
 CREATE OR REPLACE FUNCTION novo_cliente.check_rate_limit(
     p_ip TEXT,
-    p_max_attempts INT DEFAULT 3,
-    p_window_minutes INT DEFAULT 60
+    p_max_attempts INT DEFAULT 5,
+    p_window_minutes INT DEFAULT 5
 )
 RETURNS JSONB
 SECURITY DEFINER
@@ -87,7 +87,7 @@ BEGIN
             'count', v_count,
             'max', p_max_attempts,
             'retry_after_minutes', v_minutes_left,
-            'message', format('Limite de cadastros excedido para este dispositivo/IP (%s envios na última hora). Por segurança, aguarde %s minuto(s) antes de tentar novamente.', p_max_attempts, v_minutes_left)
+            'message', format('Limite de cadastros excedido para este dispositivo/IP (%s envios a cada %s minutos). Por segurança, aguarde %s minuto(s) antes de tentar novamente.', p_max_attempts, p_window_minutes, v_minutes_left)
         );
     END IF;
 
@@ -198,9 +198,9 @@ DECLARE
 BEGIN
     v_client_ip := trim(COALESCE(client_payload->>'ip_origem', client_payload->>'ip_address', ''));
 
-    -- Verificação de Rate Limit no ato da inserção no banco
+    -- Verificação de Rate Limit no ato da inserção no banco (5 tentativas a cada 5 minutos)
     IF v_client_ip <> '' AND v_client_ip <> '127.0.0.1' AND v_client_ip <> 'localhost' THEN
-        v_rate_check := novo_cliente.check_rate_limit(v_client_ip, 3, 60);
+        v_rate_check := novo_cliente.check_rate_limit(v_client_ip, 5, 5);
         IF (v_rate_check->>'allowed')::boolean = false THEN
             RAISE EXCEPTION 'RATE_LIMIT_EXCEEDED: %', (v_rate_check->>'message');
         END IF;

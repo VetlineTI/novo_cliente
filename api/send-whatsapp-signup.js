@@ -29,6 +29,27 @@ async function getEnvConfig() {
   };
 }
 
+async function shortenUrl(longUrl) {
+  if (!longUrl) return '';
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const short = (await res.text()).trim();
+      if (short.startsWith('http://') || short.startsWith('https://')) {
+        return short;
+      }
+    }
+  } catch (err) {
+    console.warn('Falha ao encurtar URL, mantendo link direto:', err?.message || err);
+  }
+  return longUrl;
+}
+
 export default async function handler(req, res) {
   // Configuração de CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -146,7 +167,24 @@ export default async function handler(req, res) {
     }
 
     // 1. Gera o link de ativação via Supabase Admin REST API
-    const targetRedirect = redirectUrl || (req.headers.origin ? `${req.headers.origin}/` : 'https://vetline.com.br/');
+    // Define a URL base pública de produção (evita enviar link de localhost para o WhatsApp do cliente)
+    let baseUrl = process.env.APP_URL || process.env.VITE_APP_URL || '';
+    if (!baseUrl) {
+      const incoming = (req.headers.origin || redirectUrl || '').trim();
+      if (incoming && !incoming.includes('localhost') && !incoming.includes('127.0.0.1')) {
+        baseUrl = incoming;
+      } else {
+        // Domínio oficial de produção na Vercel
+        baseUrl = 'https://novocliente-ten.vercel.app';
+      }
+    }
+
+    // Garante que a URL direciona diretamente para a tela de login
+    const cleanBase = baseUrl.replace(/\/$/, '');
+    const targetRedirect = cleanBase.includes('?') 
+      ? `${cleanBase}&tab=login` 
+      : `${cleanBase}/?tab=login`;
+
     let generatePayload = {
       type: 'signup',
       email: cleanEmail,
@@ -253,15 +291,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2. Monta a mensagem personalizada da Vetline
+    // 2. Encurta o link para uma URL limpa e amigável no WhatsApp
+    const displayLink = await shortenUrl(actionLink);
+
+    // Monta a mensagem personalizada da Vetline
     const message = [
       `Olá, *${cleanName}*! 👋`,
       '',
       'Seja bem-vindo(a) à *Vetline Distribuidora*!',
       '',
-      'Recebemos seu cadastro e preparamos seu acesso à Área do Cliente.',
-      'Para *confirmar sua conta e liberar seu acesso*, clique no link seguro abaixo:',
-      `👉 ${actionLink}`,
+      'Recebemos seu cadastro e preparamos seu acesso à *Área do Cliente*.',
+      'Para confirmar sua conta e liberar seu acesso, clique no link seguro abaixo:',
+      '',
+      `👉 ${displayLink}`,
       '',
       '_Mensagem automática do Sistema de Credenciamento Vetline._'
     ].join('\n');

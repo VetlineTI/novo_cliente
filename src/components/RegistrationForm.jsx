@@ -1005,8 +1005,8 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Checagem prévia de Rate Limiting por IP antes de prosseguir
-    const rateCheck = await checkRateLimit(null, 3, 60);
+    // Checagem prévia de Rate Limiting por IP antes de prosseguir (5 tentativas a cada 5 minutos)
+    const rateCheck = await checkRateLimit(null, 5, 5);
     if (!rateCheck.allowed) {
       setSubmitError(rateCheck.message || 'Limite de cadastros excedido para este dispositivo/IP. Por segurança, aguarde alguns minutos antes de tentar novamente.');
       window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
