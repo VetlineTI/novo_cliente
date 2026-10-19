@@ -371,40 +371,41 @@ export const loginClient = async (email, password, rememberMe = true) => {
         authUser = authData.user;
         const meta = authUser.user_metadata || {};
 
-        // Regra Obrigatória: Cliente deve ter confirmado pelo WhatsApp antes de acessar
-        if (meta.role === 'cliente' && meta.whatsapp_confirmed === false) {
+        // Regra Obrigatória: O acesso à Área do Cliente SÓ é liberado se whatsapp_confirmed for explicitamente true
+        const isWhatsAppConfirmed = Boolean(meta.whatsapp_confirmed === true);
+
+        if (!isWhatsAppConfirmed) {
           await supabase.auth.signOut().catch(() => {});
+          const clientRec = await fetchClientRecord(authUser.id, cleanEmail);
           return {
             success: false,
             isWhatsAppPending: true,
             email: cleanEmail,
-            phone: meta.phone || '',
+            phone: meta.phone || clientRec?.telefone || clientRec?.phone || '',
             error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
           };
         }
       } else if (authError) {
-        // Se der 'Email not confirmed' (caso tenha sido criado anteriormente com confirmação pendente),
-        // atualiza via RPC ensure_client_auth_user para liberar imediatamente
+        // Se der 'Email not confirmed' (o link do WhatsApp ainda não foi clicado)
         const isNotConfirmed = 
           authError.message?.toLowerCase().includes('email not confirmed') ||
           authError.message?.toLowerCase().includes('not confirmed') ||
-          (authError.status === 400 && authError.message?.includes('confirmed'));
+          (authError.status === 400 && authError.message?.toLowerCase().includes('confirm'));
 
         if (isNotConfirmed) {
-          try {
-            const { data: rpcRes } = await supabase.rpc('ensure_client_auth_user', {
-              p_email: cleanEmail,
-              p_password: cleanPassword,
-              p_full_name: ''
-            });
-            if (rpcRes?.success && rpcRes?.user_id) {
-              authUser = { id: rpcRes.user_id, email: cleanEmail };
-            }
-          } catch (rpcErr) {}
+          await supabase.auth.signOut().catch(() => {});
+          const clientRec = await fetchClientRecord(null, cleanEmail);
+          return {
+            success: false,
+            isWhatsAppPending: true,
+            email: cleanEmail,
+            phone: clientRec?.telefone || clientRec?.phone || '',
+            error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
+          };
         }
 
-        if (!authUser && authError.message?.includes('Invalid login credentials')) {
-          // Verifica antes no fallback local
+        if (authError.message?.includes('Invalid login credentials')) {
+          // Verifica no fallback local se as credenciais batem
           const rawAccs = localStorage.getItem(CLIENT_ACCOUNTS_LOCAL_KEY) || '[]';
           const accs = JSON.parse(rawAccs);
           const matched = accs.find(a => a.email.toLowerCase() === cleanEmail && a.password === cleanPassword);
@@ -412,6 +413,16 @@ export const loginClient = async (email, password, rememberMe = true) => {
             return {
               success: false,
               error: 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.'
+            };
+          }
+          if (!matched.whatsapp_confirmed) {
+            const clientRec = await fetchClientRecord(null, cleanEmail);
+            return {
+              success: false,
+              isWhatsAppPending: true,
+              email: cleanEmail,
+              phone: clientRec?.telefone || clientRec?.phone || '',
+              error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
             };
           }
         }
@@ -430,6 +441,15 @@ export const loginClient = async (email, password, rememberMe = true) => {
       const matched = accs.find(a => a.email.toLowerCase() === cleanEmail && a.password === cleanPassword);
 
       if (matched) {
+        if (!matched.whatsapp_confirmed) {
+          return {
+            success: false,
+            isWhatsAppPending: true,
+            email: cleanEmail,
+            phone: clientRecord?.telefone || clientRecord?.phone || '',
+            error: 'Seu cadastro ainda não foi ativado! Por favor, clique no link de segurança que enviamos para o seu WhatsApp para liberar seu acesso.'
+          };
+        }
         if (!clientRecord) {
           clientRecord = await fetchClientRecord(matched.auth_user_id, cleanEmail);
         }

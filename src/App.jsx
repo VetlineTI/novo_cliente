@@ -51,12 +51,21 @@ export function App() {
       setPortalTab('login');
       setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe seu e-mail e senha abaixo para entrar.');
 
-      // Marca o WhatsApp como confirmado
-      confirmClientWhatsApp().catch(() => {});
-      
-      // Limpa qualquer sessão temporária criada pelo link para forçar login explícito
+      // Marca o WhatsApp como confirmado obtendo o e-mail do link
       if (isSupabaseConfigured && supabase) {
-        supabase.auth.signOut().catch(() => {});
+        supabase.auth.getUser().then(({ data }) => {
+          const userEmail = data?.user?.email || '';
+          if (userEmail) {
+            setInitialLoginEmail(userEmail);
+          }
+          confirmClientWhatsApp(userEmail).catch(() => {});
+          supabase.auth.signOut().catch(() => {});
+        }).catch(() => {
+          confirmClientWhatsApp().catch(() => {});
+          supabase.auth.signOut().catch(() => {});
+        });
+      } else {
+        confirmClientWhatsApp().catch(() => {});
       }
 
       // Limpa os parâmetros de hash/query da URL

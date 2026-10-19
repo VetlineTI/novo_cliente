@@ -1,20 +1,22 @@
 -- ==============================================================================
--- Migration: Adicionar colunas de CNAE no schema novo_cliente
+-- Migration: Adicionar colunas de CNAE e WhatsApp no schema novo_cliente
 -- ==============================================================================
 -- Armazena o código e a descrição da atividade econômica principal (CNAE)
--- extraída via API da Receita Federal para validação de CNAEs permitidos.
+-- e o status de confirmação oficial pelo WhatsApp.
 -- ==============================================================================
 
 -- 1. Adiciona as colunas na tabela principal novo_cliente.data_new_cliente
 ALTER TABLE novo_cliente.data_new_cliente 
 ADD COLUMN IF NOT EXISTS cnae TEXT,
 ADD COLUMN IF NOT EXISTS cnae_codigo VARCHAR(20),
-ADD COLUMN IF NOT EXISTS cnae_descricao TEXT;
+ADD COLUMN IF NOT EXISTS cnae_descricao TEXT,
+ADD COLUMN IF NOT EXISTS whatsapp_confirmed BOOLEAN DEFAULT FALSE;
 
 -- 2. Adiciona comentários explicativos
 COMMENT ON COLUMN novo_cliente.data_new_cliente.cnae IS 'Código e descrição completa do CNAE principal (ex: 4789-0/04 - Comércio varejista de animais vivos...)';
 COMMENT ON COLUMN novo_cliente.data_new_cliente.cnae_codigo IS 'Código formatado do CNAE (ex: 4789-0/04)';
 COMMENT ON COLUMN novo_cliente.data_new_cliente.cnae_descricao IS 'Descrição oficial da atividade econômica na Receita Federal';
+COMMENT ON COLUMN novo_cliente.data_new_cliente.whatsapp_confirmed IS 'Indica se o cliente confirmou o cadastro pelo link oficial enviado no WhatsApp';
 
 -- 3. Atualiza a view de compatibilidade novo_cliente.data_new_client
 DO $$ 
@@ -32,6 +34,8 @@ BEGIN
         ALTER TABLE novo_cliente.data_new_client 
         ADD COLUMN IF NOT EXISTS cnae TEXT,
         ADD COLUMN IF NOT EXISTS cnae_codigo VARCHAR(20),
-        ADD COLUMN IF NOT EXISTS cnae_descricao TEXT;
+        ADD COLUMN IF NOT EXISTS cnae_descricao TEXT,
+        ADD COLUMN IF NOT EXISTS whatsapp_confirmed BOOLEAN DEFAULT FALSE;
     END IF;
 END $$;
+
