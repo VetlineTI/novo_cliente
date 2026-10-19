@@ -128,10 +128,13 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Documentos anexados - PJ
   const [docContract, setDocContract] = useState(null); // Contrato Social (PJ)
   const [docPartnerPhoto, setDocPartnerPhoto] = useState(null); // Doc Foto do Sócio (PJ)
+  const [docContractValidation, setDocContractValidation] = useState(null);
+  const [docPartnerPhotoValidation, setDocPartnerPhotoValidation] = useState(null);
 
   // Documentos anexados - PF
   const [docCRMV, setDocCRMV] = useState(null); // CRMV (PF - Obrigatório)
   const [docAddress, setDocAddress] = useState(null); // Comprovante de Endereço (PF - Obrigatório)
+  const [docCRMVValidation, setDocCRMVValidation] = useState(null);
 
   // Termos e status
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -828,17 +831,20 @@ export const RegistrationForm = ({ onSuccess }) => {
 
         // 1. Validação do Documento da Empresa (Contrato Social / Cartão CNPJ)
         if (docContract) {
-          const contractCheck = await validateCompanyAttachment(docContract, {
-            expectedCnpj: cleanCnpj,
-            expectedName: fullName,
-            partnersList: partners
-          });
+          let contractCheck = docContractValidation;
+          if (!contractCheck || !contractCheck.isValid) {
+            contractCheck = await validateCompanyAttachment(docContract, {
+              expectedCnpj: cleanCnpj,
+              expectedName: fullName,
+              partnersList: partners
+            });
+          }
 
           if (!contractCheck.isValid) {
             setPartnerMismatchData({
               title: 'O cadastro não foi concluído',
               subtitle: 'Divergência identificada no Documento da Empresa',
-              reasons: contractCheck.reasons,
+              reasons: contractCheck.reasons || [contractCheck.message || 'Divergência no Documento da Empresa.'],
               authorizedPartners: [],
               buttonText: 'Reenviar Documento da Empresa',
               hideReupload: false,
@@ -852,18 +858,22 @@ export const RegistrationForm = ({ onSuccess }) => {
 
         // 2. Validação do Documento do Sócio (RG / CNH) contra o QSA e CNPJ
         if (docPartnerPhoto) {
-          const partnerCheck = await validatePartnerDocument(
-            docPartnerPhoto,
-            partners,
-            cleanCnpj,
-            fullName || cnpjInfo?.razaoSocial || ''
-          );
+          let partnerCheck = docPartnerPhotoValidation;
+          if (!partnerCheck || !partnerCheck.isValid) {
+            partnerCheck = await validatePartnerDocument(
+              docPartnerPhoto,
+              partners,
+              cleanCnpj,
+              fullName || cnpjInfo?.razaoSocial || ''
+            );
+          }
+
           if (!partnerCheck.isValid) {
             setPartnerMismatchData({
               title: 'O cadastro não foi concluído',
               subtitle: 'Divergência identificada no Quadro Societário (QSA)',
-              reasons: partnerCheck.reasons,
-              authorizedPartners: partnerCheck.authorizedPartners,
+              reasons: partnerCheck.reasons || [partnerCheck.message || 'O documento anexado não pertence a nenhum dos sócios do CNPJ.'],
+              authorizedPartners: partnerCheck.authorizedPartners || partners.map(p => p.nome || p.nome_socio).filter(Boolean),
               buttonText: 'Reenviar Documentos do Sócio',
               hideReupload: false,
               shouldResetForm: false
@@ -953,18 +963,21 @@ export const RegistrationForm = ({ onSuccess }) => {
 
         // 2. Cruzamento do documento anexado do CRMV contra o CRMV informado no formulário
         if (docCRMV && crmv) {
-          const crmvDocCheck = await validateCrmvAttachment(docCRMV, {
-            expectedCrmv: crmv,
-            expectedName: fullName,
-            expectedCpf: documentNumber,
-            expectedUf: state || 'SP'
-          });
+          let crmvDocCheck = docCRMVValidation;
+          if (!crmvDocCheck || !crmvDocCheck.isValid) {
+            crmvDocCheck = await validateCrmvAttachment(docCRMV, {
+              expectedCrmv: crmv,
+              expectedName: fullName,
+              expectedCpf: documentNumber,
+              expectedUf: state || 'SP'
+            });
+          }
 
           if (!crmvDocCheck.isValid) {
             setPartnerMismatchData({
               title: 'O cadastro não foi concluído',
               subtitle: 'Divergência identificada no Anexo do CRMV',
-              reasons: crmvDocCheck.reasons,
+              reasons: crmvDocCheck.reasons || [crmvDocCheck.message || 'Divergência no anexo do CRMV.'],
               authorizedPartners: [],
               buttonText: 'Reenviar Documento do CRMV',
               hideReupload: false,
@@ -2403,6 +2416,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                         setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
                       }
                     }}
+                    onValidationChange={setDocContractValidation}
                     required={!docPartnerPhoto}
                     error={errors.docContract}
                     expectedDocument={documentNumber}
@@ -2421,6 +2435,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                         setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
                       }
                     }}
+                    onValidationChange={setDocPartnerPhotoValidation}
                     required={!docContract}
                     error={errors.docPartnerPhoto}
                     expectedDocument={documentNumber}
@@ -2441,6 +2456,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                       setDocCRMV(f);
                       if (errors.docCRMV) setErrors(prev => ({ ...prev, docCRMV: null }));
                     }}
+                    onValidationChange={setDocCRMVValidation}
                     required={true}
                     error={errors.docCRMV}
                     expectedDocument={documentNumber}

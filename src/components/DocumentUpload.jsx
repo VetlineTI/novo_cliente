@@ -30,7 +30,8 @@ export const DocumentUpload = ({
   expectedName = '',
   expectedPartners = [],
   expectedCrmv = '',
-  category = 'IDENTIFICATION'
+  category = 'IDENTIFICATION',
+  onValidationChange = null
 }) => {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -55,6 +56,9 @@ export const DocumentUpload = ({
           });
           if (!isCancelled) {
             setValidationResult(result);
+            if (onValidationChange) {
+              onValidationChange(result);
+            }
           }
         } catch (err) {
           console.warn('Erro ao revalidar arquivo:', err);
@@ -68,12 +72,20 @@ export const DocumentUpload = ({
       return () => {
         isCancelled = true;
       };
+    } else {
+      setValidationResult(null);
+      if (onValidationChange) {
+        onValidationChange(null);
+      }
     }
   }, [file, expectedDocument, expectedName, expectedCrmv, category, JSON.stringify(expectedPartners)]);
 
   const processAndValidateFile = async (selectedFile) => {
     setUploadError(null);
     setValidationResult(null);
+    if (onValidationChange) {
+      onValidationChange(null);
+    }
     if (!selectedFile) return;
 
     // 1. Valida tamanho do arquivo
@@ -106,6 +118,9 @@ export const DocumentUpload = ({
         category
       });
       setValidationResult(result);
+      if (onValidationChange) {
+        onValidationChange(result);
+      }
     } catch (err) {
     } finally {
       setIsValidating(false);
@@ -134,6 +149,9 @@ export const DocumentUpload = ({
     onFileChange(null);
     setUploadError(null);
     setValidationResult(null);
+    if (onValidationChange) {
+      onValidationChange(null);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }

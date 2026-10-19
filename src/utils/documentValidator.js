@@ -384,7 +384,10 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
           message: `Documento oficial verificado! Sócio (${partnerMatchedName}) confirmado no CNPJ.`,
           details: 'Associação com o Quadro Societário (QSA) validada com sucesso.',
           score: 100,
-          qrFound: Boolean(qrData)
+          qrFound: Boolean(qrData),
+          matchedPartner: partnerMatchedName,
+          authorizedPartners: authorizedPartners.map(p => p.nome),
+          reasons: []
         };
       }
 
@@ -397,7 +400,12 @@ export async function validateDocumentAttachment(file, { expectedDocument = '', 
         message: 'O titular desta CNH/RG não foi localizado no Quadro de Sócios (QSA) deste CNPJ.',
         details: 'Por favor, anexe a CNH ou RG de um dos sócios administradores da empresa.',
         score: 20,
-        qrFound: Boolean(qrData)
+        qrFound: Boolean(qrData),
+        reasons: [
+          'O documento de identificação anexado (RG/CNH) não pertence a nenhum dos sócios registrados no Quadro Societário (QSA) deste CNPJ.',
+          'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
+        ],
+        authorizedPartners: authorizedPartners.map(p => p.nome)
       };
     }
 
@@ -969,184 +977,20 @@ export async function validatePartnerDocument(file, partnersList = [], expectedC
     };
   }
 
-  const cleanExpectedCnpj = unmask(expectedCnpj);
-  let authorizedPartners = (partnersList || []).map(p => ({
-    nome: p.nome || p.nome_socio || '',
-    documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
-    cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
-    cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
-  })).filter(p => p.nome && p.nome.trim().length > 0);
+  const result = await validateDocumentAttachment(file, {
+    expectedDocument: expectedCnpj,
+    expectedName: expectedCompanyName,
+    expectedPartners: partnersList,
+    category: 'IDENTIFICATION'
+  });
 
-  // Se a lista de sócios veio vazia, consulta a API na hora
-  if (authorizedPartners.length === 0 && cleanExpectedCnpj && cleanExpectedCnpj.length === 14) {
-    try {
-      const directData = await fetchCNPJDataFromBrasilAPI(cleanExpectedCnpj);
-      if (directData?.socios && directData.socios.length > 0) {
-        authorizedPartners = directData.socios.map(p => ({
-          nome: p.nome || p.nome_socio || '',
-          documento: p.documento || p.cpf_cnpj_socio || p.cnpj_cpf_do_socio || p.cpf_socio || p.cpf || p.cpfRepresentante || '',
-          cpf_cnpj_socio: p.cpf_cnpj_socio || p.documento || '',
-          cargo: p.cargo || p.qualificacao || p.qualificacao_socio || 'Sócio'
-        })).filter(p => p.nome && p.nome.trim().length > 0);
-      }
-    } catch (e) {
-      console.warn('Falha na busca direta de sócios em validatePartnerDocument:', e);
-    }
-  }
-
-  // Se não houver sócios no QSA (ex: MEI ou Empresário Individual), extrai o nome do titular da Razão Social
-  if (authorizedPartners.length === 0 && expectedCompanyName) {
-    const ownerFromRazao = extractOwnerFromRazaoSocial(expectedCompanyName);
-    if (ownerFromRazao) {
-      authorizedPartners.push({
-        nome: ownerFromRazao,
-        documento: '',
-        cpf_cnpj_socio: '',
-        cargo: 'Titular / Responsável Legal'
-      });
-    }
-  }
-
-  try {
-    const { Tesseract, jsQR, pdfjs } = await loadLibraries();
-
-    let extractedText = '';
-    let qrData = null;
-    let canvasForOCR = null;
-
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (isPdf) {
-      const pdfResult = await processPDF(file, pdfjs, jsQR);
-      extractedText = pdfResult.directText || '';
-      qrData = pdfResult.qrData;
-      canvasForOCR = pdfResult.canvas;
-    } else {
-      const imgResult = await imageToCanvas(file);
-      canvasForOCR = imgResult.canvas;
-      if (jsQR) {
-        qrData = scanQRCodeFromCanvas(canvasForOCR, jsQR);
-      }
-    }
-
-    // Se o texto direto for curto (ex: foto ou scan), roda OCR com Tesseract
-    if (extractedText.length < 50 && canvasForOCR) {
-      const ocrResult = await Tesseract.recognize(canvasForOCR, 'por', {
-        logger: () => {}
-      });
-      extractedText += ' ' + (ocrResult?.data?.text || '');
-    }
-
-    const fullRawText = `${extractedText} ${qrData || ''}`;
-    const normalizedText = fullRawText
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-    // 1. CHECAGEM DE CNPJ DIVERGENTE ANEXADO NO CAMPO DE SÓCIO
-    if (cleanExpectedCnpj) {
-      const foundCnpjs = extractCnpjsFromText(fullRawText);
-      if (foundCnpjs.length > 0) {
-        const hasExpected = foundCnpjs.includes(cleanExpectedCnpj) || unmask(fullRawText).includes(cleanExpectedCnpj);
-        if (!hasExpected) {
-          const divergentCnpj = foundCnpjs[0];
-          return {
-            isValid: false,
-            isVerified: false,
-            reasons: [
-              `O documento anexado contém o CNPJ ${maskCNPJ(divergentCnpj)}, que não corresponde ao CNPJ informado no cadastro (${maskCNPJ(cleanExpectedCnpj)}).`,
-              'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
-            ],
-            authorizedPartners: authorizedPartners.map(p => p.nome)
-          };
-        }
-      }
-    }
-
-    // Extrai todos os CPFs de 11 dígitos encontrados no texto / QR Code (suporta 389.570.869-00, 389570869/00 etc)
-    const foundCpfs = [];
-    const cpfRegexes = [
-      /\b\d{3}\.?\d{3}\.?\d{3}[-\/]?\d{2}\b/g,
-      /\b\d{9}[-\/]\d{2}\b/g,
-      /\b\d{11}\b/g,
-      /cpf[^\d]*(\d{9,11}[-\/]?\d{0,2})/gi
-    ];
-    cpfRegexes.forEach(rgx => {
-      const matches = fullRawText.match(rgx) || [];
-      matches.forEach(m => {
-        const clean = unmask(m);
-        if (clean.length === 11 && !foundCpfs.includes(clean)) {
-          foundCpfs.push(clean);
-        }
-      });
-    });
-
-    if (qrData) {
-      const qrCpfMatches = qrData.match(/\b\d{11}\b/g) || [];
-      qrCpfMatches.forEach(c => {
-        const clean = unmask(c);
-        if (clean.length === 11 && !foundCpfs.includes(clean)) {
-          foundCpfs.push(clean);
-        }
-      });
-    }
-
-    // 2. Cruzamento inteligente de sócio (CPF completo, Máscara LGPD ***570869** e Tokens do Nome)
-    let matchedPartnerObj = null;
-    let matchResultType = null;
-
-    for (const partner of authorizedPartners) {
-      const matchRes = matchPartnerWithDocument(partner, {
-        foundCpfs,
-        fullRawText,
-        normalizedText,
-        qrData
-      });
-
-      if (matchRes.matched) {
-        matchedPartnerObj = matchRes.matchedPartner || partner;
-        matchResultType = matchRes.matchType;
-        break;
-      }
-    }
-
-    if (matchedPartnerObj) {
-      return {
-        isValid: true,
-        isVerified: true,
-        matchType: matchResultType || 'VERIFIED',
-        matchedPartner: matchedPartnerObj,
-        reasons: [],
-        authorizedPartners: authorizedPartners.map(p => p.nome)
-      };
-    }
-
-    // Se nenhum sócio ou titular da empresa foi identificado no documento
-    const partnersNamesList = authorizedPartners.map(p => p.nome);
-    const reasons = [
-      'O documento de identificação anexado (RG/CNH) não pertence a nenhum dos sócios registrados no Quadro Societário (QSA) deste CNPJ.',
-      'Por favor, anexe a CNH ou RG de um dos sócios administradores autorizados.'
-    ];
-
-    return {
-      isValid: false,
-      isVerified: false,
-      reasons,
-      authorizedPartners: partnersNamesList,
-      extractedInfo: {
-        cpfsFound: foundCpfs.slice(0, 3)
-      }
-    };
-  } catch (err) {
-    console.warn('Falha técnica no cruzamento de sócio:', err);
-    return {
-      isValid: false,
-      isVerified: false,
-      reasons: [
-        'Não foi possível confirmar o vínculo do documento do sócio com o CNPJ informado.',
-        'Por favor, certifique-se de anexar uma foto ou PDF nítido da CNH ou RG de um dos sócios da empresa.'
-      ],
-      authorizedPartners: authorizedPartners.map(p => p.nome)
-    };
-  }
+  return {
+    isValid: Boolean(result.isValid),
+    isVerified: Boolean(result.isValid),
+    matchedPartner: result.matchedPartner || null,
+    reasons: result.reasons || (result.isValid ? [] : [result.message || 'Divergência identificada no Quadro Societário (QSA).']),
+    authorizedPartners: result.authorizedPartners || (partnersList || []).map(p => p.nome || p.nome_socio).filter(Boolean),
+    extractedInfo: result.extractedInfo || {}
+  };
 }
 
