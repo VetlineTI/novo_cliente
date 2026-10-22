@@ -1,5 +1,4 @@
 import { unmask, maskPhone, maskCEP } from './masks';
-import { consultarDirectDataPJ } from '../lib/directd';
 import { parseCnae, formatCnaeCode } from './cnaeValidator';
 
 /**
@@ -170,8 +169,8 @@ export const checkCompanyAge = (dateInput) => {
 };
 
 /**
- * Consulta de CNPJ com redundância multi-provedor (Direct Data Oficial, Minha Receita, BrasilAPI e CNPJ.ws)
- * Evita falhas por CORS / Rate Limit 429 e garante preenchimento automático contínuo
+ * Consulta de CNPJ exclusivamente via APIs públicas e 100% gratuitas da Receita Federal
+ * (Minha Receita, BrasilAPI e CNPJ.ws) sem consumo de créditos
  * @param {string} cnpj 
  * @returns {Promise<Object|null>} Dados completos da empresa ou null
  */
@@ -189,58 +188,7 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     return '';
   };
 
-  // Provedor 0: Direct Data Oficial (CadastroPessoaJuridicaPlus)
-  try {
-    const directRes = await consultarDirectDataPJ(clean);
-    if (directRes && directRes.success && (directRes.razaoSocial || directRes.data)) {
-      const d = directRes.data || {};
-      const end = (d.enderecos && d.enderecos[0]) || {};
-      const tel = (d.telefones && d.telefones[0]) || {};
-      const mail = (d.emails && d.emails[0]) || {};
-
-      const rawCnae = d.cnaeDescricao || '';
-      const parsed = parseCnae(d.cnaeCodigo ? `${d.cnaeCodigo} - ${rawCnae}` : rawCnae);
-      const cnaeCode = parsed.code || formatCnaeCode(d.cnaeCodigo) || '';
-      const cnaeDesc = parsed.description || d.cnaeDescricao || rawCnae;
-      const fullCnae = parsed.formatted || (cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc));
-
-      return {
-        razaoSocial: directRes.razaoSocial || d.razaoSocial || '',
-        nomeFantasia: directRes.nomeFantasia || d.nomeFantasia || '',
-        situacaoCadastral: directRes.situacaoCadastral || d.situacaoCadastral || 'ATIVA',
-        isAtiva: (directRes.situacaoCadastral || d.situacaoCadastral || '').toUpperCase().includes('ATIVA'),
-        dataAbertura: directRes.dataAbertura || d.dataFundacao || '',
-        cnaeCodigo: cnaeCode,
-        cnaeDescricao: cnaeDesc,
-        cnae: fullCnae,
-        suggestedSegment: mapSegment(cnaeDesc),
-        socios: (directRes.socios || []).map(s => ({
-          nome: s.nome || '',
-          qualificacao: s.cargo || 'Sócio / Administrador',
-          cargo: s.cargo || 'Sócio / Administrador',
-          dataEntrada: s.dataEntrada || '',
-          cpf_cnpj_socio: '',
-          documento: ''
-        })),
-        endereco: {
-          cep: end.cep ? maskCEP(end.cep) : '',
-          logradouro: end.logradouro || '',
-          numero: end.numero || '',
-          complemento: end.complemento || '',
-          bairro: end.bairro || '',
-          municipio: end.cidade || '',
-          uf: (end.uf || '').trim().toUpperCase()
-        },
-        telefone: tel.numero ? maskPhone(tel.numero) : '',
-        email: mail.email ? String(mail.email).toLowerCase() : '',
-        receiptUrl: directRes.receiptUrl || ''
-      };
-    }
-  } catch (err) {
-    console.warn('Tentando próximo provedor de CNPJ (Minha Receita)...', err);
-  }
-
-  // Provedor 1: Minha Receita (Base oficial aberta, sem bloqueio de CORS / 429)
+  // Provedor 1: Minha Receita (100% Gratuito - Base oficial aberta da Receita Federal, sem limite estrito)
   try {
     const response = await fetch(`https://minhareceita.org/${clean}`);
     if (response.ok) {
