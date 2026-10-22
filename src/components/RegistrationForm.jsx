@@ -29,7 +29,7 @@ import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { sendWhatsAppSignupConfirmation } from '../lib/zapi';
-import { executarAuditoriaBureau, consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
+import { consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
 import {
   maskCPF,
@@ -97,9 +97,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [crmvAlert, setCrmvAlert] = useState('');
   const crmvAuditPromiseRef = useRef(null);
 
-  // Refs para pré-consulta antecipada do Bureau (JUCESP & CENPROT & SINTEGRA)
-  const bureauAuditPromiseRef = useRef(null);
-  const bureauAuditResultRef = useRef(null);
+  // Ref para resultado do Sintegra
   const sintegraResultRef = useRef(null);
 
   // Endereço Principal / Cadastral (para PF e PJ)
@@ -177,8 +175,6 @@ export const RegistrationForm = ({ onSuccess }) => {
     setCnpjAlert('');
     setDuplicateApprovedClient(null);
     setLoadingDuplicateCheck(false);
-    bureauAuditPromiseRef.current = null;
-    bureauAuditResultRef.current = null;
     sintegraResultRef.current = null;
     setZipcode('');
     setStreet('');
@@ -417,25 +413,6 @@ export const RegistrationForm = ({ onSuccess }) => {
             }
             if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
           }
-
-          // Dispara antecipadamente a consulta na JUCESP e CENPROT em segundo plano
-          bureauAuditResultRef.current = null;
-          bureauAuditPromiseRef.current = executarAuditoriaBureau({
-            cpf_cnpj: cleanCnpj,
-            razao_social_nome: data?.razaoSocial || fullName,
-            uf: state || 'SP'
-          }).then(res => {
-            bureauAuditResultRef.current = res;
-            const ieFound = res?.inscricaoEstadual || res?.data?.sintegra?.ie;
-            if (ieFound && ieFound !== 'ISENTO' && ieFound !== 'ISENTA' && ieFound !== '-') {
-              setTpInscricao('E');
-              setNumeroInscricao(ieFound);
-            }
-            return res;
-          }).catch(err => {
-            console.warn('Pré-consulta Bureau CNPJ:', err);
-            return null;
-          });
         } else {
           // CNPJ Inapto, Baixado, Suspenso ou Inativo
           setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral || 'Inapta'} na Receita Federal.`);
@@ -516,20 +493,6 @@ export const RegistrationForm = ({ onSuccess }) => {
         if (crmv && crmv.trim()) {
           handleCrmvBlur(crmv);
         }
-
-        // Dispara antecipadamente a consulta de Protestos (CENPROT / Direct Data) para CPF em segundo plano
-        bureauAuditResultRef.current = null;
-        bureauAuditPromiseRef.current = executarAuditoriaBureau({
-          cpf_cnpj: clean,
-          razao_social_nome: fullName,
-          uf: state || 'SP'
-        }).then(res => {
-          bureauAuditResultRef.current = res;
-          return res;
-        }).catch(err => {
-          console.warn('Pré-consulta Protestos CPF:', err);
-          return null;
-        });
       }
     }
   };
@@ -1068,7 +1031,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Obtém a consulta no Bureau / Protestos (CENPROT, Direct Data e JUCESP/SINTEGRA para PJ)
+      // Protestos e Bureau serão consultados exclusivamente no aceite de confirmação do WhatsApp
       let docJucespUrl = null;
       let docCenprotUrl = null;
       let docSintegraUrl = sintegraResultRef.current?.receiptUrl || null;
@@ -1076,46 +1039,6 @@ export const RegistrationForm = ({ onSuccess }) => {
       let nireJucesp = null;
       let totalProtestos = null;
       let bureauConsultedAt = null;
-
-      if (documentNumber) {
-        try {
-          let bureauRes = bureauAuditResultRef.current;
-          if (!bureauRes && bureauAuditPromiseRef.current) {
-            bureauRes = await bureauAuditPromiseRef.current;
-          }
-          if (!bureauRes) {
-            bureauRes = await executarAuditoriaBureau({
-              cpf_cnpj: documentNumber,
-              razao_social_nome: fullName,
-              uf: state || 'SP'
-            });
-          }
-
-          if (bureauRes) {
-            if (bureauRes.docJucespUrl) docJucespUrl = bureauRes.docJucespUrl;
-            if (bureauRes.docCenprotUrl) docCenprotUrl = bureauRes.docCenprotUrl;
-            if (bureauRes.docSintegraUrl || bureauRes.docIeUrl) {
-              docSintegraUrl = bureauRes.docSintegraUrl || bureauRes.docIeUrl;
-            }
-            if (bureauRes.inscricaoEstadual || bureauRes.data?.sintegra?.ie) {
-              sintegraIe = bureauRes.inscricaoEstadual || bureauRes.data?.sintegra?.ie;
-            }
-            if (bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp) {
-              nireJucesp = bureauRes.data?.jucesp?.nire || bureauRes.nireJucesp;
-            }
-            if (bureauRes.data?.cenprot?.totalProtests !== undefined && bureauRes.data?.cenprot?.totalProtests !== null) {
-              totalProtestos = bureauRes.data.cenprot.totalProtests;
-            } else if (bureauRes.totalProtestos !== undefined && bureauRes.totalProtestos !== null) {
-              totalProtestos = bureauRes.totalProtestos;
-            }
-            if (bureauRes.successfulServices && bureauRes.successfulServices.length > 0) {
-              bureauConsultedAt = new Date().toISOString();
-            }
-          }
-        } catch (bureauErr) {
-          console.warn('Auditoria automática de bureau na submissão:', bureauErr);
-        }
-      }
 
       const hasIe = Boolean(sintegraIe && sintegraIe !== 'ISENTO' && sintegraIe !== 'ISENTA' && sintegraIe !== '-');
 
@@ -1141,6 +1064,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         cnae: personType === 'PJ' ? (cnpjInfo?.cnae || (cnpjInfo?.cnaeCodigo ? `${cnpjInfo.cnaeCodigo} - ${cnpjInfo.cnaeDescricao || ''}` : cnpjInfo?.cnaeDescricao) || null) : null,
         cnae_codigo: personType === 'PJ' ? (cnpjInfo?.cnaeCodigo || null) : null,
         cnae_descricao: personType === 'PJ' ? (cnpjInfo?.cnaeDescricao || null) : null,
+        data_abertura: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
+        data_inicio_atividade: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
         tp_inscricao: personType === 'PF' ? 'I' : tpInscricao,
         numero_inscricao: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || sintegraIe || 'ISENTO')),
         crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
@@ -1222,16 +1147,6 @@ export const RegistrationForm = ({ onSuccess }) => {
             total_protestos: totalProtestos,
             bureau_consulted_at: bureauConsultedAt || new Date().toISOString()
           }).catch(err => console.warn('Erro na atualização direta de bureau:', err));
-        }
-
-        // Se o documento de protestos ou JUCESP não foi obtido antes, dispara em background com o ID do cliente
-        if (!docCenprotUrl || (personType === 'PJ' && !docJucespUrl)) {
-          executarAuditoriaBureau({
-            id: createdClientId,
-            cpf_cnpj: documentNumber,
-            razao_social_nome: fullName,
-            uf: state || 'SP'
-          }).catch(err => console.warn('Execução em background do bureau:', err));
         }
       }
 

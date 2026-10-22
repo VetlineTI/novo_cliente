@@ -19,7 +19,8 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - **Ativação Obrigatória no App**:
   - Para acessar a Área do Cliente, é **obrigatório** tocar no link seguro enviado no WhatsApp.
   - Se tentar logar antes de clicar no link, o sistema exibe alerta amigável de pendência e oferece o botão para **"Reenviar link no WhatsApp"**.
-  - Ao clicar no link do WhatsApp, a aplicação detecta o token, marca a conta como ativada (`whatsapp_confirmed: true`) e libera o acesso à Área do Cliente.
+  - Ao clicar no link do WhatsApp, a aplicação detecta o token, marca a conta como ativada (`whatsapp_confirmed: true`), dispara a consulta oficial de **Protestos em Cartório / Bureau** para o cliente ativado e libera o acesso à Área do Cliente.
+  - **Zero desperdício de créditos de API**: A consulta de protestos não é chamada prematuramente no formulário; ela ocorre estritamente para clientes que concluíram o cadastro e deram o aceite no WhatsApp.
   - **Zero impacto nos demais sistemas**: A verificação é controlada na camada da aplicação, mantendo a flag global do Supabase desligada para não interferir em outros apps.
 
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
@@ -62,6 +63,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - Rota dedicada para administradores e analistas de cadastro da Vetline.
 - Contadores de status, filtros rápidos por PJ/PF e busca textual inteligente.
 - Edição cadastral e comercial completa (`tab_pre`, `tp_ped`, `cd_vend`, status e parecer interno `notes`).
+- **Alerta de Retaguarda para CNPJs Recentes (< 1 ano de fundação)**: A aplicação extrai automaticamente a data de abertura da Receita Federal (`data_inicio_atividade`). Quando a empresa possui menos de 365 dias de fundação, o sistema exibe um banner de alerta âmbar em destaque no modal de detalhes, renderiza aviso nos cards da listagem, injeta observação automática na coluna `notes` e anexa o aviso no texto do campo `alerta` integrado ao ERP Moinho.
 - Organização em **Pastas de Documentos** e visualizador integrado de PDFs e imagens.
 - **Gestão de Usuários & Perfis**: Listagem dos usuários de `auth.users` via RPC e concessão de perfis (Administrador, Operador, Consulta ou Bloqueado).
 - **Integração Webhook N8N (Moinho)**: Ao clicar em **"Confirmar & Aprovar"** ou aprovar o cadastro no painel, o sistema dispara automaticamente o webhook `https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho` com a carga completa de dados do cliente (dados cadastrais, fiscais, endereço, vendedor, tabelas comerciais e URLs dos anexos).

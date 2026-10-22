@@ -34,6 +34,7 @@ import { fetchClients, updateClientStatus, updateClientData, fetchSegments, envi
 import { ClientDetailModal } from './ClientDetailModal';
 import { UserManagementView } from './UserManagementView';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
+import { checkCompanyAge } from '../../utils/validators';
 
 export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [activeMainTab, setActiveMainTab] = useState('cadastros'); // 'cadastros' | 'usuarios'
@@ -616,6 +617,24 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                                     </span>
                                     <span className="text-[11px] text-amber-800 font-medium truncate max-w-[280px]">
                                       {cnaeVal.cnaeDescription || cnaeVal.formattedCnae}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* Alerta de Retaguarda: Empresa com menos de 1 ano de fundação */}
+                            {isPJ && (() => {
+                              const dataAbertura = client.data_abertura || client.data_inicio_atividade || client.inicio_atividade || (client.observacoes && client.observacoes.match(/Abertura:\s*([^)\s]+)/i)?.[1]);
+                              const ageVal = checkCompanyAge(dataAbertura);
+                              if (ageVal.isRecent) {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold mt-1">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 animate-pulse" />
+                                    <span className="font-bold">Alerta Retaguarda:</span>
+                                    <span className="text-[11px] text-amber-900 font-medium">
+                                      Empresa recente com menos de 1 ano ({ageVal.formattedDate ? `Abertura: ${ageVal.formattedDate} - ` : ''}{ageVal.ageText})
                                     </span>
                                   </div>
                                 );

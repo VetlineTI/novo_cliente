@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { checkCompanyAge } from '../utils/validators';
 
 const supabaseUrl = 
   import.meta.env.VITE_SUPABASE_URL || 
@@ -446,6 +447,8 @@ export const normalizeClientRecord = (c) => {
     terms_accepted: termos_aceitos,
     observacoes,
     notes: observacoes,
+    data_abertura: c.data_abertura || c.data_inicio_atividade || c.inicio_atividade || null,
+    data_inicio_atividade: c.data_abertura || c.data_inicio_atividade || c.inicio_atividade || null,
     auth_user_id,
     whatsapp_confirmed: Boolean(c.whatsapp_confirmed === true || c.whatsapp_confirmed === 'true' || c.whatsapp_confirmed === 1)
   };
@@ -587,6 +590,20 @@ export const toPortuguesePayload = (data) => {
   const cnaeToSave = data.cnae || (data.cnae_codigo ? `${data.cnae_codigo} - ${data.cnae_descricao || ''}` : data.cnae_descricao);
   if (cnaeToSave && !String(p.observacoes || '').includes('[CNAE:')) {
     p.observacoes = p.observacoes ? `${p.observacoes} | [CNAE: ${cnaeToSave}]` : `[CNAE: ${cnaeToSave}]`;
+  }
+
+  // Data de abertura do CNPJ
+  if (data.data_abertura !== undefined || data.dataAbertura !== undefined || data.data_inicio_atividade !== undefined) {
+    p.data_abertura = data.data_abertura || data.dataAbertura || data.data_inicio_atividade || null;
+  }
+
+  // Se a empresa tiver menos de 1 ano de fundação, adiciona alerta de retaguarda nas observações
+  const dataAberturaEmpresa = data.data_abertura || data.dataAbertura || data.data_inicio_atividade;
+  if (dataAberturaEmpresa) {
+    const ageInfo = checkCompanyAge(dataAberturaEmpresa);
+    if (ageInfo.isRecent && !String(p.observacoes || '').includes('menos de 1 ano de fundação')) {
+      p.observacoes = p.observacoes ? `${p.observacoes} | ${ageInfo.alertText}` : ageInfo.alertText;
+    }
   }
 
   return p;
@@ -757,6 +774,18 @@ export const gerarTextoAlerta = (client, confirmDate = new Date()) => {
 
   const operador = 'automacao_cadastro';
 
+  // Verifica se a empresa tem menos de 1 ano de fundação para alerta na retaguarda
+  let alertaIdade = '';
+  if (!isPF) {
+    const dataFundacao = client.data_abertura || client.data_inicio_atividade || client.inicio_atividade || '';
+    if (dataFundacao) {
+      const ageInfo = checkCompanyAge(dataFundacao);
+      if (ageInfo.isRecent) {
+        alertaIdade = `; [Alerta: Empresa < 1 ano (${ageInfo.ageText || 'recente'})]`;
+      }
+    }
+  }
+
   if (!isPF && hasJucesp) {
     // PJ COM JUCESP
     const inicio = client.data_abertura || client.data_inicio_atividade || client.inicio_atividade || '';
@@ -771,13 +800,13 @@ export const gerarTextoAlerta = (client, confirmDate = new Date()) => {
       socios = client.socios;
     }
 
-    return `${dataFormatada}: Consulta Jucesp (salva), Início: ${inicio}; Capital: ${capital}; Sócios: ${socios}; Consulta Cenprot, ${protestoTxt} – ${operador}`;
+    return `${dataFormatada}: Consulta Jucesp (salva), Início: ${inicio}; Capital: ${capital}; Sócios: ${socios}; Consulta Cenprot, ${protestoTxt}${alertaIdade} – ${operador}`;
   }
 
   // PJ SEM JUCESP ou PF
   const dataSituacao = client.data_situacao_cadastral || client.data_situacao || client.data_abertura || dataFormatada;
 
-  return `${dataFormatada}: Consulta Jucesp, não consta; Consulta Receita (salva) data da situação cadastral: ${dataSituacao}; Consulta Cenprot, ${protestoTxt}. – ${operador}`;
+  return `${dataFormatada}: Consulta Jucesp, não consta; Consulta Receita (salva) data da situação cadastral: ${dataSituacao}; Consulta Cenprot, ${protestoTxt}${alertaIdade}. – ${operador}`;
 };
 
 /**

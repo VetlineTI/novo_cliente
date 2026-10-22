@@ -35,7 +35,7 @@ import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
-import { fetchCNPJDataFromBrasilAPI } from '../../utils/validators';
+import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
 
 export const ClientDetailModal = ({
   isOpen,
@@ -55,6 +55,9 @@ export const ClientDetailModal = ({
   // Validação e Extração de CNAE
   const [cnaeValidation, setCnaeValidation] = useState(null);
   const [loadingCnae, setLoadingCnae] = useState(false);
+
+  // Alerta de tempo de fundação (< 1 ano)
+  const [companyAgeAlert, setCompanyAgeAlert] = useState(null);
 
   // Lista de vendedores para seleção
   const [salespeopleList, setSalespeopleList] = useState([]);
@@ -119,10 +122,11 @@ export const ClientDetailModal = ({
     }
   }, [client]);
 
-  // Checagem de CNAE para clientes PJ (utiliza dados já extraídos ou busca na API)
+  // Checagem de CNAE e Tempo de Fundação (< 1 ano) para clientes PJ
   useEffect(() => {
     if (!isOpen || !client) {
       setCnaeValidation(null);
+      setCompanyAgeAlert(null);
       return;
     }
 
@@ -131,18 +135,25 @@ export const ClientDetailModal = ({
 
     if (!isClientPJ) {
       setCnaeValidation(null);
+      setCompanyAgeAlert(null);
       return;
     }
 
-    // 1. Se já possui CNAE registrado no próprio cliente ou nas observações
+    // 1. Checagem de tempo de fundação com dados já em memória
+    const existingAbertura = client.data_abertura || client.data_inicio_atividade || client.inicio_atividade || (client.observacoes && client.observacoes.match(/Abertura:\s*([^)\s]+)/i)?.[1]);
+    if (existingAbertura) {
+      setCompanyAgeAlert(checkCompanyAge(existingAbertura));
+    }
+
+    // 2. Se já possui CNAE registrado no próprio cliente ou nas observações
     const existingCnae = client.cnae || client.cnae_codigo || (client.observacoes && client.observacoes.match(/\[CNAE:\s*([^\]]+)\]/i)?.[1]);
     if (existingCnae) {
       const checked = checkCnaePermitted(existingCnae, client.cnae_descricao);
       setCnaeValidation(checked);
-      return;
+      if (existingAbertura) return;
     }
 
-    // 2. Se não possuir CNAE registrado, extrai via API da Receita Federal
+    // 3. Se faltar CNAE ou Data de Abertura, extrai via API da Receita Federal
     let isCancelled = false;
     const fetchCnae = async () => {
       setLoadingCnae(true);
@@ -153,16 +164,28 @@ export const ClientDetailModal = ({
           const checked = checkCnaePermitted(data.cnaeCodigo || rawCnae, data.cnaeDescricao);
           setCnaeValidation(checked);
 
-          if (rawCnae && onUpdateClient && client.id) {
-            onUpdateClient(client.id, {
-              cnae: rawCnae,
-              cnae_codigo: data.cnaeCodigo || null,
-              cnae_descricao: data.cnaeDescricao || null
-            }).catch(() => {});
+          if (data.dataAbertura) {
+            setCompanyAgeAlert(checkCompanyAge(data.dataAbertura));
+          }
+
+          if (onUpdateClient && client.id) {
+            const updates = {};
+            if (rawCnae) {
+              updates.cnae = rawCnae;
+              updates.cnae_codigo = data.cnaeCodigo || null;
+              updates.cnae_descricao = data.cnaeDescricao || null;
+            }
+            if (data.dataAbertura) {
+              updates.data_abertura = data.dataAbertura;
+              updates.data_inicio_atividade = data.dataAbertura;
+            }
+            if (Object.keys(updates).length > 0) {
+              onUpdateClient(client.id, updates).catch(() => {});
+            }
           }
         }
       } catch (err) {
-        console.warn('Erro ao consultar CNAE via API:', err);
+        console.warn('Erro ao consultar CNAE/Abertura via API:', err);
       } finally {
         if (!isCancelled) setLoadingCnae(false);
       }
@@ -173,7 +196,7 @@ export const ClientDetailModal = ({
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, client?.id, client?.cnae, client?.document_number]);
+  }, [isOpen, client?.id, client?.cnae, client?.data_abertura, client?.document_number]);
 
   // Carrega vendedores e segmentos
   useEffect(() => {
@@ -745,6 +768,30 @@ export const ClientDetailModal = ({
               </div>
             )}
 
+            {/* ALERTA DE FUNDAÇÃO RECENTE (< 1 ano de atividade) */}
+            {companyAgeAlert?.isRecent && (
+              <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center flex-shrink-0 text-amber-700 shadow-xs mt-0.5">
+                    <Clock className="w-5 h-5 text-amber-600 animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 border border-amber-300">
+                        Alerta de Retaguarda
+                      </span>
+                      <h4 className="font-black text-amber-950 text-sm sm:text-base">
+                        Empresa Recente: menos de 1 ano de fundação ({companyAgeAlert.ageText})
+                      </h4>
+                    </div>
+                    <p className="text-xs text-amber-900 mt-1 font-medium">
+                      O CNPJ foi aberto em <strong>{companyAgeAlert.formattedDate}</strong> (há aproximadamente {companyAgeAlert.ageMonths} meses de existência). Recomenda-se atenção especial na concessão de limites de crédito faturado e prazos de pagamento.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* SE FOR A FICHA CADASTRAL & DADOS COMERCIAIS */}
             {activeFolder === 'ficha' ? (
               <div className="space-y-3.5">
@@ -955,6 +1002,36 @@ export const ClientDetailModal = ({
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-200 text-amber-900 rounded text-[11px] font-black whitespace-nowrap">
                                     <AlertTriangle className="w-3 h-3 text-amber-700" />
                                     Analisar
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Data de Fundação / Início de Atividade */}
+                            <div className="sm:col-span-2">
+                              <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">
+                                Início de Atividade / Fundação (Receita Federal):
+                              </label>
+                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+                                companyAgeAlert?.isRecent
+                                  ? 'bg-amber-50/80 border-amber-300'
+                                  : 'bg-slate-50 border-slate-200'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                                  <span className="font-mono font-bold text-slate-900">
+                                    {companyAgeAlert?.formattedDate || client.data_abertura || (loadingCnae ? 'Consultando...' : 'Não informada')}
+                                  </span>
+                                  {companyAgeAlert?.ageText && (
+                                    <span className="text-slate-500 text-[11px]">
+                                      ({companyAgeAlert.ageText} de atividade)
+                                    </span>
+                                  )}
+                                </div>
+                                {companyAgeAlert?.isRecent && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-200 text-amber-900 rounded text-[11px] font-black whitespace-nowrap border border-amber-300">
+                                    <Clock className="w-3 h-3 text-amber-700" />
+                                    Menos de 1 ano
                                   </span>
                                 )}
                               </div>
@@ -1574,7 +1651,7 @@ export const ClientDetailModal = ({
           <div className="bg-white px-3 py-2.5 sm:px-6 sm:py-3 border-t border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 flex-shrink-0">
 
             {/* Campo de Observações Internas */}
-            <div className="flex-1 flex items-center gap-2">
+            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 type="text"
                 value={formData.notes || ''}
@@ -1582,6 +1659,21 @@ export const ClientDetailModal = ({
                 placeholder="Observações internas..."
                 className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none bg-slate-50"
               />
+              {companyAgeAlert?.isRecent && !String(formData.notes || '').includes('menos de 1 ano de fundação') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alertMsg = companyAgeAlert.alertText || `[ALERTA RETAGUARDA: Empresa com menos de 1 ano de fundação (Abertura: ${companyAgeAlert.formattedDate} - ${companyAgeAlert.ageText})]`;
+                    const newNotes = formData.notes ? `${formData.notes} | ${alertMsg}` : alertMsg;
+                    handleChange('notes', newNotes);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold border border-amber-300 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 shadow-xs"
+                  title="Inserir alerta de empresa recente nas observações"
+                >
+                  <Clock className="w-3 h-3 text-amber-700" />
+                  <span>+ Inserir Alerta (&lt;1 ano)</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleSaveAll()}

@@ -82,6 +82,94 @@ export const isValidEmail = (email) => {
 export const validateEmail = isValidEmail;
 
 /**
+ * Calcula a idade de uma empresa a partir da data de abertura/fundação.
+ * Retorna se possui menos de 1 ano de fundação (365 dias) para alerta de retaguarda.
+ * @param {string|Date} dateInput Data de abertura em formatos como 'YYYY-MM-DD', 'DD/MM/YYYY' ou Date
+ * @returns {{
+ *   hasDate: boolean,
+ *   isRecent: boolean,
+ *   diffDays: number,
+ *   ageMonths: number,
+ *   ageText: string,
+ *   formattedDate: string,
+ *   alertText: string|null
+ * }}
+ */
+export const checkCompanyAge = (dateInput) => {
+  if (!dateInput) return { hasDate: false, isRecent: false, diffDays: null, ageMonths: null, ageText: '', formattedDate: '', alertText: null };
+
+  let openingDate = null;
+
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    openingDate = dateInput;
+  } else if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    if (!trimmed) return { hasDate: false, isRecent: false, diffDays: null, ageMonths: null, ageText: '', formattedDate: '', alertText: null };
+
+    // Formato DD/MM/YYYY ou DD-MM-YYYY
+    if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}/.test(trimmed)) {
+      const parts = trimmed.split(/[/-]/);
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const y = parseInt(parts[2], 10);
+      openingDate = new Date(y, m, d);
+    } else if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(trimmed)) {
+      // Formato YYYY-MM-DD ou YYYY/MM/DD
+      const parts = trimmed.split(/[/-]/);
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      openingDate = new Date(y, m, d);
+    } else {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) openingDate = parsed;
+    }
+  }
+
+  if (!openingDate || isNaN(openingDate.getTime())) {
+    return { hasDate: false, isRecent: false, diffDays: null, ageMonths: null, ageText: '', formattedDate: '', alertText: null };
+  }
+
+  const today = new Date();
+  const diffTime = today.getTime() - openingDate.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  // Diferença em meses
+  let months = (today.getFullYear() - openingDate.getFullYear()) * 12 + (today.getMonth() - openingDate.getMonth());
+  if (today.getDate() < openingDate.getDate()) {
+    months = Math.max(0, months - 1);
+  }
+
+  const isRecent = diffDays >= 0 && diffDays < 365;
+
+  const day = String(openingDate.getDate()).padStart(2, '0');
+  const month = String(openingDate.getMonth() + 1).padStart(2, '0');
+  const year = openingDate.getFullYear();
+  const formattedDate = `${day}/${month}/${year}`;
+
+  let ageText = '';
+  if (months <= 0) {
+    ageText = `${Math.max(0, diffDays)} dia(s)`;
+  } else if (months === 1) {
+    ageText = '1 mês';
+  } else {
+    ageText = `${months} meses`;
+  }
+
+  return {
+    hasDate: true,
+    isRecent,
+    diffDays,
+    ageMonths: months,
+    ageText,
+    formattedDate,
+    alertText: isRecent
+      ? `[ALERTA RETAGUARDA: Empresa com menos de 1 ano de fundação (Abertura: ${formattedDate} - ${ageText})]`
+      : null
+  };
+};
+
+/**
  * Consulta de CNPJ com redundância multi-provedor (Direct Data Oficial, Minha Receita, BrasilAPI e CNPJ.ws)
  * Evita falhas por CORS / Rate Limit 429 e garante preenchimento automático contínuo
  * @param {string} cnpj 

@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured, submitNewClient, updateClientData, uploadDocument, normalizeClientRecord } from './supabase';
+import { executarAuditoriaBureau } from './infosimples';
 
 // ==============================================================================
 // Módulo de Autenticação e Gestão de Perfil do Cliente Vetline
@@ -702,7 +703,8 @@ export const updateUserPassword = async (newPassword) => {
 };
 
 /**
- * Marca o cliente como confirmado via WhatsApp
+ * Marca o cliente como confirmado via WhatsApp e dispara a auditoria de Protestos/Bureau
+ * Regra: Só chama a API de protestos quando todas as validações foram concluídas e o cliente deu o aceite no WhatsApp!
  * @param {string} [email] E-mail do cliente
  * @returns {Promise<{success: boolean}>}
  */
@@ -737,6 +739,28 @@ export const confirmClientWhatsApp = async (email = '') => {
         });
       }
     } catch (e) {}
+
+    // REGRA DE NEGÓCIO: Consulta oficial de Protestos/Bureau realizada EXCLUSIVAMENTE após o aceite do WhatsApp
+    try {
+      if (cleanEmail) {
+        const { data: clientRecord } = await supabase
+          .schema('novo_cliente')
+          .from('data_new_cliente')
+          .select('id, document_number, cpf_cnpj, full_name, razao_social_nome, state, uf, doc_cenprot_url, tipo_pessoa, person_type')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+        if (clientRecord && !clientRecord.doc_cenprot_url) {
+          console.log('✅ Cliente confirmou aceite via WhatsApp! Disparando consulta de protestos/bureau para:', clientRecord.document_number || clientRecord.cpf_cnpj);
+          // Dispara em background para não travar a experiência do usuário
+          executarAuditoriaBureau(clientRecord).catch(bureauErr => {
+            console.warn('Alerta na consulta de protestos pós-confirmação do WhatsApp:', bureauErr);
+          });
+        }
+      }
+    } catch (bureauCheckErr) {
+      console.warn('Erro ao verificar auditoria pós-aceite de WhatsApp:', bureauCheckErr);
+    }
   }
 
   return { success: true };

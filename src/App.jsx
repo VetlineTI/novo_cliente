@@ -52,6 +52,9 @@ export function App() {
     // 1. Detecta parâmetros de ativação de conta (link recebido no WhatsApp / e-mail)
     const isSignupConfirmed =
       urlParams.get('confirmed') === 'whatsapp' ||
+      urlParams.get('activated') === 'true' ||
+      urlSearch.includes('confirmed=whatsapp') ||
+      urlSearch.includes('activated=true') ||
       urlSearch.includes('type=signup') ||
       urlSearch.includes('type=magiclink') ||
       urlSearch.includes('type=signup-confirmed') ||
