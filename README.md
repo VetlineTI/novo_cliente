@@ -87,6 +87,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
 | `api/directd.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Direct Data (evita CORS). |
 | `api/send-whatsapp-signup.js` | Serverless Function para Vercel: Gera link oficial de ativação via Supabase Admin e dispara confirmação via WhatsApp pela Z-API. |
+| `docs/INTEGRACAO_ASSERTIVA.md` | Especificação técnica e guia de migração para a API da Assertiva Soluções (OAuth2, Score, Ações, Protestos e Dossiê de Crédito). |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |

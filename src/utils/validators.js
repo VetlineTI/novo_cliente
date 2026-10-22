@@ -1,5 +1,5 @@
 import { unmask, maskPhone, maskCEP } from './masks';
-import { consultarDirectDataReceitaPJParticipacaoSocietaria } from '../lib/directd';
+import { consultarDirectDataPJ } from '../lib/directd';
 import { parseCnae, formatCnaeCode } from './cnaeValidator';
 
 /**
@@ -101,45 +101,50 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
     return '';
   };
 
-  // Provedor 0: Direct Data Oficial (Sem bloqueio de 3 req/min, dados completos do QSA e Comprovante)
+  // Provedor 0: Direct Data Oficial (CadastroPessoaJuridicaPlus)
   try {
-    const directRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(clean);
+    const directRes = await consultarDirectDataPJ(clean);
     if (directRes && directRes.success && (directRes.razaoSocial || directRes.data)) {
       const d = directRes.data || {};
-      const rawCnae = d.atividadeEconomicaPrincipal || d.cnaeDescricao || '';
+      const end = (d.enderecos && d.enderecos[0]) || {};
+      const tel = (d.telefones && d.telefones[0]) || {};
+      const mail = (d.emails && d.emails[0]) || {};
+
+      const rawCnae = d.cnaeDescricao || '';
       const parsed = parseCnae(d.cnaeCodigo ? `${d.cnaeCodigo} - ${rawCnae}` : rawCnae);
       const cnaeCode = parsed.code || formatCnaeCode(d.cnaeCodigo) || '';
       const cnaeDesc = parsed.description || d.cnaeDescricao || rawCnae;
       const fullCnae = parsed.formatted || (cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc));
 
       return {
-        razaoSocial: directRes.razaoSocial || d.nomeEmpresarial || d.razaoSocial || '',
+        razaoSocial: directRes.razaoSocial || d.razaoSocial || '',
         nomeFantasia: directRes.nomeFantasia || d.nomeFantasia || '',
         situacaoCadastral: directRes.situacaoCadastral || d.situacaoCadastral || 'ATIVA',
         isAtiva: (directRes.situacaoCadastral || d.situacaoCadastral || '').toUpperCase().includes('ATIVA'),
-        dataAbertura: directRes.dataAbertura || d.dataAbertura || d.dataFundacao || '',
+        dataAbertura: directRes.dataAbertura || d.dataFundacao || '',
         cnaeCodigo: cnaeCode,
         cnaeDescricao: cnaeDesc,
         cnae: fullCnae,
         suggestedSegment: mapSegment(cnaeDesc),
         socios: (directRes.socios || []).map(s => ({
-          nome: s.nome || s.nomeEntidade || '',
-          qualificacao: s.qualificacao || 'Sócio',
-          cpf_cnpj_socio: s.documento || '',
-          documento: s.documento || '',
-          cpfRepresentante: ''
+          nome: s.nome || '',
+          qualificacao: s.cargo || 'Sócio / Administrador',
+          cargo: s.cargo || 'Sócio / Administrador',
+          dataEntrada: s.dataEntrada || '',
+          cpf_cnpj_socio: '',
+          documento: ''
         })),
         endereco: {
-          cep: d.cep ? maskCEP(d.cep) : '',
-          logradouro: `${d.descricaoTipoLogradouro || ''} ${d.logradouro || ''}`.trim(),
-          numero: d.numero || '',
-          complemento: d.complemento || '',
-          bairro: d.bairroDistrito || d.bairro || '',
-          municipio: d.municipio || '',
-          uf: (d.uf || '').trim().toUpperCase()
+          cep: end.cep ? maskCEP(end.cep) : '',
+          logradouro: end.logradouro || '',
+          numero: end.numero || '',
+          complemento: end.complemento || '',
+          bairro: end.bairro || '',
+          municipio: end.cidade || '',
+          uf: (end.uf || '').trim().toUpperCase()
         },
-        telefone: d.telefone ? maskPhone(d.telefone) : '',
-        email: d.enderecoEletronico ? String(d.enderecoEletronico).toLowerCase() : '',
+        telefone: tel.numero ? maskPhone(tel.numero) : '',
+        email: mail.email ? String(mail.email).toLowerCase() : '',
         receiptUrl: directRes.receiptUrl || ''
       };
     }

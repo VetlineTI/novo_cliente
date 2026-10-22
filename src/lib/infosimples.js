@@ -383,9 +383,9 @@ export const consultarProtestosCenprot = async (cnpj) => {
 };
 
 /**
- * Consulta Cadastral PJ / Ficha Cadastral / Receita Federal com QSA
- * Fonte Oficial: Direct Data (/api/ReceitaPJParticipacaoSocietaria) com comprovante oficial em PDF
- * Fallback: Direct Data (/api/CadastroPessoaJuridicaPlus)
+ * Consulta Cadastral PJ / Ficha Cadastral Simplificada
+ * Fonte Oficial Principal: Direct Data (/api/CadastroPessoaJuridicaPlus)
+ * Fallback: Direct Data (/api/ReceitaPJParticipacaoSocietaria)
  */
 export const consultarJucespSimplificada = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
@@ -393,24 +393,7 @@ export const consultarJucespSimplificada = async (cnpj) => {
     return { success: false, error: 'CNPJ inválido para consulta.' };
   }
 
-  // 1. Fonte Oficial Principal: Direct Data (ReceitaPJParticipacaoSocietaria com QSA e Comprovante Oficial PDF)
-  try {
-    const directQsaRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanCnpj);
-    if (directQsaRes.success && directQsaRes.data) {
-      return {
-        success: true,
-        source: 'directd_qsa',
-        nire: directQsaRes.data.nire || null,
-        receiptUrl: directQsaRes.receiptUrl,
-        data: directQsaRes.data,
-        raw: directQsaRes.raw
-      };
-    }
-  } catch (dErr) {
-    console.warn('Tentativa Direct Data ReceitaPJParticipacaoSocietaria:', dErr);
-  }
-
-  // 2. Fallback: Direct Data (CadastroPessoaJuridicaPlus)
+  // 1. Fonte Oficial Principal: Direct Data (CadastroPessoaJuridicaPlus - sócios e dados cadastrais diretos)
   try {
     const directRes = await consultarDirectDataPJ(cleanCnpj);
     if (directRes.success && directRes.data) {
@@ -425,6 +408,23 @@ export const consultarJucespSimplificada = async (cnpj) => {
     }
   } catch (dErr) {
     console.warn('Tentativa Direct Data CadastroPessoaJuridicaPlus:', dErr);
+  }
+
+  // 2. Fallback: Direct Data (ReceitaPJParticipacaoSocietaria com QSA detalhado)
+  try {
+    const directQsaRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanCnpj);
+    if (directQsaRes.success && directQsaRes.data) {
+      return {
+        success: true,
+        source: 'directd_qsa',
+        nire: directQsaRes.data.nire || null,
+        receiptUrl: directQsaRes.receiptUrl,
+        data: directQsaRes.data,
+        raw: directQsaRes.raw
+      };
+    }
+  } catch (dErr) {
+    console.warn('Tentativa Direct Data ReceitaPJParticipacaoSocietaria:', dErr);
   }
 
   return {

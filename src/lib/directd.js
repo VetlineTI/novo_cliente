@@ -288,13 +288,13 @@ export const consultarDirectDataPJ = async (cnpj) => {
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
-  try {
+  const tryFetch = async (baseUrl) => {
     const params = new URLSearchParams();
     params.append('CNPJ', cleanCnpj);
     params.append('TOKEN', DIRECTD_TOKEN);
     params.append('gerarComprovante', 'true');
 
-    const response = await fetch(`${BASE_URL}/CadastroPessoaJuridicaPlus?${params.toString()}`, {
+    const response = await fetch(`${baseUrl}/CadastroPessoaJuridicaPlus?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -302,11 +302,25 @@ export const consultarDirectDataPJ = async (cnpj) => {
       }
     });
 
-    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.json();
+  };
+
+  try {
+    let result;
+    try {
+      result = await tryFetch(BASE_URL);
+    } catch (proxyErr) {
+      result = await tryFetch('https://apiv3.directd.com.br/api');
+    }
+
     const meta = result.metaDados || {};
     const retorno = result.retorno || {};
 
-    if (response.ok && retorno && (retorno.cnpj || retorno.razaoSocial)) {
+    if (retorno && (retorno.cnpj || retorno.razaoSocial)) {
       const receiptUrl = meta.urlComprovante || generateDirectDReceiptHtml(retorno, meta);
 
       return {
@@ -327,7 +341,7 @@ export const consultarDirectDataPJ = async (cnpj) => {
 
     return {
       success: false,
-      code: meta.resultadoId || response.status,
+      code: meta.resultadoId || 400,
       error: meta.mensagem || meta.resultado || 'Falha na consulta Direct Data',
       raw: result
     };
