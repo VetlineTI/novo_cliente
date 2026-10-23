@@ -188,7 +188,25 @@ export default async function handler(req, res) {
                       if (protData.metaDados?.urlComprovante) {
                         auditUpdates.doc_cenprot_url = protData.metaDados.urlComprovante;
                       } else {
-                        const protHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Certidão de Protestos</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;}.card{background:#fff;padding:24px;border:2px solid #0f172a;border-radius:8px;}.badge{padding:12px;border-radius:6px;font-weight:bold;margin:12px 0;background:${numP === 0 ? '#dcfce7;color:#166534;' : '#fee2e2;color:#991b1b;'}}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}</style></head><body><div class="card"><h2>Central Nacional de Protestos (IEPTB / CENPROT)</h2><p><b>Documento Consultado:</b> ${protData.retorno.documentoConsultado || docClean}</p><div class="badge">${numP === 0 ? '✓ NADA CONSTA - 0 Protestos' : `⚠ CONSTAM ${numP} PROTESTO(S) - Total: ${protData.retorno.valorTotalProtestos || 'R$ 0,00'}`}</div><p style="font-size:11px;color:#64748b;margin-top:16px;">Documento oficial emitido via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
+                        let titulosRows = '';
+                        let hasTitulos = false;
+                        const pList = Array.isArray(protData.retorno.protestos) ? protData.retorno.protestos : [];
+                        pList.forEach(p => {
+                          const uf = p.estado || '-';
+                          (p.cartorios || []).forEach(c => {
+                            const cidade = c.cidade || '-';
+                            if (Array.isArray(c.titulos) && c.titulos.length > 0) {
+                              hasTitulos = true;
+                              c.titulos.forEach(t => {
+                                titulosRows += `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${uf}</td><td style="padding:8px;border:1px solid #cbd5e1;">${cidade}</td><td style="padding:8px;border:1px solid #cbd5e1;text-align:center;font-weight:600;">${t.dataProtesto || '-'}</td><td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#dc2626;">${t.valorProtestado || 'R$ 0,00'}</td><td style="padding:8px;border:1px solid #cbd5e1;font-size:11px;color:#64748b;">${t.documento || docClean}</td></tr>`;
+                              });
+                            } else {
+                              titulosRows += `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${uf}</td><td style="padding:8px;border:1px solid #cbd5e1;">${cidade}</td><td style="padding:8px;border:1px solid #cbd5e1;text-align:center;">${c.numeroProtestos || 1} protesto(s)</td><td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#dc2626;">${c.valorTotalProtestosCartorio || 'R$ 0,00'}</td><td style="padding:8px;border:1px solid #cbd5e1;font-size:11px;color:#64748b;">${docClean}</td></tr>`;
+                            }
+                          });
+                        });
+
+                        const protHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Certidão de Protestos</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;color:#0f172a;}.card{max-width:820px;margin:0 auto;background:#fff;padding:24px;border:2px solid #0f172a;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);}.badge{padding:12px;border-radius:6px;font-weight:bold;margin:12px 0;text-align:center;background:${numP === 0 ? '#dcfce7;color:#166534;border:1px solid #16a34a;' : '#fee2e2;color:#991b1b;border:1px solid #dc2626;'}}table{width:100%;border-collapse:collapse;margin-top:14px;}th{background:#f1f5f9;font-size:10px;text-transform:uppercase;color:#475569;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;font-size:12px;}</style></head><body><div class="card"><h2 style="margin:0;font-size:15px;text-transform:uppercase;color:#0f172a;text-align:center;">Central Nacional de Serviços dos Cartórios de Protesto (IEPTB / CENPROT)</h2><p style="font-size:11px;color:#64748b;text-align:center;margin:4px 0 12px 0;">Consulta Unificada de Títulos Protestados em Âmbito Nacional • Protocolo Direct Data</p><p style="margin:6px 0;"><b>Documento Consultado:</b> ${protData.retorno.documentoConsultado || docClean}</p><div class="badge">${numP === 0 ? '✓ NADA CONSTA - 0 Protestos Ativos' : `⚠ CONSTAM ${numP} PROTESTO(S) - Total: ${protData.retorno.valorTotalProtestos || 'R$ 0,00'}`}</div>${titulosRows ? `<h4 style="margin:14px 0 6px 0;font-size:11px;text-transform:uppercase;color:#475569;">Detalhamento de Títulos e Cartórios:</h4><table><thead><tr><th>UF</th><th>Cidade / Cartório</th><th style="text-align:center;">${hasTitulos ? 'Data do Protesto' : 'Qtd Protestos'}</th><th style="text-align:right;">${hasTitulos ? 'Valor do Título' : 'Valor no Cartório'}</th><th>Documento</th></tr></thead><tbody>${titulosRows}</tbody></table>` : ''}<p style="font-size:10px;color:#64748b;margin-top:20px;text-align:center;border-top:1px dashed #cbd5e1;padding-top:8px;">Documento oficial emitido via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
                         auditUpdates.doc_cenprot_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(protHtml);
                       }
                     }
@@ -216,11 +234,27 @@ export default async function handler(req, res) {
                     const plusRes = await fetch(`https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus?CNPJ=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
                     if (plusRes.ok) {
                       const plusData = await plusRes.json();
-                      if (plusData?.retorno && plusData.metaDados?.urlComprovante) {
-                        auditUpdates.doc_jucesp_url = plusData.metaDados.urlComprovante;
+                      const ret = plusData?.retorno;
+                      if (ret && (ret.cnpj || ret.razaoSocial)) {
+                        if (plusData.metaDados?.urlComprovante) {
+                          auditUpdates.doc_jucesp_url = plusData.metaDados.urlComprovante;
+                        } else {
+                          const meta = plusData.metaDados || {};
+                          const socios = Array.isArray(ret.socios) ? ret.socios : [];
+                          const sRows = socios.map(s => `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${s.nome || '-'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.cargo || s.qualificacao || 'Sócio'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.dataEntrada || '-'}</td></tr>`).join('');
+                          const end = Array.isArray(ret.enderecos) && ret.enderecos[0] ? ret.enderecos[0] : {};
+                          const endStr = `${end.logradouro || ''}, ${end.numero || ''} ${end.complemento || ''} - ${end.bairro || ''}, ${end.municipio || ''}/${end.uf || ''} - CEP: ${end.cep || ''}`;
+                          const tel = Array.isArray(ret.telefones) && ret.telefones[0] ? ret.telefones[0] : {};
+                          const mail = Array.isArray(ret.emails) && ret.emails[0] ? ret.emails[0] : {};
+
+                          const pjHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha Cadastral PJ Plus - ${ret.razaoSocial || docClean}</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;color:#0f172a;font-size:12px;}.card{max-width:820px;margin:0 auto;background:#fff;border:2px solid #0f766e;padding:24px;border-radius:8px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}th{background:#f1f5f9;font-size:10px;text-transform:uppercase;}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:8px;margin-top:12px;}.box{border:1px solid #cbd5e1;padding:6px 10px;border-radius:4px;background:#fff;}.label{font-size:9px;text-transform:uppercase;color:#64748b;font-weight:bold;display:block;margin-bottom:2px;}.val{font-size:12px;font-weight:600;}.col-12{grid-column:span 12;}.col-8{grid-column:span 8;}.col-6{grid-column:span 6;}.col-4{grid-column:span 4;}</style></head><body><div class="card"><div style="text-align:center;border-bottom:2px solid #0f766e;padding-bottom:12px;margin-bottom:16px;"><h2 style="margin:0;font-size:16px;color:#0f766e;text-transform:uppercase;">Comprovante de Cadastro de Pessoa Jurídica (Direct Data Plus)</h2><p style="margin:4px 0;font-size:11px;color:#64748b;">Ficha Cadastral e Quadro Societário • Consulta UID: ${meta.consultaUid || '-'}</p></div><div class="grid"><div class="box col-4"><span class="label">CNPJ</span><span class="val">${ret.cnpj || docClean}</span></div><div class="box col-4"><span class="label">Data de Abertura</span><span class="val">${ret.dataFundacao || '-'}</span></div><div class="box col-4"><span class="label">Situação Cadastral</span><span class="val" style="color:#0f766e;">${ret.situacaoCadastral || 'Ativa'}</span></div><div class="box col-12"><span class="label">Razão Social</span><span class="val" style="font-size:13px;color:#0f766e;">${ret.razaoSocial || ''}</span></div><div class="box col-8"><span class="label">Nome Fantasia</span><span class="val">${ret.nomeFantasia || '-'}</span></div><div class="box col-4"><span class="label">Porte / Regime</span><span class="val">${ret.porte || '-'} ${ret.tributacao ? '(' + ret.tributacao + ')' : ''}</span></div><div class="box col-12"><span class="label">Atividade Econômica (CNAE)</span><span class="val">${ret.cnaeCodigo || ''} - ${ret.cnaeDescricao || '-'}</span></div><div class="box col-8"><span class="label">Natureza Jurídica</span><span class="val">${ret.naturezaJuridicaDescricao || '-'}</span></div><div class="box col-4"><span class="label">Faturamento Presumido</span><span class="val">${ret.faturamentoPresumido || ret.faixaFaturamento || '-'}</span></div><div class="box col-12"><span class="label">Endereço</span><span class="val">${endStr}</span></div><div class="box col-6"><span class="label">Telefone</span><span class="val">${tel.telefoneComDDD || '-'}</span></div><div class="box col-6"><span class="label">E-mail</span><span class="val">${mail.enderecoEmail || '-'}</span></div><div class="box col-12" style="background:#f8fafc;"><span class="label">Quadro de Sócios e Administradores (QSA)</span><table><thead><tr><th>Nome</th><th>Cargo / Qualificação</th><th>Data de Entrada</th></tr></thead><tbody>${sRows || '<tr><td colspan="3">Nenhum sócio informado</td></tr>'}</tbody></table></div></div><p style="font-size:11px;color:#64748b;margin-top:16px;text-align:center;">Comprovante oficial emitido via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
+                          auditUpdates.doc_jucesp_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(pjHtml);
+                        }
                       }
                     }
-                  } catch (ePlus) {}
+                  } catch (ePlus) {
+                    console.warn('Erro ao consultar PJ Plus:', ePlus);
+                  }
                 }
 
                 // Salva no banco de dados via service_role

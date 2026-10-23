@@ -166,16 +166,32 @@ export const generateProtestosDirectDHtml = (retorno = {}, metaDados = {}, docum
   const protestosList = Array.isArray(retorno.protestos) ? retorno.protestos : [];
 
   let cartoriosRows = '';
+  let temTitulosDetalhados = false;
   if (protestosList.length > 0) {
     protestosList.forEach(p => {
       const uf = p.estado || '-';
       (p.cartorios || []).forEach(c => {
-        cartoriosRows += `<tr>
+        const cidade = c.cidade || '-';
+        if (Array.isArray(c.titulos) && c.titulos.length > 0) {
+          temTitulosDetalhados = true;
+          c.titulos.forEach((t) => {
+            cartoriosRows += `<tr>
           <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">${uf}</td>
-          <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#1e293b;">${c.cidade || '-'}</td>
-          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#b91c1c;">${c.numeroProtestos || 0}</td>
-          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${c.valorTotalProtestosCartorio || 'R$ 0,00'}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#1e293b;">${cidade}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:center;font-weight:600;color:#0f172a;">${t.dataProtesto || '-'}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#dc2626;">${t.valorProtestado || 'R$ 0,00'}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-size:11px;color:#64748b;">${t.documento || doc}</td>
         </tr>`;
+          });
+        } else {
+          cartoriosRows += `<tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">${uf}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;color:#1e293b;">${cidade}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#b91c1c;">${c.numeroProtestos || 0} protesto(s)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#dc2626;">${c.valorTotalProtestosCartorio || 'R$ 0,00'}</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-size:11px;color:#64748b;">${doc}</td>
+        </tr>`;
+        }
       });
     });
   }
@@ -250,14 +266,15 @@ export const generateProtestosDirectDHtml = (retorno = {}, metaDados = {}, docum
 
     ${cartoriosRows ? `
       <div style="margin-top: 16px;">
-        <span class="label" style="font-size: 11px; margin-bottom: 6px;">Detalhamento por Estado e Cartório:</span>
+        <span class="label" style="font-size: 11px; margin-bottom: 6px;">Detalhamento de Títulos e Cartórios de Protesto:</span>
         <table>
           <thead>
             <tr>
               <th>UF</th>
               <th>Cidade / Comarca</th>
-              <th style="text-align: center;">Qtd Protestos</th>
-              <th style="text-align: right;">Valor no Cartório</th>
+              <th style="text-align: center;">${temTitulosDetalhados ? 'Data do Protesto' : 'Qtd Protestos'}</th>
+              <th style="text-align: right;">${temTitulosDetalhados ? 'Valor do Título' : 'Valor no Cartório'}</th>
+              <th>Documento</th>
             </tr>
           </thead>
           <tbody>

@@ -1583,6 +1583,59 @@ export const ClientDetailModal = ({
                   </button>
                 </div>
 
+                {/* Banner de Ação Oficial do Bureau */}
+                {activeFolder === 'bureau_certidoes' && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+                    <div className="text-xs text-slate-700">
+                      <span className="font-bold text-slate-900 block flex items-center gap-1.5">
+                        <Search className="w-3.5 h-3.5 text-brand-green" />
+                        <span>Auditoria & Bureau Direct Data / Receita</span>
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {isPJ
+                          ? 'Ficha JUCESP PJ Plus, Cartão CNPJ Receita Federal, Sintegra e Protestos Detalhados'
+                          : 'Consulta unificada de Protestos CENPROT com detalhamento de títulos'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRunBureauAudit}
+                      disabled={isAuditingBureau}
+                      className="w-full sm:w-auto px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-60 flex-shrink-0"
+                    >
+                      {isAuditingBureau ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Consultando Bureau...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-3.5 h-3.5" />
+                          <span>{currentFolderData.docs.length > 0 ? 'Reconsultar / Atualizar Bureau' : '🔍 Consultar Bureau Agora'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {activeFolder === 'bureau_certidoes' && bureauFeedback && Array.isArray(bureauFeedback) && (
+                  <div className="space-y-1.5">
+                    {bureauFeedback.map((fb, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-2 rounded-lg text-xs border ${
+                          fb.type === 'success'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                            : (fb.type === 'warning'
+                              ? 'bg-amber-50 border-amber-300 text-amber-900'
+                              : 'bg-red-50 border-red-300 text-red-900')
+                        }`}
+                      >
+                        {fb.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {currentFolderData.docs.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {currentFolderData.docs.map((doc) => (
