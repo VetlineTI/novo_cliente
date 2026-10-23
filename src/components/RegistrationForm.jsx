@@ -1537,7 +1537,13 @@ export const RegistrationForm = ({ onSuccess }) => {
                         Consultando CFMV...
                       </span>
                     )}
-                    {!loadingCrmv && crmvData?.isAtivo && (
+                    {!loadingCrmv && crmvData?.isPendingManualCheck && (
+                      <span className="flex items-center gap-1 text-xs text-amber-700 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-300">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                        Pendente Validação Manual
+                      </span>
+                    )}
+                    {!loadingCrmv && crmvData?.isAtivo && !crmvData?.isPendingManualCheck && (
                       <span className="flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                         <CheckCircle className="w-3.5 h-3.5" />
                         CRMV Ativo
@@ -1567,7 +1573,9 @@ export const RegistrationForm = ({ onSuccess }) => {
                         placeholder="Ex: 12345"
                         className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${errors.crmv || (crmvData && !crmvData.isAtivo)
                           ? 'border-red-400 bg-red-50/20'
-                          : (crmvData?.isAtivo ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200')
+                          : (crmvData?.isPendingManualCheck
+                            ? 'border-amber-400 bg-amber-50/20'
+                            : (crmvData?.isAtivo ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200'))
                           }`}
                       />
                       {loadingCrmv && (
@@ -1607,8 +1615,24 @@ export const RegistrationForm = ({ onSuccess }) => {
                 </div>
               )}
 
+              {/* Feedback CRMV: Validação Manual (API Externa Indisponível) */}
+              {!loadingCrmv && crmvData?.isPendingManualCheck && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 space-y-1 animate-fade-in">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span>Consulta Automática do CFMV Indisponível (Validação Manual Liberada)</span>
+                  </div>
+                  <p className="text-amber-900">
+                    CRMV <strong>{crmvData.crmv || crmv}</strong> informado. A consulta automática no Conselho Federal está temporariamente indisponível no provedor.
+                  </p>
+                  <p className="text-[11px] text-amber-800 font-medium">
+                    ✓ Os campos abaixo foram liberados para preenchimento. A confirmação do CRMV será realizada pela equipe através do documento do CRMV anexado ao final.
+                  </p>
+                </div>
+              )}
+
               {/* Feedback CRMV: Inativo, Inválido ou Divergente de CPF */}
-              {!loadingCrmv && crmvData && (!crmvData.isAtivo || !crmvData.isValid || crmvData.isMismatch) && (
+              {!loadingCrmv && crmvData && (!crmvData.isAtivo || !crmvData.isValid || crmvData.isMismatch) && !crmvData.isPendingManualCheck && (
                 <div className="p-3.5 rounded-xl bg-red-50 border border-red-300 text-xs text-red-800 space-y-1 animate-shake">
                   <div className="flex items-center gap-2 font-bold text-red-700">
                     <BadgeAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
@@ -1626,7 +1650,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               )}
 
               {/* Feedback CRMV: Ativo / Sucesso */}
-              {!loadingCrmv && crmvData?.isAtivo && crmvData?.isValid && !crmvData?.isMismatch && (
+              {!loadingCrmv && crmvData?.isAtivo && crmvData?.isValid && !crmvData?.isMismatch && !crmvData?.isPendingManualCheck && (
                 <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 space-y-1 animate-fade-in">
                   <div className="flex items-center gap-2 font-bold text-emerald-700">
                     <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />

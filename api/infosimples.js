@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     }
 
     // Normaliza o corpo da requisição (URL-encoded ou JSON) e injeta token do servidor
-    const infosimplesToken = process.env.INFOSIMPLES_TOKEN || 'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
+    const infosimplesToken = process.env.INFOSIMPLES_TOKEN || 'hrR42Ikx8RpgqsaRmQDrlG4UkmHvbdgrr38prMTp';
     const params = new URLSearchParams();
     let hasToken = false;
 

@@ -2,7 +2,7 @@ import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
 
 const INFOSIMPLES_TOKEN =
   import.meta.env.VITE_INFOSIMPLES_TOKEN ||
-  'KAnHhP59mqSmrLZmflAQvcDcx2g65C68dOtlTYnw';
+  'hrR42Ikx8RpgqsaRmQDrlG4UkmHvbdgrr38prMTp';
 
 // Rota com proxy no Vite (localhost) e Vercel (produção)
 const BASE_URL = '/api-infosimples';
@@ -471,8 +471,10 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
       const result = await response.json();
       if (result.code === 200 && result.data && result.data.length > 0) {
         const item = result.data[0];
+        const resList = Array.isArray(item.resultados) && item.resultados.length > 0 ? item.resultados : [item];
+        const targetRes = resList[0] || {};
         const receiptUrl = (result.site_receipts && result.site_receipts[0]) || item.site_receipt || null;
-        const situacao = item.situacao || item.situacao_cadastral || item.status || item.descricao_situacao || 'Ativo';
+        const situacao = targetRes.situacao || targetRes.situacao_cadastral || targetRes.status || targetRes.descricao_situacao || item.situacao || 'Ativo';
         const sitClean = String(situacao).trim().toLowerCase();
         
         // Verifica se a situação é ativa/regular
@@ -483,20 +485,22 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
           success: true,
           isAtivo,
           situacao,
-          nome: item.nome || item.nome_profissional || item.razao_social || '',
-          crmv: item.crmv || item.numero_registro || item.registro || searchTerm,
-          uf: item.uf || cleanUf,
-          tipo: item.tipo_inscricao || item.tipo || 'Médico Veterinário',
+          nome: targetRes.nome || targetRes.nome_profissional || targetRes.razao_social || item.nome || '',
+          crmv: targetRes.crmv || targetRes.numero_registro || targetRes.registro || item.crmv || searchTerm,
+          uf: targetRes.uf || item.uf || cleanUf,
+          tipo: targetRes.area || targetRes.tipo_inscricao || targetRes.tipo || item.tipo || 'Médico(a) Veterinário(a)',
           receiptUrl,
-          data: item,
+          data: targetRes,
           raw: result
         };
       }
 
+      const isApiError = [603, 604, 605, 500, 502, 503, 504].includes(result.code);
       const errorMsg = (result.errors && result.errors[0]) || result.code_message || 'Profissional / CRMV não localizado no CFMV.';
       return {
         success: false,
         isAtivo: false,
+        isApiError,
         code: result.code,
         error: errorMsg,
         raw: result
@@ -506,6 +510,7 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
     return {
       success: false,
       isAtivo: false,
+      isApiError: true,
       error: `Erro na comunicação com a API do CFMV (HTTP ${response.status})`
     };
   } catch (err) {
@@ -513,6 +518,7 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
     return {
       success: false,
       isAtivo: false,
+      isApiError: true,
       error: err.message || 'Falha ao consultar CRMV no CFMV.'
     };
   }
@@ -545,6 +551,22 @@ export const validarCRMVComCPF = async (crmv, cpf = '', uf = '', nomeCompleto = 
   const crmvRes = await consultarCRMV(crmv, cleanUf);
   
   if (!crmvRes || !crmvRes.success) {
+    // Se a falha decorre de indisponibilidade da API, token sem permissão (código 603) ou saldo/limite excedido
+    if (crmvRes?.isApiError || [603, 604, 605, 500, 502, 503, 504].includes(crmvRes?.code)) {
+      return {
+        success: true,
+        isValid: true,
+        isAtivo: true,
+        isPendingManualCheck: true,
+        situacao: 'Pendente Validação Manual',
+        nome: nomeCompleto || '',
+        crmv: crmv,
+        uf: cleanUf,
+        apiReason: crmvRes?.error || 'Serviço de consulta externa indisponível',
+        warning: 'A consulta automática ao CFMV está temporariamente indisponível. O CRMV informado foi aceito e o formulário foi liberado. A validação será concluída pela nossa equipe através do documento do CRMV anexado.'
+      };
+    }
+
     return {
       success: false,
       isValid: false,
