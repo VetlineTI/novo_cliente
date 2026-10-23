@@ -28,6 +28,7 @@ import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
+import { checkPhoneTelecom } from '../lib/telecom';
 import { sendWhatsAppSignupConfirmation } from '../lib/zapi';
 import { consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
@@ -1050,6 +1051,30 @@ export const RegistrationForm = ({ onSuccess }) => {
       const hasProtestos = numProtestos > 0;
       const initialCreditLimit = !hasProtestos ? (personType === 'PJ' ? 3000.00 : 1500.00) : 0.00;
 
+      // Auditoria de Linha Telecom (Twilio Lookups v2: VOIP e SIM Swap)
+      // Conforme regra de negócio: NÃO impede o cadastro, mas registra alerta e operadora
+      let telecomData = null;
+      try {
+        telecomData = await checkPhoneTelecom(phone);
+      } catch (telecomErr) {
+        console.warn('Falha silenciosa na consulta telecom:', telecomErr);
+      }
+
+      let telecomObsTag = '';
+      if (telecomData && telecomData.success) {
+        const parts = [];
+        if (telecomData.is_voip) {
+          parts.push('⚠️ ALERTA: Linha VOIP/Virtual detectada');
+        }
+        if (telecomData.sim_swapped_recently) {
+          parts.push('⚠️ ALERTA: Troca recente de chip (SIM Swap)');
+        }
+        parts.push(`Operadora: ${telecomData.carrier || 'Desconhecida'}`);
+        parts.push(`Tipo: ${telecomData.is_voip ? 'VOIP' : (telecomData.is_mobile ? 'Móvel' : (telecomData.is_landline ? 'Fixo' : telecomData.line_type || 'Desconhecido'))}`);
+        parts.push(`SIM Swap: ${telecomData.sim_swapped_recently ? 'Recente' : (telecomData.sim_swap_status === 'trial_account_limitation' ? 'Pendente upgrade Twilio' : 'Estável')}`);
+        telecomObsTag = `[TELECOM: ${parts.join(' | ')}]`;
+      }
+
       // Dados estruturados para tabela novo_cliente.data_new_cliente em Português BR
       const payload = {
         tipo_pessoa: personType,
@@ -1124,6 +1149,14 @@ export const RegistrationForm = ({ onSuccess }) => {
         total_protestos: totalProtestos,
         bureau_consulted_at: bureauConsultedAt,
         ip_origem: await getClientIp(),
+        telecom_carrier: telecomData?.carrier || null,
+        telecom_line_type: telecomData?.line_type || null,
+        telecom_is_voip: Boolean(telecomData?.is_voip),
+        telecom_sim_swap: Boolean(telecomData?.sim_swapped_recently),
+        telecom_sim_status: telecomData?.sim_swap_status || null,
+        telecom_checked_at: telecomData?.checked_at || null,
+        observacoes: telecomObsTag || null,
+        notes: telecomObsTag || null,
         termos_aceitos: true,
         terms_accepted: true,
       };

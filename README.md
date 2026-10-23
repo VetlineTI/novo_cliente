@@ -68,6 +68,15 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - **Gestão de Usuários & Perfis**: Listagem dos usuários de `auth.users` via RPC e concessão de perfis (Administrador, Operador, Consulta ou Bloqueado).
 - **Integração Webhook N8N (Moinho)**: Ao clicar em **"Confirmar & Aprovar"** ou aprovar o cadastro no painel, o sistema dispara automaticamente o webhook `https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho` com a carga completa de dados do cliente (dados cadastrais, fiscais, endereço, vendedor, tabelas comerciais e URLs dos anexos).
 
+### 6. 📱 Auditoria Telecom & Prevenção a Fraudes (Twilio Lookups v2: VOIP & SIM Swap)
+- **Validação no Envio de Senha**: Ao finalizar a criação de senha e submeter o formulário de cadastro, o sistema consulta a **Twilio Lookups API v2** em segundo plano (`/api/telecom-lookup`).
+- **Não Impeditivo**: Conforme regra de negócio, a verificação **NÃO bloqueia o cadastro** do cliente, garantindo taxa de conversão fluida.
+- **Detecção de Linha VOIP / Virtual**: Identifica números de telefonia em nuvem/descartáveis frequentemente utilizados em tentativas de fraude.
+- **Detecção de Troca Recente de Chip (SIM Swap)**: Verifica se o chip/IMSI da linha móvel sofreu substituição recente nas operadoras nacionais (Claro, Vivo, TIM).
+- **Badges de Alerta na Retaguarda**:
+  - Na listagem do **Admin Dashboard**: Badges compactos indicando operadora real (`📱 Vivo`, `📱 Claro`), alerta vermelho pulsante `⚠️ VOIP / Virtual` ou aviso `⚠️ SIM Swap Recente`.
+  - No modal de detalhes (**ClientDetailModal**): Banner dedicado de **Alerta Telecom (Antifraude)** com instruções de compliance e identificação detalhada ao lado do número de telefone.
+
 ---
 
 ## 📂 Estrutura de Arquivos
@@ -76,7 +85,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | :--- | :--- |
 | `index.html` | Estrutura HTML principal com fontes do Google Fonts (*Plus Jakarta Sans* e *Inter*) e metatags. |
 | `package.json` | Dependências do projeto (React, Lucide React, Supabase JS, Canvas Confetti, Tailwind CSS). |
-| `vite.config.js` | Configuração de build e desenvolvimento do Vite. |
+| `vite.config.js` | Configuração de build e desenvolvimento do Vite com proxies locais e serverless handlers. |
 | `vercel.json` | Configuração de rewrites para suporte a SPA e rotas diretas na Vercel. |
 | `supabase/schema.sql` | Script SQL completo com schema `novo_cliente`, `data_new_cliente` (colunas em Português BR), `admin_profiles`, `auth_user_id`, RPCs de usuários e Storage. |
 | `supabase/rename_columns_to_ptbr.sql` | Script de migração para renomear todas as colunas da tabela de clientes para Português BR no Supabase. |
@@ -90,12 +99,14 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
 | `api/directd.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Direct Data (evita CORS). |
 | `api/send-whatsapp-signup.js` | Serverless Function para Vercel: Gera link oficial de ativação via Supabase Admin e dispara confirmação via WhatsApp pela Z-API. |
+| `api/telecom-lookup.js` | Serverless Function para Vercel: Consulta simultânea na Twilio Lookups v2 (VOIP / Tipo de Linha e SIM Swap). |
 | `docs/INTEGRACAO_ASSERTIVA.md` | Especificação técnica e guia de migração para a API da Assertiva Soluções (OAuth2, Score, Ações, Protestos e Dossiê de Crédito). |
 | `src/main.jsx` | Ponto de entrada da aplicação React. |
 | `src/App.jsx` | Roteamento dinâmico entre Portal do Cliente (`/`), Área do Cliente Logado e Painel Administrativo (`/admin`). |
 | `src/lib/supabase.js` | Conexão com Supabase no schema `novo_cliente`, upload no bucket `novos_clientes`, persistência e atualização de cadastros. |
 | `src/lib/clientAuth.js` | Módulo de autenticação do cliente (Supabase Auth, ativação por e-mail, login, atualização cadastral e reenvio de anexos). |
 | `src/lib/zapi.js` | Módulo de integração com a Z-API para disparo do link de confirmação de cadastro no WhatsApp do cliente. |
+| `src/lib/telecom.js` | Módulo cliente e utilitários para consulta, extração e formatação de badges de telecomunicações (VOIP e SIM Swap). |
 | `src/lib/adminAuth.js` | Módulo de autenticação com Supabase Auth para a equipe administrativa e gestão de perfis. |
 | `src/lib/infosimples.js` | Módulo de integração com APIs de bureau (JUCESP Ficha Simplificada, CENPROT Protestos e SINTEGRA). |
 | `src/lib/directd.js` | Módulo de integração com a API Direct Data: `CadastroPessoaJuridicaPlus` (Ficha Cadastral e Sócios), `ProtestosOnline` (IEPTB / CENPROT Nacional) e `Sintegra` (Consulta e validação cadastral estadual com comprovante em PDF). |

@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
         name: 'api-serverless-local',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
-          if (req.url && req.url.startsWith('/api/send-whatsapp-signup')) {
+          if (req.url && (req.url.startsWith('/api/send-whatsapp-signup') || req.url.startsWith('/api/telecom-lookup'))) {
             try {
               const urlObj = new URL(req.url, 'http://localhost');
               req.query = Object.fromEntries(urlObj.searchParams.entries());
@@ -38,11 +38,17 @@ export default defineConfig(({ mode }) => {
                   res.end(JSON.stringify(data));
                   return res;
                 };
-                const { default: handler } = await import('./api/send-whatsapp-signup.js');
-                await handler(req, res);
+
+                if (req.url.startsWith('/api/telecom-lookup')) {
+                  const { default: telecomHandler } = await import('./api/telecom-lookup.js');
+                  await telecomHandler(req, res);
+                } else {
+                  const { default: handler } = await import('./api/send-whatsapp-signup.js');
+                  await handler(req, res);
+                }
               });
             } catch (err) {
-              console.error('Erro no middleware local de WhatsApp:', err);
+              console.error('Erro no middleware local de API:', err);
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ success: false, error: err.message }));

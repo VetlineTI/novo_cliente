@@ -27,10 +27,12 @@ import {
   Receipt,
   X,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  Smartphone
 } from 'lucide-react';
 import logoImg from '../../assets/vetline-logo.png';
 import { fetchClients, updateClientStatus, updateClientData, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
+import { extractClientTelecomInfo } from '../../lib/telecom';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UserManagementView } from './UserManagementView';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
@@ -572,6 +574,40 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                               </span>
                               <span className="text-slate-300">•</span>
                               <span className="font-medium text-slate-700">{client.phone}</span>
+
+                              {/* Badges Telecom (VOIP / Operadora / SIM Swap) */}
+                              {(() => {
+                                const telecom = extractClientTelecomInfo(client);
+                                if (!telecom.hasTelecomData) return null;
+                                return (
+                                  <>
+                                    {telecom.isVoip ? (
+                                      <span className="inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 animate-pulse shadow-xs">
+                                        <AlertTriangle className="w-3 h-3 text-red-600" />
+                                        <span>VOIP / Virtual</span>
+                                      </span>
+                                    ) : telecom.isMobile ? (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-[10px] px-2 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                        <Smartphone className="w-2.5 h-2.5 text-emerald-600" />
+                                        <span>{telecom.carrier}</span>
+                                      </span>
+                                    ) : telecom.isLandline ? (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-[10px] px-2 py-0.2 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                        <Phone className="w-2.5 h-2.5 text-slate-500" />
+                                        <span>Fixo</span>
+                                      </span>
+                                    ) : null}
+
+                                    {telecom.simSwappedRecently && (
+                                      <span className="inline-flex items-center gap-1 font-black text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 animate-pulse shadow-xs">
+                                        <AlertCircle className="w-3 h-3 text-amber-700" />
+                                        <span>SIM Swap Recente</span>
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
+
                               <span className="text-slate-300">•</span>
                               <span className="text-slate-500 truncate max-w-[200px]">{client.email}</span>
                             </div>

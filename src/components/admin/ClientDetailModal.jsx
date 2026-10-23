@@ -29,11 +29,13 @@ import {
   Loader2,
   Maximize2,
   Search,
-  AlertCircle
+  AlertCircle,
+  Smartphone
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
+import { extractClientTelecomInfo } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
 import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
 
@@ -664,6 +666,34 @@ export const ClientDetailModal = ({
                       <span>Cód: {clientCode}</span>
                     </span>
                   )}
+
+                  {/* Badges Telecom no Cabeçalho */}
+                  {(() => {
+                    const telecom = extractClientTelecomInfo(client || formData);
+                    if (!telecom.hasTelecomData) return null;
+                    return (
+                      <>
+                        {telecom.isVoip ? (
+                          <span className="px-2 py-0.2 rounded-full text-[11px] font-bold bg-red-500/25 text-red-300 border border-red-500/40 flex items-center gap-1 animate-pulse">
+                            <AlertTriangle className="w-3 h-3 text-red-400" />
+                            <span>VOIP / Virtual</span>
+                          </span>
+                        ) : telecom.isMobile ? (
+                          <span className="px-2 py-0.2 rounded-full text-[11px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <Smartphone className="w-3 h-3 text-emerald-400" />
+                            <span>{telecom.carrier}</span>
+                          </span>
+                        ) : null}
+
+                        {telecom.simSwappedRecently && (
+                          <span className="px-2 py-0.2 rounded-full text-[11px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1 animate-pulse">
+                            <AlertCircle className="w-3 h-3 text-amber-400" />
+                            <span>SIM Swap Recente</span>
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 truncate mt-0.5">
@@ -818,6 +848,65 @@ export const ClientDetailModal = ({
               </div>
             )}
 
+            {/* ALERTA DE RISCO TELECOM (VOIP ou SIM SWAP RECENTE) */}
+            {(() => {
+              const telecom = extractClientTelecomInfo(client || formData);
+              if (!telecom.hasTelecomData || (!telecom.isVoip && !telecom.simSwappedRecently)) return null;
+              return (
+                <div className={`mb-4 rounded-2xl p-4 shadow-sm border-2 animate-in fade-in duration-200 ${
+                  telecom.isVoip ? 'bg-red-50 border-red-400' : 'bg-amber-50 border-amber-400'
+                }`}>
+                  <div className="flex items-start gap-3.5">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs mt-0.5 border ${
+                      telecom.isVoip ? 'bg-red-100 border-red-300 text-red-700' : 'bg-amber-100 border-amber-300 text-amber-700'
+                    }`}>
+                      <AlertTriangle className={`w-5 h-5 animate-pulse ${telecom.isVoip ? 'text-red-600' : 'text-amber-600'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                          telecom.isVoip ? 'bg-red-200 text-red-900 border-red-300' : 'bg-amber-200 text-amber-900 border-amber-300'
+                        }`}>
+                          Alerta Telecom (Antifraude)
+                        </span>
+                        <h4 className={`font-black text-sm sm:text-base ${telecom.isVoip ? 'text-red-950' : 'text-amber-950'}`}>
+                          {telecom.isVoip && 'Linha VOIP / Virtual Detectada no Cadastro'}
+                          {!telecom.isVoip && telecom.simSwappedRecently && 'Troca Recente de Chip (SIM Swap) Detectada'}
+                        </h4>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        {telecom.isVoip && (
+                          <span className="px-2.5 py-1 rounded-lg bg-red-100 text-red-900 border border-red-300 font-bold inline-flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
+                            <span>Número Virtual / VOIP (Operadora: {telecom.carrier})</span>
+                          </span>
+                        )}
+                        {telecom.simSwappedRecently && (
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 font-bold inline-flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Chip trocado nas últimas horas (Suspeita de SIM Swap / Clonagem)</span>
+                          </span>
+                        )}
+                        {telecom.carrier && (
+                          <span className="px-2.5 py-1 rounded-lg bg-white text-slate-800 border border-slate-300 font-medium inline-flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Operadora: {telecom.carrier} ({telecom.lineType})</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <p className={`text-xs mt-2 font-medium ${telecom.isVoip ? 'text-red-900' : 'text-amber-900'}`}>
+                        {telecom.isVoip
+                          ? 'O cliente utilizou um número de telefonia em nuvem/VOIP. Recomenda-se confirmar a identidade com o sócio/veterinário antes de conceder limite faturado.'
+                          : 'O chip da linha móvel foi substituído recentemente na operadora. Recomenda-se cautela em autorizações e envios de senhas sensíveis.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* SE FOR A FICHA CADASTRAL & DADOS COMERCIAIS */}
             {activeFolder === 'ficha' ? (
               <div className="space-y-3.5">
@@ -916,9 +1005,41 @@ export const ClientDetailModal = ({
                               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green outline-none font-bold text-slate-800"
                             />
                           ) : (
-                            <a href={`tel:${getCleanPhone(formData.phone)}`} className="text-brand-teal hover:underline font-bold">
-                              {formData.phone}
-                            </a>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <a href={`tel:${getCleanPhone(formData.phone)}`} className="text-brand-teal hover:underline font-bold">
+                                {formData.phone}
+                              </a>
+                              {(() => {
+                                const telecom = extractClientTelecomInfo(client || formData);
+                                if (!telecom.hasTelecomData) return null;
+                                return (
+                                  <>
+                                    {telecom.isVoip ? (
+                                      <span className="inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
+                                        <AlertTriangle className="w-3 h-3 text-red-600" />
+                                        <span>VOIP</span>
+                                      </span>
+                                    ) : telecom.isMobile ? (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                        <Smartphone className="w-3 h-3 text-emerald-600" />
+                                        <span>{telecom.carrier} (Móvel)</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                        <span>Fixo</span>
+                                      </span>
+                                    )}
+
+                                    {telecom.simSwappedRecently && (
+                                      <span className="inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                        <AlertCircle className="w-3 h-3 text-amber-700" />
+                                        <span>SIM Swap</span>
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
                           )}
                         </div>
 
