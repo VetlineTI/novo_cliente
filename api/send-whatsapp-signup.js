@@ -152,6 +152,101 @@ export default async function handler(req, res) {
               }).catch(() => {});
             }
           }
+
+          // 3. REGRA DE NEGÓCIO: Consulta oficial de Sócios e Protestos na Direct Data ao confirmar o WhatsApp
+          try {
+            const clientQueryRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}&select=id,cpf_cnpj,tipo_pessoa,uf,doc_cenprot_url,doc_receita_url`, {
+              headers: {
+                'apikey': supabaseServiceKey,
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Accept-Profile': 'novo_cliente'
+              }
+            });
+
+            if (clientQueryRes.ok) {
+              const clientList = await clientQueryRes.json();
+              const targetClient = clientList && clientList[0];
+
+              if (targetClient && targetClient.cpf_cnpj && (!targetClient.doc_cenprot_url || !targetClient.doc_receita_url)) {
+                const docClean = String(targetClient.cpf_cnpj).replace(/\D/g, '');
+                const directToken = process.env.DIRECTD_TOKEN || '12DC14EA-112C-426C-9EC9-05A1280D23D1';
+                const isPJ = docClean.length === 14;
+
+                const auditUpdates = {
+                  bureau_consulted_at: new Date().toISOString()
+                };
+
+                // Consulta Protestos na Direct Data
+                try {
+                  const protRes = await fetch(`https://apiv3.directd.com.br/api/ProtestosOnline?${isPJ ? 'CNPJ' : 'CPF'}=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
+                  if (protRes.ok) {
+                    const protData = await protRes.json();
+                    if (protData?.retorno && (protData.metaDados?.resultadoId === 1 || protData.metaDados?.resultadoId === 2)) {
+                      const numP = protData.retorno.numeroTotalProtestos ?? 0;
+                      auditUpdates.total_protestos = numP;
+                      auditUpdates.limite_credito = numP === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
+                      if (protData.metaDados?.urlComprovante) {
+                        auditUpdates.doc_cenprot_url = protData.metaDados.urlComprovante;
+                      } else {
+                        const protHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Certidão de Protestos</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;}.card{background:#fff;padding:24px;border:2px solid #0f172a;border-radius:8px;}.badge{padding:12px;border-radius:6px;font-weight:bold;margin:12px 0;background:${numP === 0 ? '#dcfce7;color:#166534;' : '#fee2e2;color:#991b1b;'}}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}</style></head><body><div class="card"><h2>Central Nacional de Protestos (IEPTB / CENPROT)</h2><p><b>Documento Consultado:</b> ${protData.retorno.documentoConsultado || docClean}</p><div class="badge">${numP === 0 ? '✓ NADA CONSTA - 0 Protestos' : `⚠ CONSTAM ${numP} PROTESTO(S) - Total: ${protData.retorno.valorTotalProtestos || 'R$ 0,00'}`}</div><p style="font-size:11px;color:#64748b;margin-top:16px;">Documento oficial emitido via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
+                        auditUpdates.doc_cenprot_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(protHtml);
+                      }
+                    }
+                  }
+                } catch (eProt) {
+                  console.warn('Erro ao consultar Protestos na Direct Data:', eProt);
+                }
+
+                // Se for PJ, consulta Sócios da Receita Federal e PJ Plus
+                if (isPJ) {
+                  try {
+                    const recRes = await fetch(`https://apiv3.directd.com.br/api/ReceitaPJParticipacaoSocietaria?CNPJ=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
+                    if (recRes.ok) {
+                      const recData = await recRes.json();
+                      if (recData?.retorno) {
+                        if (recData.metaDados?.urlComprovante) {
+                          auditUpdates.doc_receita_url = recData.metaDados.urlComprovante;
+                        } else {
+                          const socios = Array.isArray(recData.retorno.socios) ? recData.retorno.socios : [];
+                          const sociosRows = socios.map(s => `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${s.nomeEntidade || s.nome || '-'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.qualificacao || 'Sócio'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.documento || '-'}</td></tr>`).join('');
+                          const recHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receita Federal - Sócios</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;}.card{background:#fff;padding:24px;border:2px solid #0f766e;border-radius:8px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}</style></head><body><div class="card"><h2>Receita Federal - Quadro de Sócios e Administradores (QSA)</h2><p><b>Empresa:</b> ${recData.retorno.nomeEmpresarial || recData.retorno.razaoSocial || ''} (${docClean})</p><p><b>Situação Cadastral:</b> ${recData.retorno.situacaoCadastral || 'Ativa'} | <b>Data de Abertura:</b> ${recData.retorno.dataAbertura || ''}</p><table><thead><tr><th>Nome do Sócio</th><th>Qualificação</th><th>Documento</th></tr></thead><tbody>${sociosRows || '<tr><td colspan="3">Nenhum sócio informado</td></tr>'}</tbody></table><p style="font-size:11px;color:#64748b;margin-top:16px;">Comprovante oficial gerado via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
+                          auditUpdates.doc_receita_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(recHtml);
+                        }
+                      }
+                    }
+                  } catch (eRec) {
+                    console.warn('Erro ao consultar Sócios da Receita:', eRec);
+                  }
+
+                  try {
+                    const plusRes = await fetch(`https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus?CNPJ=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
+                    if (plusRes.ok) {
+                      const plusData = await plusRes.json();
+                      if (plusData?.retorno && plusData.metaDados?.urlComprovante) {
+                        auditUpdates.doc_jucesp_url = plusData.metaDados.urlComprovante;
+                      }
+                    }
+                  } catch (ePlus) {}
+                }
+
+                // Salva no banco de dados via service_role
+                await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?id=eq.${targetClient.id}`, {
+                  method: 'PATCH',
+                  headers: {
+                    'apikey': supabaseServiceKey,
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal',
+                    'Accept-Profile': 'novo_cliente',
+                    'Content-Profile': 'novo_cliente'
+                  },
+                  body: JSON.stringify(auditUpdates)
+                }).catch(ePatch => console.warn('Erro ao atualizar dados de auditoria no Supabase:', ePatch));
+              }
+            }
+          } catch (eAudit) {
+            console.warn('Erro ao disparar auditoria Direct Data na ativação:', eAudit);
+          }
         } catch (e) {
           console.warn('Erro ao atualizar usuário como confirmado:', e);
         }

@@ -749,7 +749,7 @@ export const consultarDirectDataProtestos = async (documento) => {
     const meta = result.metaDados || {};
     const retorno = result.retorno || {};
 
-    if (response.ok && meta.resultadoId === 1 && retorno) {
+    if (response.ok && (meta.resultadoId === 1 || meta.resultadoId === 2 || (retorno && (retorno.constamProtestos !== undefined || retorno.numeroTotalProtestos !== undefined)))) {
       const totalProtests = retorno.numeroTotalProtestos ?? 0;
       const receiptUrl = meta.urlComprovante || generateProtestosDirectDHtml(retorno, meta, cleanDoc);
 
@@ -813,7 +813,7 @@ export const consultarDirectDataSintegra = async (cnpj, uf = 'SP') => {
     const meta = result.metaDados || {};
     const retorno = result.retorno || {};
 
-    if (response.ok && meta.resultadoId === 1 && retorno) {
+    if (response.ok && (meta.resultadoId === 1 || meta.resultadoId === 2 || (retorno && (retorno.ie !== undefined || retorno.situacaoCadastral || retorno.nomeEmpresarial)))) {
       const ie = retorno.ie || null;
       const situacaoCadastral = retorno.situacaoCadastral || 'Habilitado';
       const situacaoCNPJ = retorno.situacaoCNPJ || 'Sem restrição';

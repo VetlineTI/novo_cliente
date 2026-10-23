@@ -70,9 +70,10 @@ export const ClientDetailModal = ({
   // Estado dos campos editáveis do cliente
   const [formData, setFormData] = useState({});
 
-  // Estado de consulta do Bureau (Infosimples)
+  // Estado de consulta do Bureau (Infosimples / Direct Data)
   const [isAuditingBureau, setIsAuditingBureau] = useState(false);
   const [bureauFeedback, setBureauFeedback] = useState(null);
+  const [renderTick, setRenderTick] = useState(0);
 
   // Inicializa o formulário com os dados do cliente
   useEffect(() => {
@@ -241,7 +242,23 @@ export const ClientDetailModal = ({
 
       const feedbacks = [];
 
-      // Feedback JUCESP
+      // Feedback Receita Federal (Sócios & QSA)
+      if (res.data?.receita?.success || res.docReceitaUrl) {
+        const totalSocios = res.data?.receita?.socios?.length || 0;
+        const nomesSocios = (res.data?.receita?.socios || []).map(s => s.nome).filter(Boolean).slice(0, 2).join(', ');
+        const extraSocios = totalSocios > 2 ? ` (+${totalSocios - 2})` : '';
+        feedbacks.push({
+          type: 'success',
+          message: `✓ Receita Federal / Sócios consultados com sucesso! [${totalSocios} sócio(s): ${nomesSocios || 'Confirmado'}${extraSocios}]`
+        });
+      } else if (res.data?.receita?.error) {
+        feedbacks.push({
+          type: 'warning',
+          message: `⚠ Receita Federal (Sócios): ${res.data.receita.error}`
+        });
+      }
+
+      // Feedback JUCESP / PJ Plus
       if (res.data?.jucesp?.success || res.docJucespUrl) {
         feedbacks.push({
           type: 'success',
@@ -254,14 +271,14 @@ export const ClientDetailModal = ({
         });
       }
 
-      // Feedback CENPROT
+      // Feedback CENPROT / Protestos
       if (res.data?.cenprot?.success && !res.data?.cenprot?.skipped) {
         const protestMsg = res.data.cenprot.totalProtests === 0
           ? '0 Protestos (Nada Consta)'
           : `${res.data.cenprot.totalProtests} Protesto(s)`;
         feedbacks.push({
-          type: 'success',
-          message: `✓ Consulta de Protestos (CENPROT) realizada e anexada com sucesso! (${protestMsg})`
+          type: res.data.cenprot.totalProtests === 0 ? 'success' : 'warning',
+          message: `✓ Consulta de Protestos (IEPTB / CENPROT) realizada e anexada! (${protestMsg} - ${res.data.cenprot.valorTotalProtestos || 'R$ 0,00'})`
         });
       } else if (res.data?.cenprot?.error) {
         feedbacks.push({
@@ -287,14 +304,23 @@ export const ClientDetailModal = ({
 
       setBureauFeedback(feedbacks);
 
+      const updates = {
+        doc_receita_url: res.docReceitaUrl || res.data?.receita?.receiptUrl || client.doc_receita_url,
+        doc_jucesp_url: res.docJucespUrl || res.data?.jucesp?.receiptUrl || client.doc_jucesp_url,
+        doc_cenprot_url: res.docCenprotUrl || res.data?.cenprot?.receiptUrl || client.doc_cenprot_url,
+        doc_ie_url: res.docSintegraUrl || res.data?.sintegra?.receiptUrl || client.doc_ie_url,
+        doc_sintegra_url: res.docSintegraUrl || res.data?.sintegra?.receiptUrl || client.doc_sintegra_url,
+        nire_jucesp: res.data?.jucesp?.nire || res.nireJucesp || client.nire_jucesp,
+        total_protestos: res.data?.cenprot?.totalProtests ?? res.totalProtestos ?? client.total_protestos,
+        bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
+      };
+
+      // Atualiza o objeto do cliente em memória para refletir imediatamente nas pastas
+      Object.assign(client, updates);
+      setRenderTick(t => t + 1);
+
       if (res.successfulServices && res.successfulServices.length > 0 && onUpdateClient) {
-        await onUpdateClient(client.id, {
-          doc_jucesp_url: res.docJucespUrl || client.doc_jucesp_url,
-          doc_cenprot_url: res.docCenprotUrl || client.doc_cenprot_url,
-          nire_jucesp: res.data?.jucesp?.nire || res.nireJucesp || client.nire_jucesp,
-          total_protestos: res.data?.cenprot?.totalProtests ?? res.totalProtestos ?? client.total_protestos,
-          bureau_consulted_at: res.data?.consultedAt || new Date().toISOString()
-        });
+        await onUpdateClient(client.id, updates);
       }
     } catch (err) {
       setBureauFeedback({
@@ -1637,10 +1663,54 @@ export const ClientDetailModal = ({
                     ))}
                   </div>
                 ) : (
-                  <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center">
+                  <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
                     <Folder className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                     <h4 className="font-bold text-slate-700 text-xs">Nenhum documento anexado nesta pasta</h4>
-                    <p className="text-[11px] text-slate-400 mt-1">O cliente não enviou arquivos para esta categoria.</p>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                      {activeFolder === 'bureau_certidoes'
+                        ? 'Você pode consultar e anexar os documentos oficiais da Direct Data (Sócios/Receita Federal, JUCESP, Protestos IEPTB e SINTEGRA) agora mesmo.'
+                        : 'O cliente não enviou arquivos para esta categoria.'}
+                    </p>
+                    {activeFolder === 'bureau_certidoes' && (
+                      <div className="pt-2 flex flex-col items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRunBureauAudit}
+                          disabled={isAuditingBureau}
+                          className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-60"
+                        >
+                          {isAuditingBureau ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Consultando Direct Data (Sócios & Protestos)...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-4 h-4" />
+                              <span>🔍 Consultar Direct Data Agora (Sócios, JUCESP & Protestos)</span>
+                            </>
+                          )}
+                        </button>
+                        {bureauFeedback && Array.isArray(bureauFeedback) && (
+                          <div className="w-full max-w-lg mt-3 text-left space-y-1.5">
+                            {bureauFeedback.map((fb, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-2 rounded-lg text-xs border ${
+                                  fb.type === 'success'
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                    : (fb.type === 'warning'
+                                      ? 'bg-amber-50 border-amber-300 text-amber-900'
+                                      : 'bg-red-50 border-red-300 text-red-900')
+                                }`}
+                              >
+                                {fb.message}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

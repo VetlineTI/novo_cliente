@@ -711,6 +711,7 @@ export const executarAuditoriaBureau = async (client) => {
   }
 
   const results = {
+    receita: null,
     jucesp: null,
     cenprot: null,
     sintegra: null,
@@ -725,21 +726,28 @@ export const executarAuditoriaBureau = async (client) => {
       results.cenprot = { success: true, skipped: true, totalProtests: 0 };
     }
   } else {
-    // 1. Consulta JUCESP Ficha Cadastral Simplificada (Gov.br)
+    // 1. Consulta Receita Federal / Sócios & Participação Societária (Direct Data)
+    try {
+      results.receita = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanDoc);
+    } catch (e) {
+      results.receita = { success: false, error: e.message || 'Erro na consulta Receita Federal' };
+    }
+
+    // 2. Consulta JUCESP Ficha Cadastral Simplificada / PJ Plus (Direct Data)
     try {
       results.jucesp = await consultarJucespSimplificada(cleanDoc);
     } catch (e) {
       results.jucesp = { success: false, error: e.message || 'Erro na consulta da JUCESP' };
     }
 
-    // 2. Consulta CENPROT Protestos (CNPJ)
+    // 3. Consulta CENPROT Protestos (CNPJ)
     try {
       results.cenprot = await consultarProtestosCenprot(cleanDoc);
     } catch (e) {
       results.cenprot = { success: true, skipped: true, totalProtests: 0 };
     }
 
-    // 3. Consulta SINTEGRA / CADESP (Inscrição Estadual)
+    // 4. Consulta SINTEGRA / CADESP (Inscrição Estadual)
     try {
       const ufSearch = client.uf || client.state || client.delivery_state || 'SP';
       results.sintegra = await consultarDirectDataSintegra(cleanDoc, ufSearch);
@@ -749,6 +757,7 @@ export const executarAuditoriaBureau = async (client) => {
   }
 
   // URLs dos comprovantes válidos
+  const docReceitaUrl = results.receita?.success ? results.receita.receiptUrl : null;
   const docJucespUrl = results.jucesp?.success ? results.jucesp.receiptUrl : null;
   const docCenprotUrl = results.cenprot?.success && !results.cenprot?.skipped ? results.cenprot.receiptUrl : null;
   const docSintegraUrl = results.sintegra?.success ? results.sintegra.receiptUrl : null;
@@ -770,6 +779,16 @@ export const executarAuditoriaBureau = async (client) => {
       });
     }
   } else {
+    if (results.receita?.success) {
+      successfulServices.push('Receita Federal (Sócios)');
+    } else if (results.receita?.error) {
+      failedServices.push({
+        service: 'Receita Federal',
+        code: results.receita?.code,
+        error: results.receita?.error
+      });
+    }
+
     if (results.jucesp?.success) {
       successfulServices.push('JUCESP (Ficha Simplificada)');
     } else if (results.jucesp?.error) {
@@ -838,6 +857,7 @@ export const executarAuditoriaBureau = async (client) => {
         bureau_consulted_at: results.consultedAt
       };
 
+      if (docReceitaUrl) updatePayload.doc_receita_url = docReceitaUrl;
       if (docJucespUrl) updatePayload.doc_jucesp_url = docJucespUrl;
       if (docCenprotUrl) updatePayload.doc_cenprot_url = docCenprotUrl;
       if (docSintegraUrl) {
@@ -881,6 +901,7 @@ export const executarAuditoriaBureau = async (client) => {
     data: results,
     nireJucesp,
     totalProtestos,
+    docReceitaUrl,
     docJucespUrl,
     docCenprotUrl,
     docSintegraUrl,

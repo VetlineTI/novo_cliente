@@ -740,21 +740,24 @@ export const confirmClientWhatsApp = async (email = '') => {
       }
     } catch (e) {}
 
-    // REGRA DE NEGÓCIO: Consulta oficial de Protestos/Bureau realizada EXCLUSIVAMENTE após o aceite do WhatsApp
+    // REGRA DE NEGÓCIO: Consulta oficial de Protestos e Sócios realizada EXCLUSIVAMENTE após o aceite do WhatsApp
     try {
       if (cleanEmail) {
         const { data: clientRecord } = await supabase
           .schema('novo_cliente')
           .from('data_new_cliente')
-          .select('id, document_number, cpf_cnpj, full_name, razao_social_nome, state, uf, doc_cenprot_url, tipo_pessoa, person_type')
+          .select('id, document_number, cpf_cnpj, full_name, razao_social_nome, state, uf, doc_cenprot_url, doc_receita_url, tipo_pessoa, person_type')
           .ilike('email', cleanEmail)
           .maybeSingle();
 
-        if (clientRecord && !clientRecord.doc_cenprot_url) {
-          console.log('✅ Cliente confirmou aceite via WhatsApp! Disparando consulta de protestos/bureau para:', clientRecord.document_number || clientRecord.cpf_cnpj);
-          // Dispara em background para não travar a experiência do usuário
-          executarAuditoriaBureau(clientRecord).catch(bureauErr => {
-            console.warn('Alerta na consulta de protestos pós-confirmação do WhatsApp:', bureauErr);
+        if (clientRecord && (!clientRecord.doc_cenprot_url || !clientRecord.doc_receita_url)) {
+          console.log('✅ Cliente confirmou aceite via WhatsApp! Disparando consulta oficial da Direct Data para:', clientRecord.document_number || clientRecord.cpf_cnpj);
+          // Aguarda a auditoria concluir (com timeout de segurança) antes de continuar
+          await Promise.race([
+            executarAuditoriaBureau(clientRecord),
+            new Promise((resolve) => setTimeout(resolve, 15000))
+          ]).catch((bureauErr) => {
+            console.warn('Alerta na consulta de bureau pós-confirmação do WhatsApp:', bureauErr);
           });
         }
       }
