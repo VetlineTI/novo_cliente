@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS novo_cliente.data_new_cliente (
     doc_identificacao_url TEXT,
     doc_crmv_url TEXT,
     
+    -- Dados da Receita Federal / Fundação
+    data_abertura VARCHAR(50),
+    data_inicio_atividade VARCHAR(50),
+
     -- Status do Cadastro
     status VARCHAR(30) DEFAULT 'pendente' CHECK (status IN ('pendente', 'em_analise', 'aprovado', 'recusado')),
     termos_aceitos BOOLEAN DEFAULT TRUE NOT NULL,

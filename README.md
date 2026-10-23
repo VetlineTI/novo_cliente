@@ -83,6 +83,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/fix_auth_trigger.sql` | Correção definitiva do trigger `handle_new_auth_user()` e criação de view de compatibilidade para evitar erro 500 no cadastro. |
 | `supabase/add_bureau_columns.sql` | Script SQL para adicionar as colunas do Bureau e Certidões (JUCESP, CENPROT e Receita Federal) no Supabase. |
 | `supabase/add_inscricao_and_crmv_columns.sql` | Script SQL completo para criação das colunas `tp_inscricao`, `numero_inscricao`, `crmv` e atualização das RPCs. |
+| `supabase/add_data_abertura_column.sql` | Script SQL para adicionar as colunas `data_abertura` e `data_inicio_atividade`, atualizar RPCs e recarregar o schema cache no Supabase. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |

@@ -593,13 +593,14 @@ export const toPortuguesePayload = (data) => {
   }
 
   // Data de abertura do CNPJ
-  if (data.data_abertura !== undefined || data.dataAbertura !== undefined || data.data_inicio_atividade !== undefined) {
-    p.data_abertura = data.data_abertura || data.dataAbertura || data.data_inicio_atividade || null;
-  }
-
-  // Se a empresa tiver menos de 1 ano de fundação, adiciona alerta de retaguarda nas observações
   const dataAberturaEmpresa = data.data_abertura || data.dataAbertura || data.data_inicio_atividade;
   if (dataAberturaEmpresa) {
+    p.data_abertura = dataAberturaEmpresa;
+    p.data_inicio_atividade = dataAberturaEmpresa;
+    // Garante fallback seguro em observações para leitura mesmo se a coluna física não existir
+    if (!String(p.observacoes || '').includes('[Abertura:')) {
+      p.observacoes = p.observacoes ? `${p.observacoes} | [Abertura: ${dataAberturaEmpresa}]` : `[Abertura: ${dataAberturaEmpresa}]`;
+    }
     const ageInfo = checkCompanyAge(dataAberturaEmpresa);
     if (ageInfo.isRecent && !String(p.observacoes || '').includes('menos de 1 ano de fundação')) {
       p.observacoes = p.observacoes ? `${p.observacoes} | ${ageInfo.alertText}` : ageInfo.alertText;
@@ -953,6 +954,141 @@ export const checkExistingApprovedClient = async (document) => {
 };
 
 /**
+ * Extrai o nome de uma coluna ausente a partir da mensagem de erro do Supabase/PostgREST
+ * @param {string} message Mensagem de erro retornada pela API
+ * @returns {string|null} Nome da coluna ou null
+ */
+const extractMissingColumn = (message) => {
+  if (!message || typeof message !== 'string') return null;
+  const m1 = message.match(/Could not find the '([^']+)' column/i);
+  if (m1) return m1[1];
+  const m2 = message.match(/column "?([^"\s,]+)"? of relation/i);
+  if (m2) return m2[1];
+  const m3 = message.match(/column "?([^"\s,]+)"? does not exist/i);
+  if (m3) return m3[1];
+  return null;
+};
+
+/**
+ * Insere registro no schema novo_cliente tratando dinamicamente colunas ausentes no schema cache
+ */
+const safeInsertClient = async (tableName, initialPayload) => {
+  let payload = { ...initialPayload };
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const res = await supabase
+      .schema('novo_cliente')
+      .from(tableName)
+      .insert([payload])
+      .select();
+
+    if (!res.error) {
+      return res;
+    }
+
+    const errorMsg = res.error.message || '';
+
+    // Se for erro de relation inexistente, retorna imediatamente para tentar tabela alternativa
+    if (errorMsg.includes('relation') && (errorMsg.includes('does not exist') || errorMsg.includes('não existe'))) {
+      return res;
+    }
+
+    const missingCol = extractMissingColumn(errorMsg);
+    if (missingCol && missingCol in payload) {
+      // Preserva informações vitais em observações como garantia
+      if ((missingCol === 'data_abertura' || missingCol === 'data_inicio_atividade') && payload[missingCol]) {
+        const val = payload[missingCol];
+        if (!String(payload.observacoes || '').includes('[Abertura:')) {
+          payload.observacoes = payload.observacoes ? `${payload.observacoes} | [Abertura: ${val}]` : `[Abertura: ${val}]`;
+        }
+      }
+      delete payload[missingCol];
+      continue;
+    }
+
+    // Fallback para CNAE
+    if (errorMsg.toLowerCase().includes('cnae') && ('cnae' in payload || 'cnae_codigo' in payload || 'cnae_descricao' in payload)) {
+      delete payload.cnae;
+      delete payload.cnae_codigo;
+      delete payload.cnae_descricao;
+      continue;
+    }
+
+    // Fallback para data de abertura
+    if (errorMsg.toLowerCase().includes('data_abertura') && ('data_abertura' in payload || 'data_inicio_atividade' in payload)) {
+      delete payload.data_abertura;
+      delete payload.data_inicio_atividade;
+      continue;
+    }
+
+    return res;
+  }
+
+  return { error: { message: 'Muitas tentativas de compatibilização com o banco de dados.' } };
+};
+
+/**
+ * Atualiza registro no schema novo_cliente tratando dinamicamente colunas ausentes no schema cache
+ */
+const safeUpdateClient = async (tableName, clientId, initialPayload) => {
+  let payload = { ...initialPayload };
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const res = await supabase
+      .schema('novo_cliente')
+      .from(tableName)
+      .update(payload)
+      .eq('id', clientId)
+      .select();
+
+    if (!res.error) {
+      return res;
+    }
+
+    const errorMsg = res.error.message || '';
+
+    if (errorMsg.includes('relation') && (errorMsg.includes('does not exist') || errorMsg.includes('não existe'))) {
+      return res;
+    }
+
+    const missingCol = extractMissingColumn(errorMsg);
+    if (missingCol && missingCol in payload) {
+      if ((missingCol === 'data_abertura' || missingCol === 'data_inicio_atividade') && payload[missingCol]) {
+        const val = payload[missingCol];
+        if (!String(payload.observacoes || '').includes('[Abertura:')) {
+          payload.observacoes = payload.observacoes ? `${payload.observacoes} | [Abertura: ${val}]` : `[Abertura: ${val}]`;
+        }
+      }
+      delete payload[missingCol];
+      continue;
+    }
+
+    if (errorMsg.toLowerCase().includes('cnae') && ('cnae' in payload || 'cnae_codigo' in payload || 'cnae_descricao' in payload)) {
+      delete payload.cnae;
+      delete payload.cnae_codigo;
+      delete payload.cnae_descricao;
+      continue;
+    }
+
+    if (errorMsg.toLowerCase().includes('data_abertura') && ('data_abertura' in payload || 'data_inicio_atividade' in payload)) {
+      delete payload.data_abertura;
+      delete payload.data_inicio_atividade;
+      continue;
+    }
+
+    return res;
+  }
+
+  return { error: { message: 'Muitas tentativas de compatibilização com o banco de dados.' } };
+};
+
+/**
  * Salva os dados do formulário na tabela novo_cliente.data_new_cliente
  * (Utiliza RPC pública com SECURITY DEFINER direcionada ao schema novo_cliente e fallback direto)
  * @param {Object} clientData Dados formatados para persistência
@@ -1027,40 +1163,13 @@ export const submitNewClient = async (clientData) => {
       }
     } catch (errRpc) {}
 
-    // 2. Método Secundário: Inserção direta no schema novo_cliente (tabela data_new_cliente ou data_new_client)
+    // 2. Método Secundário: Inserção direta no schema novo_cliente resiliente a colunas ausentes
     try {
-      let res = await supabase
-        .schema('novo_cliente')
-        .from('data_new_cliente')
-        .insert([ptPayload])
-        .select();
-
-      // Se der erro por ausência de coluna cnae na tabela física, tenta sem os campos dedicados (mantendo em observações)
-      if (res.error && res.error.message?.includes('cnae')) {
-        const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
-        res = await supabase
-          .schema('novo_cliente')
-          .from('data_new_cliente')
-          .insert([safePayload])
-          .select();
-      }
+      let res = await safeInsertClient('data_new_cliente', ptPayload);
 
       // Se der erro por nome da tabela antiga, tenta data_new_client
       if (res.error && res.error.message?.includes('relation') && res.error.message?.includes('data_new_cliente')) {
-        res = await supabase
-          .schema('novo_cliente')
-          .from('data_new_client')
-          .insert([ptPayload])
-          .select();
-
-        if (res.error && res.error.message?.includes('cnae')) {
-          const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
-          res = await supabase
-            .schema('novo_cliente')
-            .from('data_new_client')
-            .insert([safePayload])
-            .select();
-        }
+        res = await safeInsertClient('data_new_client', ptPayload);
       }
 
       if (!res.error && res.data && res.data.length > 0) {
@@ -1245,43 +1354,12 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
       lastError = errRpc.message;
     }
 
-    // 2. Método Secundário: Atualização direta no schema novo_cliente
+    // 2. Método Secundário: Atualização direta no schema novo_cliente resiliente a colunas ausentes
     try {
-      let res = await supabase
-        .schema('novo_cliente')
-        .from('data_new_cliente')
-        .update(ptPayload)
-        .eq('id', clientId)
-        .select();
+      let res = await safeUpdateClient('data_new_cliente', clientId, ptPayload);
 
-      if (res.error && res.error.message?.includes('cnae')) {
-        const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
-        res = await supabase
-          .schema('novo_cliente')
-          .from('data_new_cliente')
-          .update(safePayload)
-          .eq('id', clientId)
-          .select();
-      }
-
-      if (res.error) {
-        lastError = res.error.message;
-        res = await supabase
-          .schema('novo_cliente')
-          .from('data_new_client')
-          .update(ptPayload)
-          .eq('id', clientId)
-          .select();
-
-        if (res.error && res.error.message?.includes('cnae')) {
-          const { cnae, cnae_codigo, cnae_descricao, ...safePayload } = ptPayload;
-          res = await supabase
-            .schema('novo_cliente')
-            .from('data_new_client')
-            .update(safePayload)
-            .eq('id', clientId)
-            .select();
-        }
+      if (res.error && res.error.message?.includes('relation')) {
+        res = await safeUpdateClient('data_new_client', clientId, ptPayload);
       }
 
       if (!res.error && res.data && res.data.length > 0) {
