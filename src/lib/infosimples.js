@@ -256,7 +256,6 @@ export const consultarReceitaCNPJ = async (cnpj) => {
 
 import { 
   consultarDirectDataPJ, 
-  consultarDirectDataReceitaPJParticipacaoSocietaria,
   consultarDirectDataProtestos, 
   consultarDirectDataSintegra 
 } from './directd';
@@ -385,7 +384,6 @@ export const consultarProtestosCenprot = async (cnpj) => {
 /**
  * Consulta Cadastral PJ / Ficha Cadastral Simplificada
  * Fonte Oficial Principal: Direct Data (/api/CadastroPessoaJuridicaPlus)
- * Fallback: Direct Data (/api/ReceitaPJParticipacaoSocietaria)
  */
 export const consultarJucespSimplificada = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
@@ -408,23 +406,6 @@ export const consultarJucespSimplificada = async (cnpj) => {
     }
   } catch (dErr) {
     console.warn('Tentativa Direct Data CadastroPessoaJuridicaPlus:', dErr);
-  }
-
-  // 2. Fallback: Direct Data (ReceitaPJParticipacaoSocietaria com QSA detalhado)
-  try {
-    const directQsaRes = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanCnpj);
-    if (directQsaRes.success && directQsaRes.data) {
-      return {
-        success: true,
-        source: 'directd_qsa',
-        nire: directQsaRes.data.nire || null,
-        receiptUrl: directQsaRes.receiptUrl,
-        data: directQsaRes.data,
-        raw: directQsaRes.raw
-      };
-    }
-  } catch (dErr) {
-    console.warn('Tentativa Direct Data ReceitaPJParticipacaoSocietaria:', dErr);
   }
 
   return {
@@ -726,9 +707,9 @@ export const executarAuditoriaBureau = async (client) => {
       results.cenprot = { success: true, skipped: true, totalProtests: 0 };
     }
   } else {
-    // 1. Consulta Receita Federal / Sócios & Participação Societária (Direct Data)
+    // 1. Consulta Cartão CNPJ Oficial da Receita Federal (Infosimples com fallback BrasilAPI)
     try {
-      results.receita = await consultarDirectDataReceitaPJParticipacaoSocietaria(cleanDoc);
+      results.receita = await consultarReceitaCNPJ(cleanDoc);
     } catch (e) {
       results.receita = { success: false, error: e.message || 'Erro na consulta Receita Federal' };
     }

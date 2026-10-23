@@ -16,6 +16,18 @@ export default async function handler(req, res) {
 
   try {
     const service = req.query.service || req.query.path || 'CadastroPessoaJuridicaPlus';
+
+    if (service === 'ReceitaPJParticipacaoSocietaria') {
+      return res.status(410).json({
+        metaDados: {
+          resultadoId: 410,
+          resultado: 'Endpoint desativado',
+          mensagem: 'O endpoint ReceitaPJParticipacaoSocietaria foi desativado e não deve mais ser utilizado.'
+        },
+        retorno: null
+      });
+    }
+
     const queryParams = new URLSearchParams();
 
     // Injeta o Token do Servidor (Seguro / Oculto do Navegador)

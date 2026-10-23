@@ -83,7 +83,7 @@ A Assertiva utiliza **OAuth 2.0** com fluxo `client_credentials` e autenticaçã
 
 ## 📄 3. Geração do Dossiê Cadastral & Crédito (PDF / HTML)
 
-Como os endpoints da Assertiva retornam dados analíticos JSON, o sistema implementará um gerador padronizado (nos mesmos moldes do `generateReceitaPJParticipacaoSocietariaHtml` e `generateProtestosDirectDHtml`):
+Como os endpoints da Assertiva retornam dados analíticos JSON, o sistema implementará um gerador padronizado (nos mesmos moldes do `generateCartaoCnpjHtml` e `generateProtestosDirectDHtml`):
 
 1. **Função:** `generateAssertivaDossieHtml(dadosCliente, dadosAssertiva)`
 2. **Conteúdo do Documento:**

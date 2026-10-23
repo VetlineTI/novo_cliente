@@ -197,25 +197,19 @@ export default async function handler(req, res) {
                   console.warn('Erro ao consultar Protestos na Direct Data:', eProt);
                 }
 
-                // Se for PJ, consulta Sócios da Receita Federal e PJ Plus
+                // Se for PJ, consulta Receita Federal (BrasilAPI) e PJ Plus (Direct Data)
                 if (isPJ) {
                   try {
-                    const recRes = await fetch(`https://apiv3.directd.com.br/api/ReceitaPJParticipacaoSocietaria?CNPJ=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
+                    const recRes = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${docClean}`);
                     if (recRes.ok) {
                       const recData = await recRes.json();
-                      if (recData?.retorno) {
-                        if (recData.metaDados?.urlComprovante) {
-                          auditUpdates.doc_receita_url = recData.metaDados.urlComprovante;
-                        } else {
-                          const socios = Array.isArray(recData.retorno.socios) ? recData.retorno.socios : [];
-                          const sociosRows = socios.map(s => `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${s.nomeEntidade || s.nome || '-'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.qualificacao || 'Sócio'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.documento || '-'}</td></tr>`).join('');
-                          const recHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receita Federal - Sócios</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;}.card{background:#fff;padding:24px;border:2px solid #0f766e;border-radius:8px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}</style></head><body><div class="card"><h2>Receita Federal - Quadro de Sócios e Administradores (QSA)</h2><p><b>Empresa:</b> ${recData.retorno.nomeEmpresarial || recData.retorno.razaoSocial || ''} (${docClean})</p><p><b>Situação Cadastral:</b> ${recData.retorno.situacaoCadastral || 'Ativa'} | <b>Data de Abertura:</b> ${recData.retorno.dataAbertura || ''}</p><table><thead><tr><th>Nome do Sócio</th><th>Qualificação</th><th>Documento</th></tr></thead><tbody>${sociosRows || '<tr><td colspan="3">Nenhum sócio informado</td></tr>'}</tbody></table><p style="font-size:11px;color:#64748b;margin-top:16px;">Comprovante oficial gerado via Direct Data em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
-                          auditUpdates.doc_receita_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(recHtml);
-                        }
-                      }
+                      const socios = Array.isArray(recData.qsa) ? recData.qsa : [];
+                      const sociosRows = socios.map(s => `<tr><td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${s.nome_socio || '-'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.qualificacao_socio || 'Sócio'}</td><td style="padding:8px;border:1px solid #cbd5e1;">${s.cnpj_cpf_do_socio || '-'}</td></tr>`).join('');
+                      const recHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receita Federal - Cartão CNPJ</title><style>body{font-family:sans-serif;padding:24px;background:#f8fafc;}.card{background:#fff;padding:24px;border:2px solid #0f766e;border-radius:8px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}</style></head><body><div class="card"><h2>Receita Federal do Brasil - Cartão CNPJ</h2><p><b>Empresa:</b> ${recData.razao_social || ''} (${docClean})</p><p><b>Nome Fantasia:</b> ${recData.nome_fantasia || '********'}</p><p><b>Situação Cadastral:</b> ${recData.descricao_situacao_cadastral || 'Ativa'} | <b>Data de Abertura:</b> ${recData.data_inicio_atividade || ''}</p><table><thead><tr><th>Nome do Sócio</th><th>Qualificação</th><th>Documento</th></tr></thead><tbody>${sociosRows || '<tr><td colspan="3">Nenhum sócio informado no QSA</td></tr>'}</tbody></table><p style="font-size:11px;color:#64748b;margin-top:16px;">Comprovante oficial emitido em ${new Date().toLocaleString('pt-BR')}</p></div></body></html>`;
+                      auditUpdates.doc_receita_url = 'data:text/html;charset=utf-8,' + encodeURIComponent(recHtml);
                     }
                   } catch (eRec) {
-                    console.warn('Erro ao consultar Sócios da Receita:', eRec);
+                    console.warn('Erro ao consultar Receita Federal (BrasilAPI):', eRec);
                   }
 
                   try {

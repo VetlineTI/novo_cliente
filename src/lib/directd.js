@@ -509,92 +509,14 @@ export const generateReceitaPJParticipacaoSocietariaHtml = (retorno = {}, metaDa
 
 /**
  * Consulta oficial da Receita Federal e Quadro Societário na Direct Data (/api/ReceitaPJParticipacaoSocietaria)
- * Utilizada para extrair e anexar o documento oficial do cliente após a conclusão com sucesso do cadastro
- * @param {string} cnpj CNPJ da empresa
- * @returns {Promise<Object>} Resultado padronizado com comprovante oficial em PDF ou HTML
+ * @deprecated DESATIVADO: Este endpoint não deve mais ser utilizado nem em fallback.
  */
-export const consultarDirectDataReceitaPJParticipacaoSocietaria = async (cnpj) => {
-  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
-  if (!cleanCnpj || cleanCnpj.length !== 14) {
-    return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
-  }
-
-  const tryFetch = async (baseUrl) => {
-    const params = new URLSearchParams();
-    params.append('CNPJ', cleanCnpj);
-    params.append('TOKEN', DIRECTD_TOKEN);
-    params.append('gerarComprovante', 'true');
-
-    const response = await fetch(`${baseUrl}/ReceitaPJParticipacaoSocietaria?${params.toString()}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Vetline-App/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return await response.json();
+export const consultarDirectDataReceitaPJParticipacaoSocietaria = async () => {
+  console.warn('O endpoint ReceitaPJParticipacaoSocietaria foi desativado e não deve mais ser utilizado.');
+  return {
+    success: false,
+    error: 'O endpoint ReceitaPJParticipacaoSocietaria foi desativado e não é mais utilizado.'
   };
-
-  try {
-    let result;
-    try {
-      result = await tryFetch(BASE_URL);
-    } catch (proxyErr) {
-      // Fallback para URL direta da Direct Data se proxy falhar
-      result = await tryFetch('https://apiv3.directd.com.br/api');
-    }
-
-    const meta = result.metaDados || {};
-    const retorno = result.retorno || {};
-
-    if (retorno && (retorno.numeroInscricao || retorno.nomeEmpresarial || retorno.cnpj || retorno.razaoSocial)) {
-      const receiptUrl = meta.urlComprovante || generateReceitaPJParticipacaoSocietariaHtml(retorno, meta);
-
-      const socios = Array.isArray(retorno.socios)
-        ? retorno.socios.map(s => ({
-            nome: s.nomeEntidade || s.nome || '',
-            documento: s.documento || '',
-            cpf_cnpj_socio: s.documento || '',
-            qualificacao: s.qualificacao || 'Sócio',
-            dataEntrada: s.dataEntradaSociedade || s.dataEntrada || '',
-            percentual: s.percentualParticipacao || 0
-          }))
-        : [];
-
-      return {
-        success: true,
-        data: retorno,
-        metaDados: meta,
-        razaoSocial: retorno.nomeEmpresarial || retorno.razaoSocial || '',
-        nomeFantasia: retorno.nomeFantasia || '',
-        dataAbertura: retorno.dataAbertura || retorno.dataFundacao || '',
-        situacaoCadastral: retorno.situacaoCadastral || 'Ativa',
-        porte: retorno.porte || '',
-        naturezaJuridica: retorno.naturezaJuridica || '',
-        capitalSocial: retorno.capitalSocialQSA || '',
-        socios,
-        receiptUrl,
-        raw: result
-      };
-    }
-
-    return {
-      success: false,
-      code: meta.resultadoId || 400,
-      error: meta.mensagem || meta.resultado || 'Falha na consulta ReceitaPJParticipacaoSocietaria',
-      raw: result
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: `Erro ao conectar com Direct Data (ReceitaPJParticipacaoSocietaria): ${err.message || 'Erro inesperado'}`
-    };
-  }
 };
 
 /**
