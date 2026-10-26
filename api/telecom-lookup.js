@@ -64,15 +64,21 @@ export default async function handler(req, res) {
     });
   }
 
-  // Credenciais Twilio via variáveis de ambiente (.env)
+  // Credenciais Twilio via variáveis de ambiente (.env em local / Dashboard na Vercel)
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const apiKey = process.env.TWILIO_API_KEY;
-  const apiSecret = process.env.TWILIO_API_SECRET;
 
-  const authUser = apiKey || accountSid;
-  const authPass = apiSecret || authToken;
-  const basicAuth = Buffer.from(`${authUser}:${authPass}`).toString('base64');
+  if (!accountSid || !authToken) {
+    return res.status(200).json({
+      success: false,
+      warning: 'Credenciais da Twilio (TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN) não configuradas.',
+      phone: e164,
+      is_voip: false,
+      sim_swapped_recently: false
+    });
+  }
+
+  const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
   try {
     const twilioUrl = `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence,sim_swap`;

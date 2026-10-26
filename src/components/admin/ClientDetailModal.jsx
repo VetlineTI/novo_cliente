@@ -35,7 +35,7 @@ import {
 import { DocumentViewerModal } from './DocumentViewerModal';
 import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
-import { extractClientTelecomInfo } from '../../lib/telecom';
+import { extractClientTelecomInfo, checkPhoneTelecom } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
 import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
 
@@ -75,6 +75,8 @@ export const ClientDetailModal = ({
   // Estado de consulta do Bureau (Infosimples / Direct Data)
   const [isAuditingBureau, setIsAuditingBureau] = useState(false);
   const [bureauFeedback, setBureauFeedback] = useState(null);
+  const [isAuditingTelecom, setIsAuditingTelecom] = useState(false);
+  const [telecomFeedback, setTelecomFeedback] = useState(null);
   const [renderTick, setRenderTick] = useState(0);
 
   // Inicializa o formulário com os dados do cliente
@@ -331,6 +333,73 @@ export const ClientDetailModal = ({
       });
     } finally {
       setIsAuditingBureau(false);
+    }
+  };
+
+  // Executa consulta telecom na Twilio Lookups v2 sob demanda para qualquer cliente (novo ou antigo)
+  const handleRunTelecomAudit = async () => {
+    const rawPhone = formData.phone || client.phone || client.telefone;
+    if (!rawPhone) {
+      alert('Nenhum telefone informado para este cliente.');
+      return;
+    }
+
+    setIsAuditingTelecom(true);
+    setTelecomFeedback(null);
+    try {
+      const res = await checkPhoneTelecom(rawPhone);
+      if (!res.success) {
+        setTelecomFeedback({
+          type: 'warning',
+          message: `Falha na consulta telecom: ${res.error || res.warning || 'Não foi possível validar o número'}`
+        });
+        return;
+      }
+
+      const parts = [];
+      if (res.is_voip) {
+        parts.push('⚠️ ALERTA: Linha VOIP/Virtual detectada');
+      }
+      if (res.sim_swapped_recently) {
+        parts.push('⚠️ ALERTA: Troca recente de chip (SIM Swap)');
+      }
+      parts.push(`Operadora: ${res.carrier || 'Desconhecida'}`);
+      parts.push(`Tipo: ${res.is_voip ? 'VOIP' : (res.is_mobile ? 'Móvel' : (res.is_landline ? 'Fixo' : res.line_type || 'Desconhecido'))}`);
+      parts.push(`SIM Swap: ${res.sim_swapped_recently ? 'Recente' : (res.sim_swap_status === 'trial_account_limitation' ? 'Pendente upgrade Twilio' : 'Estável')}`);
+      const tag = `[TELECOM: ${parts.join(' | ')}]`;
+
+      // Atualiza observações mantendo notas anteriores
+      const currentObs = String(formData.observacoes || client.observacoes || client.notes || '');
+      const cleanedObs = currentObs.replace(/\[TELECOM:[^\]]+\]/g, '').replace(/\[⚠️ ALERTA TELECOM:[^\]]+\]/g, '').trim();
+      const newObs = cleanedObs ? `${cleanedObs} | ${tag}` : tag;
+
+      const updates = {
+        observacoes: newObs,
+        notes: newObs
+      };
+
+      setFormData(prev => ({ ...prev, ...updates }));
+      if (client) {
+        client.observacoes = newObs;
+        client.notes = newObs;
+      }
+
+      if (onUpdateClient && client?.id) {
+        await onUpdateClient(client.id, updates);
+      }
+
+      setTelecomFeedback({
+        type: 'success',
+        message: `✓ Linha consultada com sucesso! Operadora: ${res.carrier} (${res.is_voip ? 'VOIP' : res.line_type}) | SIM Swap: ${res.sim_swapped_recently ? 'Troca Recente' : 'Estável'}`
+      });
+      setRenderTick(t => t + 1);
+    } catch (err) {
+      setTelecomFeedback({
+        type: 'warning',
+        message: `Erro ao auditar linha: ${err.message}`
+      });
+    } finally {
+      setIsAuditingTelecom(false);
     }
   };
 
@@ -1641,6 +1710,110 @@ export const ClientDetailModal = ({
                         )}
                       </button>
                     </div>
+
+                    {/* Card de Auditoria Telecom & Linha (Twilio Lookups v2) */}
+                    {(() => {
+                      const telecom = extractClientTelecomInfo(client || formData);
+                      const isVoip = telecom.isVoip;
+                      const hasData = telecom.hasTelecomData;
+                      const simSwapped = telecom.simSwappedRecently;
+
+                      return (
+                        <div className="bg-slate-900 rounded-xl border border-slate-800 p-3.5 shadow-xs space-y-2.5 text-xs text-white">
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+                                <Smartphone className="w-3.5 h-3.5" />
+                              </div>
+                              <h4 className="font-bold text-slate-100 text-xs">
+                                Auditoria Telecom & Linha (Twilio)
+                              </h4>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              !hasData
+                                ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                : isVoip
+                                  ? 'bg-red-500/20 text-red-300 border-red-500/40 animate-pulse'
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            }`}>
+                              {!hasData
+                                ? 'Não Auditado'
+                                : isVoip
+                                  ? '⚠️ VOIP / Virtual'
+                                  : `${telecom.carrier} (${telecom.lineType === 'mobile' ? 'Móvel' : telecom.lineType}) ✓`}
+                            </span>
+                          </div>
+
+                          {/* Grid com os Indicadores */}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
+                              <span className="text-[10px] text-slate-400 block font-medium">Operadora & Linha</span>
+                              <span className="font-bold text-slate-200 block text-[11px] truncate">
+                                {hasData ? `${telecom.carrier}` : 'Aguardando consulta'}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {hasData ? `Tipo: ${telecom.lineType === 'mobile' ? 'Celular Móvel' : (telecom.isLandline ? 'Linha Fixa' : telecom.lineType)}` : 'Clique para validar'}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
+                              <span className="text-[10px] text-slate-400 block font-medium">Segurança & Risco</span>
+                              <span className={`font-bold block text-[11px] ${
+                                !hasData 
+                                  ? 'text-slate-300' 
+                                  : isVoip 
+                                    ? 'text-red-400 font-black' 
+                                    : 'text-emerald-400'
+                              }`}>
+                                {!hasData 
+                                  ? 'Pendente' 
+                                  : isVoip 
+                                    ? '⚠️ Linha VOIP (Virtual)' 
+                                    : 'Não é VOIP (Autêntico) ✓'}
+                              </span>
+                              <span className={`text-[10px] ${simSwapped ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
+                                {!hasData
+                                  ? 'SIM Swap não checado'
+                                  : simSwapped
+                                    ? '⚠️ Troca recente de chip'
+                                    : 'Chip Estável (Sem troca)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Feedback de Consulta Manual */}
+                          {telecomFeedback && (
+                            <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${
+                              telecomFeedback.type === 'success'
+                                ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
+                                : 'bg-amber-950/90 border-amber-600 text-amber-200'
+                            }`}>
+                              <span className="flex-1">{telecomFeedback.message}</span>
+                            </div>
+                          )}
+
+                          {/* Botão de Disparo */}
+                          <button
+                            type="button"
+                            onClick={handleRunTelecomAudit}
+                            disabled={isAuditingTelecom}
+                            className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                          >
+                            {isAuditingTelecom ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Consultando Twilio Lookups...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Smartphone className="w-3.5 h-3.5" />
+                                <span>{hasData ? 'Reconsultar Linha (Twilio)' : 'Consultar Linha na Twilio'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     {/* Card de Alerta de Auditoria ERP (Jucesp / Cenprot / Receita) */}
                     <div className="bg-amber-50/90 rounded-xl border border-amber-200 p-3.5 shadow-xs space-y-2 text-xs">
