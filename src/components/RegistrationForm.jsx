@@ -1159,6 +1159,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         notes: telecomObsTag || null,
         termos_aceitos: true,
         terms_accepted: true,
+        status: 'em_analise',
       };
 
       const result = await registerClientWithAuth(payload, finalPassword);

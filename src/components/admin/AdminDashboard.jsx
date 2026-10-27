@@ -43,7 +43,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [clients, setClients] = useState([]);
   const [segmentsList, setSegmentsList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStatusTab, setSelectedStatusTab] = useState('pendente'); // Padrão: Pendente
+  const [selectedStatusTab, setSelectedStatusTab] = useState('em_analise'); // Padrão: Em Análise
   const [personTypeFilter, setPersonTypeFilter] = useState('todos'); // 'todos', 'PJ', 'PF'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
@@ -51,8 +51,8 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const [toastNotification, setToastNotification] = useState(null);
 
   const handleStatusChangeSuccess = (newStatus, clientName, webhookResult = null) => {
-    // Redireciona imediatamente para a aba de pendentes
-    setSelectedStatusTab('pendente');
+    // Redireciona imediatamente para a aba de em análise
+    setSelectedStatusTab('em_analise');
     setIsDetailOpen(false);
     setSelectedClient(null);
 
@@ -158,8 +158,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   // Métricas de contagem
   const counts = {
     total: clients.length,
-    pendente: clients.filter((c) => c.status === 'pendente' || !c.status).length,
-    em_analise: clients.filter((c) => c.status === 'em_analise').length,
+    em_analise: clients.filter((c) => c.status === 'em_analise' || c.status === 'pendente' || !c.status).length,
     aprovado: clients.filter((c) => c.status === 'aprovado').length,
     recusado: clients.filter((c) => c.status === 'recusado').length,
   };
@@ -168,7 +167,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
   const filteredClients = clients.filter((c) => {
     // 1. Filtro de Status
     if (selectedStatusTab !== 'todos') {
-      const status = c.status || 'pendente';
+      const status = (c.status === 'pendente' || !c.status) ? 'em_analise' : c.status;
       if (status !== selectedStatusTab) return false;
     }
 
@@ -299,34 +298,9 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
         ) : (
           <>
             {/* Banner com Métricas de Status */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
-              {/* Card 1: Pendentes */}
-              <div
-                onClick={() => setSelectedStatusTab('pendente')}
-                className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer shadow-xs ${selectedStatusTab === 'pendente'
-                    ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-400/50 scale-[1.02]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-amber-300 hover:bg-amber-50/40'
-                  }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${selectedStatusTab === 'pendente' ? 'text-amber-100' : 'text-slate-500'
-                    }`}>
-                    Pendentes
-                  </span>
-                  <Clock className={`w-5 h-5 ${selectedStatusTab === 'pendente' ? 'text-white' : 'text-amber-500'
-                    }`} />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl sm:text-3xl font-black">{counts.pendente}</span>
-                  <span className={`text-xs font-medium ${selectedStatusTab === 'pendente' ? 'text-amber-100' : 'text-slate-400'
-                    }`}>
-                    aguardando análise
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 2: Em Análise */}
+              {/* Card 1: Em Análise */}
               <div
                 onClick={() => setSelectedStatusTab('em_analise')}
                 className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer shadow-xs ${selectedStatusTab === 'em_analise'
@@ -409,7 +383,6 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
               <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto">
                   {[
-                    { id: 'pendente', label: 'Pendentes', count: counts.pendente },
                     { id: 'em_analise', label: 'Em Análise', count: counts.em_analise },
                     { id: 'aprovado', label: 'Aprovados', count: counts.aprovado },
                     { id: 'recusado', label: 'Recusados', count: counts.recusado },
@@ -517,7 +490,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                   {filteredClients.map((client) => {
                     const isPJ = client.person_type === 'PJ';
                     const docCount = countAttachedDocs(client);
-                    const status = client.status || 'pendente';
+                    const status = (client.status === 'pendente' || !client.status) ? 'em_analise' : client.status;
 
                     return (
                       <div
@@ -696,17 +669,13 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                 : status === 'recusado'
                                   ? 'bg-red-50 text-red-800 border-red-200'
-                                  : status === 'em_analise'
-                                    ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                    : 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : 'bg-blue-50 text-blue-800 border-blue-200'
                               }`}>
                               <span className={`w-2 h-2 rounded-full ${status === 'aprovado' ? 'bg-emerald-500' :
-                                  status === 'recusado' ? 'bg-red-500' :
-                                    status === 'em_analise' ? 'bg-blue-500' : 'bg-amber-500 animate-ping'
+                                  status === 'recusado' ? 'bg-red-500' : 'bg-blue-500'
                                 }`}></span>
                               {status === 'aprovado' ? 'Aprovado' :
-                                status === 'recusado' ? 'Recusado' :
-                                  status === 'em_analise' ? 'Em Análise' : 'Pendente'}
+                                status === 'recusado' ? 'Recusado' : 'Em Análise'}
                             </span>
                           </div>
 

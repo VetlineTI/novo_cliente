@@ -26,10 +26,9 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
 - Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:
   - **Acompanhamento de Status em Tempo Real**:
-    - 🟡 **Pendente**: Cadastro em fila com informações de prazo de análise.
-    - 🔵 **Em Análise**: Processo de checagem documental ativo.
+    - 🔵 **Em Análise (Status Inicial Obrigatório)**: Ao se cadastrar, o cliente ingressa diretamente como `em_analise` (o status "pendente" foi extinto), com processo de checagem documental e validação cadastral ativo.
     - 🟢 **Aprovado**: Boas-vindas com exibição das condições comerciais, tabela de preço liberada (`VTL01`) e vendedor responsável.
-    - 🔴 **Necessita Correções (Recusado)**: Exibição clara das notas/parecer do analista para que o cliente ajuste os dados e reenviar documentos.
+    - 🔴 **Necessita Correções (Recusado)**: Exibição clara das notas/parecer do analista para que o cliente ajuste os dados e reenvie documentos.
   - **Edição de Dados Cadastrais com Verificação Obrigatória de Segurança**:
     - Ao tentar salvar alterações no perfil cadastral, o sistema aciona o fluxo guiado (`ClientVerificationModal`) de verificação sequencial:
       1. **Telefone**: Pergunta se o telefone/WhatsApp permanece o mesmo (se não, permite digitar e validar o novo número);

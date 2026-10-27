@@ -366,8 +366,8 @@ export const ClientDashboard = ({ onLogout }) => {
     }
   };
 
-  const currentStatusKey = client.status || 'pendente';
-  const currentStatus = statusConfig[currentStatusKey] || statusConfig.pendente;
+  const currentStatusKey = (client.status === 'pendente' || !client.status) ? 'em_analise' : client.status;
+  const currentStatus = statusConfig[currentStatusKey] || statusConfig.em_analise;
   const StatusIcon = currentStatus.icon;
 
   // Identifica se o cliente é Pessoa Física (PF) ou Jurídica (PJ)

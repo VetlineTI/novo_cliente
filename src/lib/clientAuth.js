@@ -230,6 +230,7 @@ export const registerClientWithAuth = async (clientData, password) => {
 
   // 2. Salva o registro em data_new_client com auth_user_id
   const payloadToSave = {
+    status: 'em_analise',
     ...clientData,
     auth_user_id: authUserId || `local-auth-${Date.now()}`
   };
@@ -246,7 +247,7 @@ export const registerClientWithAuth = async (clientData, password) => {
   const savedClient = submitResult.data?.[0] || {
     id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
-    status: 'pendente',
+    status: 'em_analise',
     ...payloadToSave
   };
 
@@ -490,7 +491,7 @@ export const loginClient = async (email, password, rememberMe = true) => {
       auth_user_id: authUser.id,
       email: cleanEmail,
       full_name: authUser.user_metadata?.full_name || cleanEmail.split('@')[0],
-      status: 'pendente',
+      status: 'em_analise',
       created_at: new Date().toISOString()
     };
   }

@@ -118,7 +118,7 @@ export const ClientDetailModal = ({
         delivery_complement: client.delivery_complement || '',
         delivery_city: client.delivery_city || '',
         delivery_state: client.delivery_state || '',
-        status: client.status || 'pendente',
+        status: (client.status === 'pendente' || !client.status) ? 'em_analise' : client.status,
         notes: client.notes || '',
         alerta: client.alerta || client.alert || ''
       });
@@ -719,14 +719,11 @@ export const ClientDetailModal = ({
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : formData.status === 'recusado'
                       ? 'bg-red-500/20 text-red-300 border border-red-500/40'
-                      : formData.status === 'em_analise'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
                     }`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
                     {formData.status === 'aprovado' ? 'Aprovado' :
-                      formData.status === 'recusado' ? 'Recusado' :
-                        formData.status === 'em_analise' ? 'Em Análise' : 'Pendente'}
+                      formData.status === 'recusado' ? 'Recusado' : 'Em Análise'}
                   </span>
 
                   {/* Badge Código ERP se já gerado */}

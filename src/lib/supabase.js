@@ -328,7 +328,7 @@ export const normalizeClientRecord = (c) => {
   const cd_clien = c.cd_clien ?? c.CD_CLIEN ?? c.cd_cliente ?? null;
   const alerta = c.alerta || c.alert || null;
   const ip_origem = c.ip_origem || c.ip_address || null;
-  const status = c.status || 'pendente';
+  const status = (c.status === 'pendente' || !c.status) ? 'em_analise' : c.status;
   const termos_aceitos = c.termos_aceitos !== undefined 
     ? Boolean(c.termos_aceitos) 
     : (c.terms_accepted !== undefined ? Boolean(c.terms_accepted) : true);
@@ -568,7 +568,9 @@ export const toPortuguesePayload = (data) => {
   if (data.limite_credito !== undefined || data.credit_limit !== undefined) {
     p.limite_credito = Number(data.limite_credito ?? data.credit_limit ?? 0);
   }
-  if (data.status) p.status = data.status;
+  if (data.status !== undefined || !p.status) {
+    p.status = (data.status === 'pendente' || !data.status) ? 'em_analise' : data.status;
+  }
   if (data.termos_aceitos !== undefined || data.terms_accepted !== undefined) {
     p.termos_aceitos = data.termos_aceitos ?? data.terms_accepted ?? true;
   }
@@ -1199,7 +1201,7 @@ export const submitNewClient = async (clientData) => {
     const newRecord = normalizeClientRecord({
       id: crypto.randomUUID(),
       criado_em: new Date().toISOString(),
-      status: 'pendente',
+      status: 'em_analise',
       ...ptPayload,
     });
     existing.unshift(newRecord);
@@ -1209,7 +1211,7 @@ export const submitNewClient = async (clientData) => {
 
   return { 
     success: true, 
-    data: [normalizeClientRecord({ id: crypto.randomUUID(), ...ptPayload, status: 'pendente' })],
+    data: [normalizeClientRecord({ id: crypto.randomUUID(), ...ptPayload, status: 'em_analise' })],
     isDemo: false 
   };
 };
@@ -1389,7 +1391,7 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
 /**
  * Atualiza o status e notas/observações de um cliente
  * @param {string} clientId ID do cliente
- * @param {string} newStatus Novo status ('pendente', 'em_analise', 'aprovado', 'recusado')
+ * @param {string} newStatus Novo status ('em_analise', 'aprovado', 'recusado')
  * @param {string} notes Anotações do administrador
  * @returns {Promise<{success: boolean, data?: any, error?: string}>}
  */
