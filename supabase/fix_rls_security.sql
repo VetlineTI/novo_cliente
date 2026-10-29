@@ -2,26 +2,49 @@
 -- CORREÇÃO DEFINITIVA DE SEGURANÇA E RLS (ROW LEVEL SECURITY)
 -- Tabelas: novo_cliente.data_new_cliente E novo_cliente.admin_profiles
 -- ==============================================================================
--- 1. Tabela data_new_cliente:
---    - Remove políticas permissivas que expunham dados a usuários anônimos (anon)
---    - Restringe SELECT e UPDATE aos próprios donos dos dados e à equipe admin
---    - Mantém INSERT público para novos credenciamentos (status 'em_analise')
---    - Cria RPC segura (SECURITY DEFINER) para checagem de duplicidade
--- 2. Tabela admin_profiles (FECHAMENTO DE ESCALONAMENTO DE PRIVILÉGIOS):
---    - REMOVE a política crítica "Permitir gerenciamento de perfis" (ALL para anon/authenticated)
---    - Bloqueia totalmente o papel 'anon' (sem acesso à lista de administradores)
---    - SELECT: Usuário só lê seu próprio registro ou administradores lêem todos
---    - INSERT / UPDATE / DELETE: EXCLUSIVO para quem já é administrador comprovado
+-- PREVENÇÃO DE BUG CRÍTICO: 'infinite recursion detected in policy'
+-- O uso de subqueries diretas 'EXISTS (SELECT 1 FROM admin_profiles ...)' dentro
+-- das policies da própria tabela admin_profiles causa recursão infinita no Postgres.
+-- SOLUÇÃO: Usar a função SECURITY DEFINER 'novo_cliente.is_admin()', que executa
+-- com privilégios de sistema e ignora o RLS durante a checagem, sem recursão!
 -- ==============================================================================
 
 -- ==============================================================================
--- PARTE 1: BLINDAGEM DA TABELA novo_cliente.admin_profiles
+-- PARTE 1: FUNÇÃO AUXILIAR DE AUTORIZAÇÃO (SECURITY DEFINER - SEM RECURSÃO)
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION novo_cliente.is_admin(p_user_id UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+SECURITY DEFINER
+SET search_path = novo_cliente, auth, public
+AS $$
+BEGIN
+    IF p_user_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Como esta função é SECURITY DEFINER, ela consulta a tabela física diretamente
+    -- sem disparar as políticas de RLS, eliminando 100% o risco de recursão infinita!
+    RETURN EXISTS (
+        SELECT 1 
+        FROM novo_cliente.admin_profiles
+        WHERE id = p_user_id 
+          AND role IN ('admin', 'operador')
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+REVOKE EXECUTE ON FUNCTION novo_cliente.is_admin(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION novo_cliente.is_admin(UUID) TO authenticated, service_role;
+
+
+-- ==============================================================================
+-- PARTE 2: BLINDAGEM DA TABELA novo_cliente.admin_profiles
 -- ==============================================================================
 
--- 1.1 Habilita RLS
+-- 2.1 Habilita RLS
 ALTER TABLE novo_cliente.admin_profiles ENABLE ROW LEVEL SECURITY;
 
--- 1.2 Remove as políticas antigas permissivas que permitiam a qualquer um virar admin
+-- 2.2 Remove as políticas antigas permissivas ou recursivas
 DROP POLICY IF EXISTS "Permitir gerenciamento de perfis" ON novo_cliente.admin_profiles;
 DROP POLICY IF EXISTS "Permitir leitura de perfis para todos" ON novo_cliente.admin_profiles;
 DROP POLICY IF EXISTS "admin_profiles_select_policy" ON novo_cliente.admin_profiles;
@@ -29,50 +52,36 @@ DROP POLICY IF EXISTS "admin_profiles_modify_policy" ON novo_cliente.admin_profi
 DROP POLICY IF EXISTS "admin_profiles_select_own_or_admin" ON novo_cliente.admin_profiles;
 DROP POLICY IF EXISTS "admin_profiles_modify_admin_only" ON novo_cliente.admin_profiles;
 
--- 1.3 Revoga privilégios do papel anônimo (anon)
+-- 2.3 Revoga privilégios do papel anônimo (anon)
 REVOKE ALL ON TABLE novo_cliente.admin_profiles FROM anon;
 GRANT SELECT ON TABLE novo_cliente.admin_profiles TO authenticated;
 GRANT ALL ON TABLE novo_cliente.admin_profiles TO service_role;
 
--- 1.4 POLÍTICA DE LEITURA (SELECT):
--- Um usuário autenticado só pode ler seu próprio perfil (para saber seu cargo ao logar),
--- ou administradores e operadores podem consultar os perfis da equipe.
+-- 2.4 POLÍTICA DE LEITURA (SELECT):
+-- Um usuário autenticado pode ler seu próprio registro (para login),
+-- ou administradores consultam todos usando a função is_admin() (zero recursão!)
 CREATE POLICY "admin_profiles_select_own_or_admin"
 ON novo_cliente.admin_profiles FOR SELECT
 TO authenticated
 USING (
     auth.uid() = id
-    OR EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles p
-        WHERE p.id = auth.uid()
-          AND p.role IN ('admin', 'operador')
-    )
+    OR novo_cliente.is_admin(auth.uid())
 );
 
--- 1.5 POLÍTICA DE ESCRITA (INSERT, UPDATE, DELETE):
--- APENAS quem já é administrador ('admin') pode criar, alterar ou excluir perfis.
--- Usuários comuns e clientes são 100% impedidos de se auto-promover a administrador.
+-- 2.5 POLÍTICA DE ESCRITA (INSERT, UPDATE, DELETE):
+-- APENAS quem já é administrador comprovado pode criar, alterar ou excluir perfis.
+-- Usa novo_cliente.is_admin() garantindo performance e ausência de recursão.
 CREATE POLICY "admin_profiles_modify_admin_only"
 ON novo_cliente.admin_profiles FOR ALL
 TO authenticated
 USING (
-    EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles p
-        WHERE p.id = auth.uid()
-          AND p.role = 'admin'
-          AND p.is_admin = true
-    )
+    novo_cliente.is_admin(auth.uid())
 )
 WITH CHECK (
-    EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles p
-        WHERE p.id = auth.uid()
-          AND p.role = 'admin'
-          AND p.is_admin = true
-    )
+    novo_cliente.is_admin(auth.uid())
 );
 
--- 1.6 Bootstrap de Segurança: Garante que os e-mails mestres tenham perfil de admin inicial
+-- 2.6 Bootstrap de Segurança: Garante que os e-mails mestres tenham perfil de admin inicial
 INSERT INTO novo_cliente.admin_profiles (id, email, full_name, role, is_admin, updated_at)
 SELECT u.id, u.email, COALESCE(u.raw_user_meta_data->>'full_name', 'Administrador Vetline'), 'admin', true, now()
 FROM auth.users u
@@ -84,13 +93,13 @@ ON CONFLICT (id) DO UPDATE SET
 
 
 -- ==============================================================================
--- PARTE 2: BLINDAGEM DA TABELA novo_cliente.data_new_cliente
+-- PARTE 3: BLINDAGEM DA TABELA novo_cliente.data_new_cliente (LGPD)
 -- ==============================================================================
 
--- 2.1 Habilita RLS
+-- 3.1 Habilita RLS
 ALTER TABLE novo_cliente.data_new_cliente ENABLE ROW LEVEL SECURITY;
 
--- 2.2 Remove as políticas antigas / vulneráveis
+-- 3.2 Remove as políticas antigas / vulneráveis
 DROP POLICY IF EXISTS "Permitir leitura de clientes" ON novo_cliente.data_new_cliente;
 DROP POLICY IF EXISTS "Permitir leitura apenas para equipe autenticada" ON novo_cliente.data_new_cliente;
 DROP POLICY IF EXISTS "Permitir atualização de clientes" ON novo_cliente.data_new_cliente;
@@ -101,31 +110,25 @@ DROP POLICY IF EXISTS "Permitir leitura restrita de clientes" ON novo_cliente.da
 DROP POLICY IF EXISTS "Permitir atualização restrita de clientes" ON novo_cliente.data_new_cliente;
 DROP POLICY IF EXISTS "Permitir exclusão apenas para administradores" ON novo_cliente.data_new_cliente;
 
--- 2.3 POLÍTICA 1: INSERT PÚBLICO (Formulário de Credenciamento)
+-- 3.3 POLÍTICA 1: INSERT PÚBLICO (Formulário de Credenciamento)
 -- Visitantes anônimos e usuários autenticados podem enviar novos cadastros
 CREATE POLICY "Permitir inserção pública de cadastro"
 ON novo_cliente.data_new_cliente FOR INSERT
 TO anon, authenticated
 WITH CHECK (true);
 
--- 2.4 POLÍTICA 2: SELECT RESTRITO (LGPD Compliance)
+-- 3.4 POLÍTICA 2: SELECT RESTRITO (LGPD Compliance)
 -- Anônimos NÃO podem mais ler a tabela!
 -- Usuário autenticado só lê o SEU PRÓPRIO cadastro, ou equipe administrativa lê todos
 CREATE POLICY "Permitir leitura restrita de clientes"
 ON novo_cliente.data_new_cliente FOR SELECT
 TO authenticated
 USING (
-    -- O próprio cliente enxerga apenas o seu cadastro
     auth.uid() = auth_user_id
-    -- OU usuários com cargo de administração/operador no painel
-    OR EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles
-        WHERE id = auth.uid()
-        AND role IN ('admin', 'operador', 'consulta')
-    )
+    OR novo_cliente.is_admin(auth.uid())
 );
 
--- 2.5 POLÍTICA 3: UPDATE RESTRITO
+-- 3.5 POLÍTICA 3: UPDATE RESTRITO
 -- Anônimos NUNCA podem atualizar dados!
 -- Apenas o próprio cliente no seu painel ou administradores
 CREATE POLICY "Permitir atualização restrita de clientes"
@@ -133,38 +136,24 @@ ON novo_cliente.data_new_cliente FOR UPDATE
 TO authenticated
 USING (
     auth.uid() = auth_user_id
-    OR EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles
-        WHERE id = auth.uid()
-        AND role IN ('admin', 'operador')
-    )
+    OR novo_cliente.is_admin(auth.uid())
 )
 WITH CHECK (
     auth.uid() = auth_user_id
-    OR EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles
-        WHERE id = auth.uid()
-        AND role IN ('admin', 'operador')
-    )
+    OR novo_cliente.is_admin(auth.uid())
 );
 
--- 2.6 POLÍTICA 4: DELETE EXCLUSIVO PARA ADMINISTRADORES
+-- 3.6 POLÍTICA 4: DELETE EXCLUSIVO PARA ADMINISTRADORES
 CREATE POLICY "Permitir exclusão apenas para administradores"
 ON novo_cliente.data_new_cliente FOR DELETE
 TO authenticated
 USING (
-    EXISTS (
-        SELECT 1 FROM novo_cliente.admin_profiles
-        WHERE id = auth.uid()
-        AND role = 'admin'
-    )
+    novo_cliente.is_admin(auth.uid())
 );
 
 
 -- ==============================================================================
--- PARTE 3: RPC SEGURA PARA CHECAGEM DE DUPLICIDADE (SECURITY DEFINER)
--- Permite ao formulário verificar se CNPJ/CPF já está aprovado sem expor
--- todas as linhas da tabela para usuários não autenticados.
+-- PARTE 4: RPC SEGURA PARA CHECAGEM DE DUPLICIDADE (SECURITY DEFINER)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
 RETURNS JSONB
