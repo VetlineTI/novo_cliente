@@ -67,12 +67,19 @@ export const fetchClientRecord = async (authUserId, email) => {
   const cleanEmail = (email || '').trim().toLowerCase();
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Método Principal: Consulta via RPC no PostgreSQL
+    // 1. Método Principal: Consulta via RPC no schema novo_cliente
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_novo_cliente_by_user_or_email', {
+      let rpcRes = await supabase.schema('novo_cliente').rpc('get_novo_cliente_by_user_or_email', {
         p_user_id: authUserId || null,
         p_email: cleanEmail || null
       });
+      if (rpcRes.error) {
+        rpcRes = await supabase.rpc('get_novo_cliente_by_user_or_email', {
+          p_user_id: authUserId || null,
+          p_email: cleanEmail || null
+        });
+      }
+      const { data: rpcData, error: rpcError } = rpcRes;
 
       if (!rpcError && rpcData && rpcData.id) {
         if (authUserId && !rpcData.auth_user_id) {
@@ -205,11 +212,19 @@ export const registerClientWithAuth = async (clientData, password) => {
         // Se ocorrer rate limit de envio de e-mail (429), usuário existente (422) ou restrição de e-mail:
         // Vincula/cria diretamente via RPC ensure_client_auth_user garantindo ativação imediata
         try {
-          const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_client_auth_user', {
+          let rpcOutcome = await supabase.schema('novo_cliente').rpc('ensure_client_auth_user', {
             p_email: cleanEmail,
             p_password: cleanPassword,
             p_full_name: clientData.full_name || ''
           });
+          if (rpcOutcome.error) {
+            rpcOutcome = await supabase.rpc('ensure_client_auth_user', {
+              p_email: cleanEmail,
+              p_password: cleanPassword,
+              p_full_name: clientData.full_name || ''
+            });
+          }
+          const { data: rpcRes, error: rpcErr } = rpcOutcome;
           if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
             authUserId = rpcRes.user_id;
             authUser = { id: rpcRes.user_id, email: cleanEmail };

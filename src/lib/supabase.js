@@ -678,11 +678,19 @@ export const checkRateLimit = async (ip = null, maxAttempts = 5, windowMinutes =
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase.rpc('check_rate_limit', {
+      let resRpc = await supabase.schema('novo_cliente').rpc('check_rate_limit', {
         p_ip: clientIp,
         p_max_attempts: maxAttempts,
         p_window_minutes: windowMinutes
       });
+      if (resRpc.error) {
+        resRpc = await supabase.rpc('check_rate_limit', {
+          p_ip: clientIp,
+          p_max_attempts: maxAttempts,
+          p_window_minutes: windowMinutes
+        });
+      }
+      const { data, error } = resRpc;
 
       if (!error && data) {
         return {
@@ -716,12 +724,20 @@ export const logRateLimitAttempt = async (ip = null, document = null, action = '
     try {
       const cleanDoc = document ? String(document).replace(/\D/g, '') : null;
       
-      // 1. Tenta via RPC pública
-      const { error: rpcErr } = await supabase.rpc('log_rate_limit_attempt', {
+      // 1. Tenta via RPC no schema novo_cliente
+      let rpcRes = await supabase.schema('novo_cliente').rpc('log_rate_limit_attempt', {
         p_ip: clientIp,
         p_document: cleanDoc,
         p_action: action
       });
+      if (rpcRes.error) {
+        rpcRes = await supabase.rpc('log_rate_limit_attempt', {
+          p_ip: clientIp,
+          p_document: cleanDoc,
+          p_action: action
+        });
+      }
+      const { error: rpcErr } = rpcRes;
 
       // 2. Se a RPC falhar, tenta inserção direta no schema novo_cliente
       if (rpcErr) {
@@ -1137,11 +1153,17 @@ export const submitNewClient = async (clientData) => {
   const ptPayload = toPortuguesePayload(enrichedData);
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Método Principal: Função RPC insert_novo_cliente
+    // 1. Método Principal: Função RPC insert_novo_cliente no schema novo_cliente
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('insert_novo_cliente', {
+      let rpcOutcome = await supabase.schema('novo_cliente').rpc('insert_novo_cliente', {
         client_payload: ptPayload
       });
+      if (rpcOutcome.error && !rpcOutcome.error.message?.includes('RATE_LIMIT_EXCEEDED')) {
+        rpcOutcome = await supabase.rpc('insert_novo_cliente', {
+          client_payload: ptPayload
+        });
+      }
+      const { data: rpcData, error: rpcError } = rpcOutcome;
 
       if (!rpcError && rpcData) {
         logRateLimitAttempt(clientIp, enrichedData.cpf_cnpj || enrichedData.document_number, 'cadastro_cliente');
@@ -1244,12 +1266,19 @@ export const fetchClients = async (options = {}) => {
   const { status, searchTerm } = options;
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Método Principal: Consulta via RPC get_novo_cliente_clients
+    // 1. Método Principal: Consulta via RPC get_novo_cliente_clients no schema novo_cliente
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_novo_cliente_clients', {
+      let rpcRes = await supabase.schema('novo_cliente').rpc('get_novo_cliente_clients', {
         p_status: (status && status !== 'todos') ? status : null,
         p_search: (searchTerm && searchTerm.trim()) ? searchTerm.trim() : null
       });
+      if (rpcRes.error) {
+        rpcRes = await supabase.rpc('get_novo_cliente_clients', {
+          p_status: (status && status !== 'todos') ? status : null,
+          p_search: (searchTerm && searchTerm.trim()) ? searchTerm.trim() : null
+        });
+      }
+      const { data: rpcData, error: rpcError } = rpcRes;
 
       if (!rpcError && Array.isArray(rpcData)) {
         return { success: true, data: rpcData.map(normalizeClientRecord) };
@@ -1337,12 +1366,19 @@ export const updateClientData = async (clientId, dataToUpdate = {}) => {
   if (isSupabaseConfigured && supabase) {
     let lastError = null;
 
-    // 1. Método Principal: Atualização via RPC update_novo_cliente
+    // 1. Método Principal: Atualização via RPC update_novo_cliente no schema novo_cliente
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('update_novo_cliente', {
+      let rpcRes = await supabase.schema('novo_cliente').rpc('update_novo_cliente', {
         p_client_id: clientId,
         p_payload: ptPayload
       });
+      if (rpcRes.error) {
+        rpcRes = await supabase.rpc('update_novo_cliente', {
+          p_client_id: clientId,
+          p_payload: ptPayload
+        });
+      }
+      const { data: rpcData, error: rpcError } = rpcRes;
 
       if (!rpcError && rpcData) {
         const normalized = normalizeClientRecord(rpcData);
@@ -1421,7 +1457,10 @@ const updateLocalClientFull = (clientId, dataToUpdate) => {
 export const deleteClient = async (clientId) => {
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase.rpc('delete_novo_cliente', { p_client_id: clientId });
+      const res = await supabase.schema('novo_cliente').rpc('delete_novo_cliente', { p_client_id: clientId });
+      if (res.error) {
+        await supabase.rpc('delete_novo_cliente', { p_client_id: clientId });
+      }
     } catch (errRpc) {}
 
     try {

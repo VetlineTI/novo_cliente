@@ -201,9 +201,13 @@ export const logoutAdmin = async () => {
  */
 export const fetchAuthUsersWithProfiles = async () => {
   if (isSupabaseConfigured && supabase) {
-    // 1. Tenta chamar a RPC SECURITY DEFINER list_auth_users_with_profiles
+    // 1. Tenta chamar a RPC SECURITY DEFINER list_auth_users_with_profiles no schema novo_cliente
     try {
-      const { data, error } = await supabase.rpc('list_auth_users_with_profiles');
+      let res = await supabase.schema('novo_cliente').rpc('list_auth_users_with_profiles');
+      if (res.error) {
+        res = await supabase.rpc('list_auth_users_with_profiles');
+      }
+      const { data, error } = res;
       if (!error && Array.isArray(data) && data.length > 0) {
         return { 
           success: true, 
@@ -273,13 +277,21 @@ export const setUserRole = async (userId, newRole, fullName = '') => {
   const isAdmin = newRole === 'admin';
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Tenta a função RPC set_user_role
+    // 1. Tenta a função RPC set_user_role no schema novo_cliente
     try {
-      const { data, error } = await supabase.rpc('set_user_role', {
+      let res = await supabase.schema('novo_cliente').rpc('set_user_role', {
         p_user_id: userId,
         p_role: newRole,
         p_full_name: fullName || null
       });
+      if (res.error) {
+        res = await supabase.rpc('set_user_role', {
+          p_user_id: userId,
+          p_role: newRole,
+          p_full_name: fullName || null
+        });
+      }
+      const { data, error } = res;
 
       if (!error && data?.success) {
         return { success: true, data };
@@ -339,13 +351,21 @@ export const grantRoleByEmail = async (email, role = 'admin', fullName = '') => 
   const isAdmin = role === 'admin';
 
   if (isSupabaseConfigured && supabase) {
-    // 1. Tenta RPC grant_role_by_email
+    // 1. Tenta RPC grant_role_by_email no schema novo_cliente
     try {
-      const { data, error } = await supabase.rpc('grant_role_by_email', {
+      let res = await supabase.schema('novo_cliente').rpc('grant_role_by_email', {
         p_email: cleanEmail,
         p_role: role,
         p_full_name: fullName || null
       });
+      if (res.error) {
+        res = await supabase.rpc('grant_role_by_email', {
+          p_email: cleanEmail,
+          p_role: role,
+          p_full_name: fullName || null
+        });
+      }
+      const { data, error } = res;
 
       if (!error && data?.success) {
         return { success: true, data };
