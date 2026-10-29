@@ -2,15 +2,14 @@
 -- CORREÇÃO DEFINITIVA DE SEGURANÇA E RLS (ROW LEVEL SECURITY)
 -- Tabelas: novo_cliente.data_new_cliente E novo_cliente.admin_profiles
 -- ==============================================================================
--- PREVENÇÃO DE BUG CRÍTICO: 'infinite recursion detected in policy'
--- O uso de subqueries diretas 'EXISTS (SELECT 1 FROM admin_profiles ...)' dentro
--- das policies da própria tabela admin_profiles causa recursão infinita no Postgres.
--- SOLUÇÃO: Usar a função SECURITY DEFINER 'novo_cliente.is_admin()', que executa
--- com privilégios de sistema e ignora o RLS durante a checagem, sem recursão!
+-- 1. Garante a função helper SECURITY DEFINER (Sem recursão de RLS)
+-- 2. Aplica RLS estrito em novo_cliente.admin_profiles (Sem auto-promoção de admin)
+-- 3. Aplica RLS estrito em novo_cliente.data_new_cliente (LGPD e dados protegidos)
+-- 4. Cria RPC segura para duplicidade de cadastro (check_client_already_approved)
 -- ==============================================================================
 
 -- ==============================================================================
--- PARTE 1: FUNÇÃO AUXILIAR DE AUTORIZAÇÃO (SECURITY DEFINER - SEM RECURSÃO)
+-- PARTE 1: FUNÇÃO AUXILIAR DE AUTORIZAÇÃO (SECURITY DEFINER)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION novo_cliente.is_admin(p_user_id UUID DEFAULT auth.uid())
 RETURNS BOOLEAN
@@ -22,8 +21,6 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- Como esta função é SECURITY DEFINER, ela consulta a tabela física diretamente
-    -- sem disparar as políticas de RLS, eliminando 100% o risco de recursão infinita!
     RETURN EXISTS (
         SELECT 1 
         FROM novo_cliente.admin_profiles
@@ -58,30 +55,28 @@ GRANT SELECT ON TABLE novo_cliente.admin_profiles TO authenticated;
 GRANT ALL ON TABLE novo_cliente.admin_profiles TO service_role;
 
 -- 2.4 POLÍTICA DE LEITURA (SELECT):
--- Um usuário autenticado pode ler seu próprio registro (para login),
--- ou administradores consultam todos usando a função is_admin() (zero recursão!)
+-- O próprio usuário lê seu perfil OU administradores lêem todos
 CREATE POLICY "admin_profiles_select_own_or_admin"
 ON novo_cliente.admin_profiles FOR SELECT
 TO authenticated
 USING (
     auth.uid() = id
-    OR novo_cliente.is_admin(auth.uid())
+    OR (novo_cliente.is_admin(auth.uid()))
 );
 
 -- 2.5 POLÍTICA DE ESCRITA (INSERT, UPDATE, DELETE):
--- APENAS quem já é administrador comprovado pode criar, alterar ou excluir perfis.
--- Usa novo_cliente.is_admin() garantindo performance e ausência de recursão.
+-- APENAS quem já é administrador pode modificar a tabela admin_profiles
 CREATE POLICY "admin_profiles_modify_admin_only"
 ON novo_cliente.admin_profiles FOR ALL
 TO authenticated
 USING (
-    novo_cliente.is_admin(auth.uid())
+    (novo_cliente.is_admin(auth.uid()))
 )
 WITH CHECK (
-    novo_cliente.is_admin(auth.uid())
+    (novo_cliente.is_admin(auth.uid()))
 );
 
--- 2.6 Bootstrap de Segurança: Garante que os e-mails mestres tenham perfil de admin inicial
+-- 2.6 Bootstrap de Segurança: Garante que os e-mails mestres tenham perfil de admin
 INSERT INTO novo_cliente.admin_profiles (id, email, full_name, role, is_admin, updated_at)
 SELECT u.id, u.email, COALESCE(u.raw_user_meta_data->>'full_name', 'Administrador Vetline'), 'admin', true, now()
 FROM auth.users u
@@ -111,36 +106,33 @@ DROP POLICY IF EXISTS "Permitir atualização restrita de clientes" ON novo_clie
 DROP POLICY IF EXISTS "Permitir exclusão apenas para administradores" ON novo_cliente.data_new_cliente;
 
 -- 3.3 POLÍTICA 1: INSERT PÚBLICO (Formulário de Credenciamento)
--- Visitantes anônimos e usuários autenticados podem enviar novos cadastros
 CREATE POLICY "Permitir inserção pública de cadastro"
 ON novo_cliente.data_new_cliente FOR INSERT
 TO anon, authenticated
 WITH CHECK (true);
 
 -- 3.4 POLÍTICA 2: SELECT RESTRITO (LGPD Compliance)
--- Anônimos NÃO podem mais ler a tabela!
 -- Usuário autenticado só lê o SEU PRÓPRIO cadastro, ou equipe administrativa lê todos
 CREATE POLICY "Permitir leitura restrita de clientes"
 ON novo_cliente.data_new_cliente FOR SELECT
 TO authenticated
 USING (
     auth.uid() = auth_user_id
-    OR novo_cliente.is_admin(auth.uid())
+    OR (novo_cliente.is_admin(auth.uid()))
 );
 
 -- 3.5 POLÍTICA 3: UPDATE RESTRITO
--- Anônimos NUNCA podem atualizar dados!
--- Apenas o próprio cliente no seu painel ou administradores
+-- O cliente edita seu próprio cadastro ou administradores editam
 CREATE POLICY "Permitir atualização restrita de clientes"
 ON novo_cliente.data_new_cliente FOR UPDATE
 TO authenticated
 USING (
     auth.uid() = auth_user_id
-    OR novo_cliente.is_admin(auth.uid())
+    OR (novo_cliente.is_admin(auth.uid()))
 )
 WITH CHECK (
     auth.uid() = auth_user_id
-    OR novo_cliente.is_admin(auth.uid())
+    OR (novo_cliente.is_admin(auth.uid()))
 );
 
 -- 3.6 POLÍTICA 4: DELETE EXCLUSIVO PARA ADMINISTRADORES
@@ -148,7 +140,7 @@ CREATE POLICY "Permitir exclusão apenas para administradores"
 ON novo_cliente.data_new_cliente FOR DELETE
 TO authenticated
 USING (
-    novo_cliente.is_admin(auth.uid())
+    (novo_cliente.is_admin(auth.uid()))
 );
 
 
