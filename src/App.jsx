@@ -9,7 +9,9 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
 import { getClientSession, logoutClient, confirmClientWhatsApp } from './lib/clientAuth';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { ShieldCheck, Lock, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Lock, ExternalLink, Cookie } from 'lucide-react';
+import { TermsModal } from './components/TermsModal';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 
 export function App() {
   const [successData, setSuccessData] = useState(null);
@@ -18,6 +20,7 @@ export function App() {
   const [portalTab, setPortalTab] = useState('register'); // 'register' | 'login'
   const [activationMessage, setActivationMessage] = useState('');
   const [initialLoginEmail, setInitialLoginEmail] = useState('');
+  const [policyModal, setPolicyModal] = useState({ isOpen: false, tab: 'terms' });
 
   // Sessão do Cliente
   const [clientSession, setClientSession] = useState(() => getClientSession());
@@ -269,7 +272,7 @@ export function App() {
         )}
       </div>
 
-      {/* Rodapé Moderno */}
+      {/* Rodapé Moderno com Políticas e LGPD */}
       <footer className="w-full bg-white border-t border-slate-200 py-6 mt-12 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 font-medium">
@@ -278,14 +281,48 @@ export function App() {
             <span>Todos os direitos reservados &copy; {new Date().getFullYear()}</span>
           </div>
 
-          <div className="flex items-center gap-4 text-[11px] text-slate-400">
-            <span className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px] text-slate-500">
+            <button
+              type="button"
+              onClick={() => setPolicyModal({ isOpen: true, tab: 'terms' })}
+              className="hover:text-brand-green hover:underline cursor-pointer transition-colors"
+            >
+              Termos de Uso
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setPolicyModal({ isOpen: true, tab: 'lgpd' })}
+              className="flex items-center gap-1 hover:text-brand-green hover:underline cursor-pointer transition-colors"
+            >
               <ShieldCheck className="w-3.5 h-3.5 text-brand-green" />
-              Proteção de dados LGPD
-            </span>
+              Privacidade & LGPD
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setPolicyModal({ isOpen: true, tab: 'cookies' })}
+              className="flex items-center gap-1 hover:text-brand-green hover:underline cursor-pointer transition-colors"
+            >
+              <Cookie className="w-3.5 h-3.5 text-amber-600" />
+              Preferências de Cookies
+            </button>
           </div>
         </div>
       </footer>
+
+      {/* Banner de Consentimento de Cookies & LGPD */}
+      <CookieConsentBanner
+        onOpenPolicies={(tab) => setPolicyModal({ isOpen: true, tab: tab || 'cookies' })}
+      />
+
+      {/* Central de Políticas (Termos de Uso, LGPD e Cookies) */}
+      <TermsModal
+        isOpen={policyModal.isOpen}
+        onClose={() => setPolicyModal(prev => ({ ...prev, isOpen: false }))}
+        initialTab={policyModal.tab}
+        showAcceptButton={false}
+      />
 
       {/* Modal de Sucesso com Confetes e Protocolo */}
       <SuccessModal

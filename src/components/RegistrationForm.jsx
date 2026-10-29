@@ -138,6 +138,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Termos e status
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [termsModalTab, setTermsModalTab] = useState('terms');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showSegmentModal, setShowSegmentModal] = useState(false);
   const [partnerMismatchData, setPartnerMismatchData] = useState(null);
@@ -2498,11 +2499,24 @@ export const RegistrationForm = ({ onSuccess }) => {
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
+                      setTermsModalTab('terms');
                       setShowTermsModal(true);
                     }}
-                    className="font-bold text-[#0b3b60] hover:underline"
+                    className="font-bold text-[#0b3b60] hover:underline cursor-pointer"
                   >
-                    Termos de Entrega
+                    Termos de Uso
+                  </button>{' '}
+                  e com a{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setTermsModalTab('lgpd');
+                      setShowTermsModal(true);
+                    }}
+                    className="font-bold text-[#0b3b60] hover:underline cursor-pointer"
+                  >
+                    Política de Privacidade (LGPD)
                   </button>{' '}
                   da Vetline. <span className="text-red-500">*</span>
                 </span>
@@ -2547,11 +2561,12 @@ export const RegistrationForm = ({ onSuccess }) => {
         )}
       </form>
 
-      {/* Modal de Termos */}
+      {/* Modal de Termos & Políticas */}
       <TermsModal
         isOpen={showTermsModal}
         onClose={() => setShowTermsModal(false)}
         onAccept={() => setAgreedTerms(true)}
+        initialTab={termsModalTab}
       />
 
       {/* Modal de Criação de Senha de Acesso */}

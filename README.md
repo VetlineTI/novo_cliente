@@ -76,6 +76,19 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
   - Na listagem do **Admin Dashboard**: Badges compactos indicando operadora real (`📱 Vivo`, `📱 Claro`), alerta vermelho pulsante `⚠️ VOIP / Virtual` ou aviso `⚠️ SIM Swap Recente`.
   - No modal de detalhes (**ClientDetailModal**): Banner dedicado de **Alerta Telecom (Antifraude)** com instruções de compliance e identificação detalhada ao lado do número de telefone.
 
+### 7. ⚖️ Central de Políticas, LGPD & Gestão de Cookies
+- **Central de Políticas Unificada (`TermsModal.jsx`)**:
+  - Modal interativo e responsivo com navegação em abas:
+    - **Termos de Uso**: Condições gerais de fornecimento, credenciamento técnico, obrigações de recebimento de produtos refrigerados (2°C a 8°C) e botão de download/visualização do documento oficial em PDF (`/docs/termo_de_uso.pdf`).
+    - **Privacidade & LGPD**: Detalhamento da finalidade de tratamento de dados sob a Lei nº 13.709/2018 para cumprimento de obrigações legais (MAPA, Receita e CRMV), segurança antifraude e canal de contato do DPO (`privacidade@vetline.com.br`).
+    - **Política de Cookies**: Tabela informativa com categorias de cookies estritamente essenciais para funcionamento do Supabase Auth e integridade de formulários.
+- **Banner de Consentimento de Cookies (`CookieConsentBanner.jsx`)**:
+  - Notificação flutuante com opções para aceitar todos os cookies ou apenas essenciais, com gravação de preferência em `localStorage` (`vetline_cookie_consent`).
+  - Possibilidade de revisão das preferências a qualquer momento através dos links do rodapé do sistema.
+- **Aceite Formal Integrado ao Cadastro (`RegistrationForm.jsx`)**:
+  - Checkbox obrigatório no credenciamento com links diretos para leitura dos Termos de Uso e da Política de Privacidade.
+  - Suporte a download do PDF oficial assim que o arquivo `termo_de_uso.pdf` for adicionado à pasta `public/docs/`.
+
 ---
 
 ## 📂 Estrutura de Arquivos
@@ -114,7 +127,9 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/RegistrationForm.jsx` | Formulário reativo de credenciamento com validações de negócio, checagem antecipada de Sócios (QSA) e Sintegra, e acionamento de criação de senha. |
 | `src/components/CreatePasswordModal.jsx` | Modal de definição de senha do cliente com validações e aviso de ativação por e-mail. |
 | `src/components/SuccessModal.jsx` | Modal de confirmação com orientações de verificação do e-mail de ativação e botão para ir ao login. |
-| `src/components/TermsModal.jsx` | Modal com termos e regras de entrega e conformidade. |
+| `src/components/TermsModal.jsx` | Central oficial de termos e políticas em abas (Termos de Uso, Privacidade & LGPD e Cookies) com botão para download de PDF oficial. |
+| `src/components/CookieConsentBanner.jsx` | Banner flutuante de consentimento de cookies e conformidade LGPD com opções essenciais/todos e persistência local. |
+| `public/docs/README.md` | Diretório de documentos e PDFs estáticos oficiais da Vetline (ex: `termo_de_uso.pdf`). |
 | `src/components/PartnerMismatchModal.jsx` | Modal de alerta de divergência cadastral e societária (QSA / SINTEGRA) com motivos de não aprovação e botão de ação. |
 | `src/components/SegmentHelpModal.jsx` | Modal com guia descritivo e tabela de identificação de todos os segmentos de atuação. |
 | `src/components/DocumentUpload.jsx` | Componente de upload de documentos com drag & drop e câmera integrada. |

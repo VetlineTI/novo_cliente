@@ -38,6 +38,7 @@ import { ClientVerificationModal } from './ClientVerificationModal';
 import { maskPhone, maskCEP, maskCPF, maskCNPJ } from '../../utils/masks';
 import { fetchAddressByCEP } from '../../utils/validators';
 import { fetchSegments } from '../../lib/supabase';
+import { TermsModal } from '../TermsModal';
 
 export const ClientDashboard = ({ onLogout }) => {
   const session = getClientSession();
@@ -93,6 +94,7 @@ export const ClientDashboard = ({ onLogout }) => {
   const [uploadError, setUploadError] = useState('');
   const [viewerDoc, setViewerDoc] = useState(null);
   const [showSegmentModal, setShowSegmentModal] = useState(false);
+  const [showDashboardTermsModal, setShowDashboardTermsModal] = useState(false);
 
   // Sincroniza dados com o banco ao carregar
   const refreshClientData = async () => {
@@ -1302,12 +1304,29 @@ export const ClientDashboard = ({ onLogout }) => {
                     <Mail className="w-4 h-4 text-brand-teal flex-shrink-0" />
                     <span>contato@vetline.com.br</span>
                   </div>
+                  <div className="pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setShowDashboardTermsModal(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-green hover:underline cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Consultar Termos de Uso e Política LGPD</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {/* Central Oficial de Termos e Políticas */}
+      <TermsModal
+        isOpen={showDashboardTermsModal}
+        onClose={() => setShowDashboardTermsModal(false)}
+        showAcceptButton={false}
+      />
 
       {/* Visualizador Modal de Documentos */}
       {viewerDoc && (
