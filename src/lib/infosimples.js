@@ -1,11 +1,8 @@
 import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
 
-const INFOSIMPLES_TOKEN =
-  import.meta.env.VITE_INFOSIMPLES_TOKEN ||
-  'hrR42Ikx8RpgqsaRmQDrlG4UkmHvbdgrr38prMTp';
-
-// Rota com proxy no Vite (localhost) e Vercel (produção)
-const BASE_URL = '/api-infosimples';
+// Rota protegida com proxy no servidor (/api/infosimples)
+// O token é injetado estritamente no backend e nunca exposto ao navegador
+const BASE_URL = '/api/infosimples';
 
 /**
  * Gera um comprovante HTML profissional estilizado exatamente como o
@@ -181,11 +178,10 @@ export const consultarReceitaCNPJ = async (cnpj) => {
   // 1. Tenta consulta oficial na Infosimples
   try {
     const params = new URLSearchParams();
-    params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
     params.append('timeout', '120');
 
-    const response = await fetch(`${BASE_URL}/receita-federal/cnpj`, {
+    const response = await fetch(`${BASE_URL}?service=receita-federal/cnpj`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString()
@@ -301,13 +297,12 @@ export const consultarProtestosCenprot = async (cnpj) => {
   // 2. Fallback: CENPROT-SP Oficial (Infosimples)
   try {
     const params = new URLSearchParams();
-    params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
     params.append('cpf_cnpj', cleanCnpj);
     params.append('documento', cleanCnpj);
     params.append('timeout', '180');
 
-    const response = await fetch(`${BASE_URL}/cenprot-sp/protestos`, {
+    const response = await fetch(`${BASE_URL}?service=cenprot-sp/protestos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString()
@@ -339,13 +334,12 @@ export const consultarProtestosCenprot = async (cnpj) => {
   // 3. Fallback: IEPTB Nacional (Infosimples)
   try {
     const params = new URLSearchParams();
-    params.append('token', INFOSIMPLES_TOKEN);
     params.append('cnpj', cleanCnpj);
     params.append('cpf_cnpj', cleanCnpj);
     params.append('documento', cleanCnpj);
     params.append('timeout', '180');
 
-    const response = await fetch(`${BASE_URL}/ieptb/protestos`, {
+    const response = await fetch(`${BASE_URL}?service=ieptb/protestos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString()
@@ -445,7 +439,6 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
 
   try {
     const params = new URLSearchParams();
-    params.append('token', INFOSIMPLES_TOKEN);
     params.append('tipo_inscricao', String(tipoInscricao ?? 0));
     params.append('query', searchTerm);
     if (cleanUf) {
@@ -453,13 +446,7 @@ export const consultarCRMV = async (query, uf = '', tipoInscricao = 0) => {
     }
     params.append('timeout', '180');
 
-    const isProduction = typeof window !== 'undefined' && 
-      (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
-
-    let url = `${BASE_URL}/cfmv/cadastro`;
-    if (isProduction) {
-      url = `/api/infosimples?service=cfmv/cadastro`;
-    }
+    const url = `${BASE_URL}?service=cfmv/cadastro`;
 
     const response = await fetch(url, {
       method: 'POST',

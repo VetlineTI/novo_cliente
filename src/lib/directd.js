@@ -1,13 +1,7 @@
-// Integração com a API Direct Data (DirectD)
-// Endpoints Oficiais: 
-// 1. Cadastro PJ Plus: https://apiv3.directd.com.br/api/CadastroPessoaJuridicaPlus
-// 2. Protestos Online (IEPTB / CENPROT Nacional): https://apiv3.directd.com.br/api/ProtestosOnline
+// Integração com a API Direct Data (DirectD) via Proxy Seguro do Servidor
+// As credenciais são injetadas estritamente no backend (/api/directd)
 
-const DIRECTD_TOKEN =
-  import.meta.env.VITE_DIRECTD_TOKEN ||
-  '12DC14EA-112C-426C-9EC9-05A1280D23D1';
-
-const BASE_URL = '/api-directd';
+const BASE_URL = '/api/directd';
 
 /**
  * Gera um comprovante HTML estilizado com os dados cadastrais da Direct Data
@@ -305,13 +299,13 @@ export const consultarDirectDataPJ = async (cnpj) => {
     return { success: false, error: 'CNPJ inválido (deve conter 14 dígitos)' };
   }
 
-  const tryFetch = async (baseUrl) => {
+  try {
     const params = new URLSearchParams();
+    params.append('service', 'CadastroPessoaJuridicaPlus');
     params.append('CNPJ', cleanCnpj);
-    params.append('TOKEN', DIRECTD_TOKEN);
     params.append('gerarComprovante', 'true');
 
-    const response = await fetch(`${baseUrl}/CadastroPessoaJuridicaPlus?${params.toString()}`, {
+    const response = await fetch(`${BASE_URL}?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -323,16 +317,7 @@ export const consultarDirectDataPJ = async (cnpj) => {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    return await response.json();
-  };
-
-  try {
-    let result;
-    try {
-      result = await tryFetch(BASE_URL);
-    } catch (proxyErr) {
-      result = await tryFetch('https://apiv3.directd.com.br/api');
-    }
+    const result = await response.json();
 
     const meta = result.metaDados || {};
     const retorno = result.retorno || {};
@@ -668,15 +653,15 @@ export const consultarDirectDataProtestos = async (documento) => {
 
   try {
     const params = new URLSearchParams();
+    params.append('service', 'ProtestosOnline');
     if (cleanDoc.length === 14) {
       params.append('CNPJ', cleanDoc);
     } else {
       params.append('CPF', cleanDoc);
     }
-    params.append('TOKEN', DIRECTD_TOKEN);
     params.append('gerarComprovante', 'true');
 
-    const response = await fetch(`${BASE_URL}/ProtestosOnline?${params.toString()}`, {
+    const response = await fetch(`${BASE_URL}?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -735,12 +720,12 @@ export const consultarDirectDataSintegra = async (cnpj, uf = 'SP') => {
 
   try {
     const params = new URLSearchParams();
+    params.append('service', 'Sintegra');
     params.append('CNPJ', cleanCnpj);
     params.append('UF', cleanUf);
-    params.append('TOKEN', DIRECTD_TOKEN);
     params.append('gerarComprovante', 'true');
 
-    const response = await fetch(`${BASE_URL}/Sintegra?${params.toString()}`, {
+    const response = await fetch(`${BASE_URL}?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',

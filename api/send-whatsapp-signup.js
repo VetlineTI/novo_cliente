@@ -1,24 +1,19 @@
 async function getEnvConfig() {
   const supabaseUrl = 
     process.env.SUPABASE_URL || 
-    process.env.VITE_SUPABASE_URL || 
-    'https://zmojbzhqqoaliaeifwmz.supabase.co';
+    process.env.VITE_SUPABASE_URL;
 
   const supabaseServiceKey = 
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inptb2piemhxcW9hbGlhZWlmd216Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Mzg4OTA0NCwiZXhwIjoyMDY5NDY1MDQ0fQ.orcSorHFRjWN5kDrcsn_WY8cZkJguPnVG8TcQsdpTXQ';
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const zapiInstanceId = 
-    process.env.ZAPI_INSTANCE_ID || 
-    '3FA30904FD3EB1CCD6A45A091FE8472E';
+    process.env.ZAPI_INSTANCE_ID;
 
   const zapiToken = 
-    process.env.ZAPI_TOKEN || 
-    '3788FECBD27166EF12E5E25F';
+    process.env.ZAPI_TOKEN;
 
   const zapiClientToken = 
-    process.env.ZAPI_CLIENT_TOKEN || 
-    'Fa6f8a0296d0542feabea4def38cc34edS';
+    process.env.ZAPI_CLIENT_TOKEN;
 
   return {
     supabaseUrl,

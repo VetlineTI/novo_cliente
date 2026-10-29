@@ -13,7 +13,12 @@ export default defineConfig(({ mode }) => {
         name: 'api-serverless-local',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
-          if (req.url && (req.url.startsWith('/api/send-whatsapp-signup') || req.url.startsWith('/api/telecom-lookup'))) {
+          if (req.url && (
+            req.url.startsWith('/api/send-whatsapp-signup') ||
+            req.url.startsWith('/api/telecom-lookup') ||
+            req.url.startsWith('/api/directd') ||
+            req.url.startsWith('/api/infosimples')
+          )) {
             try {
               const urlObj = new URL(req.url, 'http://localhost');
               req.query = Object.fromEntries(urlObj.searchParams.entries());
@@ -26,7 +31,8 @@ export default defineConfig(({ mode }) => {
                 try {
                   req.body = bodyStr ? JSON.parse(bodyStr) : {};
                 } catch {
-                  req.body = {};
+                  // Se for form-urlencoded (Infosimples)
+                  req.body = bodyStr || {};
                 }
                 // Adiciona helper status() e json() comuns a serverless handlers
                 res.status = (code) => {
@@ -42,6 +48,12 @@ export default defineConfig(({ mode }) => {
                 if (req.url.startsWith('/api/telecom-lookup')) {
                   const { default: telecomHandler } = await import('./api/telecom-lookup.js');
                   await telecomHandler(req, res);
+                } else if (req.url.startsWith('/api/directd')) {
+                  const { default: directdHandler } = await import('./api/directd.js');
+                  await directdHandler(req, res);
+                } else if (req.url.startsWith('/api/infosimples')) {
+                  const { default: infosimplesHandler } = await import('./api/infosimples.js');
+                  await infosimplesHandler(req, res);
                 } else {
                   const { default: handler } = await import('./api/send-whatsapp-signup.js');
                   await handler(req, res);

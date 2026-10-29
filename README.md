@@ -106,6 +106,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/add_inscricao_and_crmv_columns.sql` | Script SQL completo para criação das colunas `tp_inscricao`, `numero_inscricao`, `crmv` e atualização das RPCs. |
 | `supabase/add_data_abertura_column.sql` | Script SQL para adicionar as colunas `data_abertura` e `data_inicio_atividade`, atualizar RPCs e recarregar o schema cache no Supabase. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
+| `supabase/fix_rls_security.sql` | Script SQL de correção definitiva de segurança e LGPD nas políticas de RLS de `data_new_cliente` (revogação de SELECT/UPDATE anônimo e criação de RPC segura). |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
