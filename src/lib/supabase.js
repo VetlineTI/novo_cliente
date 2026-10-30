@@ -1501,85 +1501,35 @@ export const deleteClient = async (clientId) => {
  * }>}
  */
 export const enviarWebhookNovoClienteMoinho = async (clientData) => {
-  const WEBHOOK_URL = 'https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho';
-
-  if (!clientData) {
+  if (!clientData || !clientData.id) {
     return {
       success: false,
       statusType: 'error',
       cd_clien: null,
       resultado: 'ERRO',
-      message: 'Dados do cliente não informados para o webhook.',
-      error: 'Dados do cliente não informados para o webhook.'
+      message: 'ID do cliente não informado para o webhook.',
+      error: 'ID do cliente não informado para o webhook.'
     };
   }
 
   try {
-    const payload = {
-      event: 'CLIENT_APPROVED',
-      action: 'confirmar_cadastro',
-      timestamp: new Date().toISOString(),
-      cliente: {
-        id: clientData.id || null,
-        auth_user_id: clientData.auth_user_id || null,
-        tipo_pessoa: clientData.person_type || clientData.tipo_pessoa || 'PJ',
-        cpf_cnpj: clientData.document_number || clientData.cpf_cnpj || '',
-        razao_social_nome: clientData.full_name || clientData.razao_social_nome || '',
-        nome_fantasia: clientData.trade_name || clientData.nome_fantasia || '',
-        tp_inscricao: clientData.tp_inscricao || (clientData.person_type === 'PF' ? 'I' : 'E'),
-        numero_inscricao: clientData.numero_inscricao || clientData.numero_ie || clientData.ie_number || 'ISENTO',
-        crmv: clientData.crmv || clientData.numero_crmv || null,
-        telefone: clientData.phone || clientData.telefone || '',
-        email: clientData.email || '',
-        segmento: clientData.segment || clientData.segmento || clientData.ram_ativ || '',
-        ram_ativ: clientData.ram_ativ || clientData.segment || clientData.segmento || '',
-        cd_vend: clientData.cd_vend || 'ATENA',
-        tab_pre: clientData.tab_pre || 'VTL01',
-        tp_ped: clientData.tp_ped || 'VTL01',
-        limite_credito: Number(clientData.limite_credito ?? clientData.credit_limit ?? 0),
-        // Endereço Principal / Cadastral
-        cep: clientData.zipcode || clientData.cep || '',
-        logradouro: clientData.street || clientData.logradouro || '',
-        numero: clientData.number || clientData.numero || '',
-        complemento: clientData.complement || clientData.complemento || '',
-        bairro: clientData.neighborhood || clientData.bairro || '',
-        cidade: clientData.city || clientData.cidade || '',
-        uf: clientData.state || clientData.uf || '',
-        // Endereço de Entrega
-        endereco_entrega_diferente: Boolean(clientData.has_different_delivery_address || clientData.endereco_entrega_diferente),
-        entrega_cep: clientData.delivery_zipcode || clientData.entrega_cep || null,
-        entrega_logradouro: clientData.delivery_street || clientData.entrega_logradouro || null,
-        entrega_numero: clientData.delivery_number || clientData.entrega_numero || null,
-        entrega_complemento: clientData.delivery_complement || clientData.entrega_complemento || null,
-        entrega_bairro: clientData.delivery_neighborhood || clientData.entrega_bairro || null,
-        entrega_cidade: clientData.delivery_city || clientData.entrega_cidade || null,
-        entrega_uf: clientData.delivery_state || clientData.entrega_uf || null,
-        // Documentos Anexados
-        doc_contrato_social_url: clientData.doc_contract_url || clientData.doc_contrato_social_url || null,
-        doc_identificacao_url: clientData.doc_photo_id_url || clientData.doc_identificacao_url || null,
-        doc_crmv_url: clientData.doc_crmv_url || null,
-        doc_comprovante_endereco_url: clientData.doc_address_url || clientData.doc_comprovante_endereco_url || null,
-        doc_ie_url: clientData.doc_ie_url || clientData.doc_sintegra_url || null,
-        doc_jucesp_url: clientData.doc_jucesp_url || null,
-        doc_cenprot_url: clientData.doc_cenprot_url || null,
-        nire_jucesp: clientData.nire_jucesp || null,
-        // Alerta Bureau / Conformidade
-        alerta: clientData.alerta || gerarTextoAlerta(clientData, new Date()),
-        // Status e Observações
-        status: 'aprovado',
-        observacoes: clientData.notes || clientData.observacoes || '',
-        approved_at: new Date().toISOString(),
-        created_at: clientData.created_at || null
-      },
-      raw_client: clientData
-    };
+    // 1. Obtém o token JWT da sessão atual do admin (se houver)
+    let authToken = '';
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      authToken = sessionData?.session?.access_token || '';
+    } catch (e) {}
 
-    const response = await fetch(WEBHOOK_URL, {
+    // 2. Chama a API server-side segura em vez de chamar o webhook aberto diretamente
+    const response = await fetch('/api/aprovar-cliente', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        clientId: clientData.id
+      })
     });
 
     let resData = null;
@@ -1591,21 +1541,21 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
       } catch (_) {}
     }
 
-    if (!response.ok) {
-      console.warn(`Webhook N8N retornou status HTTP ${response.status}:`, resData);
+    if (!response.ok || !resData?.success) {
+      console.warn(`Servidor de aprovação retornou erro HTTP ${response.status}:`, resData);
       return {
         success: false,
         statusType: 'error',
         cd_clien: null,
         resultado: 'ERRO',
-        message: `Webhook retornou status HTTP ${response.status}`,
-        error: `Webhook retornou status HTTP ${response.status}`,
+        message: resData?.error || `Falha no processamento da aprovação (HTTP ${response.status})`,
+        error: resData?.error || `HTTP ${response.status}`,
         response: resData
       };
     }
 
-    // Normalização: pode vir array [{ ... }] ou objeto direto { ... }
-    const firstItem = Array.isArray(resData) ? (resData[0] || {}) : (resData && typeof resData === 'object' ? resData : {});
+    const n8nData = resData.data;
+    const firstItem = Array.isArray(n8nData) ? (n8nData[0] || {}) : (n8nData && typeof n8nData === 'object' ? n8nData : {});
 
     const cdClien = firstItem.cd_clien ?? firstItem.CD_CLIEN ?? firstItem.cd_cliente ?? null;
     const cdVend = firstItem.cd_vend ?? firstItem.CD_VEND ?? firstItem.cd_vendedor ?? null;
@@ -1621,7 +1571,7 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         resultado: 'ERRO',
         message: errMsg,
         error: errMsg,
-        response: resData
+        response: n8nData
       };
     }
 
@@ -1635,7 +1585,7 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         resultado: 'JA_EXISTE',
         message: 'CPF/CNPJ já cadastrado no ERP MOINHO (JA_EXISTE).',
         error: null,
-        response: resData
+        response: n8nData
       };
     }
 
@@ -1649,7 +1599,7 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
         resultado: 'OK',
         message: `Cliente criado com sucesso no MOINHO! Código: ${cdClien || ''}`,
         error: null,
-        response: resData
+        response: n8nData
       };
     }
 
@@ -1662,17 +1612,17 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
       resultado: firstItem.resultado || 'OK',
       message: 'Cadastro confirmado com sucesso no ERP MOINHO.',
       error: null,
-      response: resData
+      response: n8nData
     };
   } catch (err) {
-    console.error('Erro ao disparar webhook N8N Moinho:', err);
+    console.error('Erro ao aprovar cliente via servidor:', err);
     return {
       success: false,
       statusType: 'error',
       cd_clien: null,
       resultado: 'ERRO',
-      message: err.message || 'Falha de conexão com o Webhook N8N',
-      error: err.message || 'Falha de conexão com o Webhook N8N'
+      message: err.message || 'Falha de conexão com o servidor de aprovação',
+      error: err.message || 'Falha de conexão com o servidor de aprovação'
     };
   }
 };

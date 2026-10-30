@@ -114,6 +114,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
 | `api/directd.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Direct Data (evita CORS). |
+| `api/aprovar-cliente.js` | Serverless Function para Vercel: Endpoint seguro de aprovação de cliente no ERP Moinho/n8n com checagem estrita de autenticação de admin, leitura imutável do banco por `clientId` e disparo com segredo no servidor. |
 | `api/send-whatsapp-signup.js` | Serverless Function para Vercel: Gera link oficial de ativação via Supabase Admin e dispara confirmação via WhatsApp pela Z-API. |
 | `api/telecom-lookup.js` | Serverless Function para Vercel: Consulta simultânea na Twilio Lookups v2 (VOIP / Tipo de Linha e SIM Swap). |
 | `docs/INTEGRACAO_ASSERTIVA.md` | Especificação técnica e guia de migração para a API da Assertiva Soluções (OAuth2, Score, Ações, Protestos e Dossiê de Crédito). |
