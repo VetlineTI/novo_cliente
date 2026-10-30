@@ -209,31 +209,18 @@ export const registerClientWithAuth = async (clientData, password) => {
       });
 
       if (signUpError) {
-        // Se ocorrer rate limit de envio de e-mail (429), usuário existente (422) ou restrição de e-mail:
-        // Vincula/cria diretamente via RPC ensure_client_auth_user garantindo ativação imediata
-        try {
-          let rpcOutcome = await supabase.schema('novo_cliente').rpc('ensure_client_auth_user', {
-            p_email: cleanEmail,
-            p_password: cleanPassword,
-            p_full_name: clientData.full_name || ''
-          });
-          if (rpcOutcome.error) {
-            rpcOutcome = await supabase.rpc('ensure_client_auth_user', {
-              p_email: cleanEmail,
-              p_password: cleanPassword,
-              p_full_name: clientData.full_name || ''
-            });
-          }
-          const { data: rpcRes, error: rpcErr } = rpcOutcome;
-          if (!rpcErr && rpcRes?.success && rpcRes?.user_id) {
-            authUserId = rpcRes.user_id;
-            authUser = { id: rpcRes.user_id, email: cleanEmail };
-          }
-        } catch (rpcE) {}
-
-        if (!authUserId) {
-          authUserId = `auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        // Se o usuário já existir no Supabase Auth (erro 422) ou mensagem de usuário registrado
+        const errorMsg = (signUpError.message || '').toLowerCase();
+        if (signUpError.status === 422 || errorMsg.includes('already registered') || errorMsg.includes('already exists')) {
+          return {
+            success: false,
+            error: 'Este e-mail já possui cadastro. Por favor, acesse a aba "Já sou cliente" para entrar ou recupere sua senha.'
+          };
         }
+
+        // Se houver limite de envio de e-mails ou outra restrição, loga aviso e segue com identificador provisório
+        console.warn('Aviso no Supabase Auth signUp:', signUpError.message);
+        authUserId = `auth-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
       } else if (signUpData?.user) {
         authUser = signUpData.user;
         authUserId = authUser.id;

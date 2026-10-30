@@ -107,7 +107,8 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/add_data_abertura_column.sql` | Script SQL para adicionar as colunas `data_abertura` e `data_inicio_atividade`, atualizar RPCs e recarregar o schema cache no Supabase. |
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/fix_rls_security.sql` | Script SQL de correção definitiva de segurança e LGPD nas políticas de RLS de `data_new_cliente` e `admin_profiles` (bloqueio total de escalonamento de privilégios, remoção de UPDATE/DELETE anônimo e RPC segura). |
-| `supabase/migrate_functions_to_novo_cliente.sql` | Script SQL definitivo de blindagem das RPCs no schema `novo_cliente`: checagem estrita de privilégios (`novo_cliente.is_admin()`), remoção de `EXECUTE` para `anon`, correção contra sequestro de contas em `ensure_client_auth_user` e eliminação de views/RPCs públicas. |
+| `supabase/migrate_functions_to_novo_cliente.sql` | Script SQL definitivo de blindagem das RPCs no schema `novo_cliente`: checagem estrita de privilégios (`novo_cliente.is_admin()`), remoção de `EXECUTE` para `anon`, correção contra sequestro de contas em `ensure_client_auth_user` e eliminação de RPCs obsoletas. |
+| `supabase/restore_auth_users_view.sql` | Script SQL para recriar/restaurar a view `public.auth_users_view` com permissões adequadas de consulta. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |
@@ -146,7 +147,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `src/components/admin/ClientDetailModal.jsx` | Visualização detalhada do cliente organizada em pastas e aprovações. |
 | `src/components/admin/DocumentViewerModal.jsx` | Visualizador de alta resolução para documentos com suporte a URLs assinadas seguras (Signed URLs), zoom, rotação e download. |
 | `src/components/admin/UserManagementView.jsx` | Módulo de listagem de usuários do `auth.users` e concessão de perfis. |
-| `supabase/setup_storage_private.sql` | Script SQL para configurar o bucket `novos_clientes` como **Privado** no Supabase Storage com políticas de RLS (upload público e leitura autenticada). |
+| `supabase/setup_storage_private.sql` | Script SQL de blindagem definitiva do Supabase Storage: bucket `novos_clientes` estritamente Privado, revogação total de leitura para `anon`, restrição de leitura ao próprio titular e admins, e exclusão/edição exclusiva para administradores. |
 | `supabase/add_rate_limit.sql` | Script SQL de Rate Limiting por IP (tabela `rate_limit_logs`, RPCs `check_rate_limit` e `log_rate_limit_attempt`) para proteção nativa contra spam e abuso de cadastros. |
 | `supabase/add_limite_credito.sql` | Script SQL para adicionar a coluna `limite_credito` (`NUMERIC(12,2) DEFAULT 0.00`) no schema `novo_cliente` com retrocompatibilidade e recálculo inicial. |
 | `supabase/add_cnae_columns.sql` | Script SQL para adicionar as colunas de CNAE (`cnae`, `cnae_codigo`, `cnae_descricao`) no schema `novo_cliente` com atualização da view de compatibilidade. |

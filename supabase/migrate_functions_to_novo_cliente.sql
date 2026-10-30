@@ -528,7 +528,7 @@ $$ LANGUAGE plpgsql;
 -- 5. POLÍTICA DE PERMISSÕES DE EXECUÇÃO (REVOKE GERAL DO ANON)
 -- ------------------------------------------------------------------------------
 
--- 5.1 Revoga EXECUTE de ANON em TODAS as funções sensíveis (inclusive busca por e-mail)
+-- 5.1 Revoga EXECUTE de ANON em TODAS as funções sensíveis (inclusive ensure_client_auth_user)
 REVOKE EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_clients(TEXT, TEXT) FROM anon;
 REVOKE EXECUTE ON FUNCTION novo_cliente.update_novo_cliente(UUID, JSONB) FROM anon;
 REVOKE EXECUTE ON FUNCTION novo_cliente.delete_novo_cliente(UUID) FROM anon;
@@ -536,8 +536,9 @@ REVOKE EXECUTE ON FUNCTION novo_cliente.list_auth_users_with_profiles() FROM ano
 REVOKE EXECUTE ON FUNCTION novo_cliente.set_user_role(UUID, VARCHAR, VARCHAR) FROM anon;
 REVOKE EXECUTE ON FUNCTION novo_cliente.grant_role_by_email(VARCHAR, VARCHAR, VARCHAR) FROM anon;
 REVOKE EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_by_user_or_email(UUID, TEXT) FROM anon;
+REVOKE EXECUTE ON FUNCTION novo_cliente.ensure_client_auth_user(TEXT, TEXT, TEXT) FROM anon;
 
--- 5.2 Concede apenas a AUTHENTICATED (e a barreira is_admin ou titularidade protege contra acessos indevidos)
+-- 5.2 Concede apenas a AUTHENTICATED e SERVICE_ROLE
 GRANT EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_clients(TEXT, TEXT) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION novo_cliente.update_novo_cliente(UUID, JSONB) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION novo_cliente.delete_novo_cliente(UUID) TO authenticated, service_role;
@@ -545,23 +546,16 @@ GRANT EXECUTE ON FUNCTION novo_cliente.list_auth_users_with_profiles() TO authen
 GRANT EXECUTE ON FUNCTION novo_cliente.set_user_role(UUID, VARCHAR, VARCHAR) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION novo_cliente.grant_role_by_email(VARCHAR, VARCHAR, VARCHAR) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_by_user_or_email(UUID, TEXT) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION novo_cliente.ensure_client_auth_user(TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- 5.3 Funções públicas legítimas (necessárias para o envio do formulário de cadastro)
 GRANT EXECUTE ON FUNCTION novo_cliente.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION novo_cliente.ensure_client_auth_user(TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
 
 
 -- ------------------------------------------------------------------------------
--- 6. ELIMINAÇÃO DE VIEWS E FUNÇÕES VULNERÁVEIS NO SCHEMA PUBLIC
+-- 6. ELIMINAÇÃO DE FUNÇÕES OBSOLETAS NO SCHEMA PUBLIC
 -- ------------------------------------------------------------------------------
--- Elimina ou bloqueia qualquer view que exponha auth.users
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname = 'public' AND viewname = 'auth_users_view') THEN
-        EXECUTE 'REVOKE ALL ON TABLE public.auth_users_view FROM anon, authenticated';
-        EXECUTE 'DROP VIEW IF EXISTS public.auth_users_view';
-    END IF;
-END $$;
+-- Nota: A view public.auth_users_view foi preservada / restaurada conforme necessidade do sistema.
 
 -- Elimina versões obsoletas do schema public (todas as variações de tipos)
 DROP FUNCTION IF EXISTS public.get_novo_cliente_clients(VARCHAR, VARCHAR);
