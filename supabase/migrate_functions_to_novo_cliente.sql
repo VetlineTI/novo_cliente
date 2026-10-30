@@ -425,9 +425,9 @@ BEGIN
         COALESCE(client_payload->>'complemento', client_payload->>'complement', NULL),
         COALESCE(client_payload->>'cidade', client_payload->>'city', NULL),
         COALESCE(client_payload->>'uf', client_payload->>'state', NULL),
-        COALESCE(client_payload->>'cd_vend', 'ATENA'),
-        COALESCE(client_payload->>'tab_pre', 'VTL01'),
-        COALESCE(client_payload->>'tp_ped', 'VTL01'),
+        'ATENA', -- cd_vend SEMPRE FORÇADO A ATENA NO CADASTRO PÚBLICO
+        'VTL01', -- tab_pre SEMPRE FORÇADO A VTL01 NO CADASTRO PÚBLICO
+        'VTL01', -- tp_ped SEMPRE FORÇADO A VTL01 NO CADASTRO PÚBLICO
         COALESCE((client_payload->>'endereco_entrega_diferente')::boolean, (client_payload->>'has_different_delivery_address')::boolean, false),
         CASE WHEN client_payload->>'entrega_cep' IS NOT NULL OR client_payload->>'delivery_zipcode' IS NOT NULL THEN regexp_replace(COALESCE(client_payload->>'entrega_cep', client_payload->>'delivery_zipcode'), '\D', '', 'g') ELSE NULL END,
         COALESCE(client_payload->>'entrega_logradouro', client_payload->>'delivery_street', NULL),
@@ -446,9 +446,9 @@ BEGIN
         COALESCE(client_payload->>'doc_cenprot_url', NULL),
         COALESCE(client_payload->>'doc_receita_url', NULL),
         COALESCE(client_payload->>'nire_jucesp', NULL),
-        CASE WHEN client_payload ? 'total_protestos' THEN (client_payload->>'total_protestos')::int ELSE NULL END,
-        CASE WHEN client_payload ? 'bureau_consulted_at' THEN (client_payload->>'bureau_consulted_at')::timestamptz ELSE NULL END,
-        CASE WHEN client_payload ? 'limite_credito' OR client_payload ? 'credit_limit' THEN COALESCE((client_payload->>'limite_credito')::numeric, (client_payload->>'credit_limit')::numeric) ELSE 0.00 END,
+        NULL, -- total_protestos FORÇADO A NULL
+        NULL, -- bureau_consulted_at FORÇADO A NULL
+        0.00, -- limite_credito FORÇADO A ZERO
         'em_analise', -- SEMPRE FORÇADO A em_analise NO CADASTRO PÚBLICO
         COALESCE((client_payload->>'termos_aceitos')::boolean, (client_payload->>'terms_accepted')::boolean, true),
         COALESCE(client_payload->>'observacoes', client_payload->>'notes', NULL),
