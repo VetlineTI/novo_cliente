@@ -144,6 +144,7 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [partnerMismatchData, setPartnerMismatchData] = useState(null);
   const [showPartnerMismatchModal, setShowPartnerMismatchModal] = useState(false);
   const [isValidatingPartnerDoc, setIsValidatingPartnerDoc] = useState(false);
+  const [isPreparingSubmit, setIsPreparingSubmit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
@@ -769,217 +770,182 @@ export const RegistrationForm = ({ onSuccess }) => {
       return;
     }
 
-    // Validação antecipada de documentos (Contrato Social / Sócio contra QSA)
-    if (personType === 'PJ') {
-      setIsValidatingPartnerDoc(true);
-      try {
-        const cleanCnpj = unmask(documentNumber);
-        const ufState = state || cnpjInfo?.uf || 'SP';
+    setIsPreparingSubmit(true);
 
-        let partners = cnpjInfo?.socios || [];
-        if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
-          partners = bureauAuditResultRef.current.data.socios;
-        }
-        if (partners.length === 0 && bureauAuditPromiseRef.current) {
-          const bRes = await bureauAuditPromiseRef.current;
-          if (bRes?.data?.socios) {
-            partners = bRes.data.socios;
-          }
-        }
-        if (partners.length === 0) {
-          const freshData = await fetchCNPJDataFromBrasilAPI(cleanCnpj);
-          if (freshData?.socios && freshData.socios.length > 0) {
-            partners = freshData.socios;
-            setCnpjInfo(freshData);
-          }
-        }
+    try {
+      // Validação antecipada de documentos (Contrato Social / Sócio contra QSA)
+      if (personType === 'PJ') {
+        setIsValidatingPartnerDoc(true);
+        try {
+          const cleanCnpj = unmask(documentNumber);
+          const ufState = state || cnpjInfo?.uf || 'SP';
 
-        // 1. Validação do Documento da Empresa (Contrato Social / Cartão CNPJ)
-        if (docContract) {
-          let contractCheck = docContractValidation;
-          if (!contractCheck || !contractCheck.isValid) {
-            contractCheck = await validateCompanyAttachment(docContract, {
-              expectedCnpj: cleanCnpj,
-              expectedName: fullName,
-              partnersList: partners
-            });
+          let partners = cnpjInfo?.socios || [];
+          if (partners.length === 0 && bureauAuditResultRef.current?.data?.socios) {
+            partners = bureauAuditResultRef.current.data.socios;
+          }
+          if (partners.length === 0 && bureauAuditPromiseRef.current) {
+            const bRes = await bureauAuditPromiseRef.current;
+            if (bRes?.data?.socios) {
+              partners = bRes.data.socios;
+            }
+          }
+          if (partners.length === 0) {
+            const freshData = await fetchCNPJDataFromBrasilAPI(cleanCnpj);
+            if (freshData?.socios && freshData.socios.length > 0) {
+              partners = freshData.socios;
+              setCnpjInfo(freshData);
+            }
           }
 
-          if (!contractCheck.isValid) {
-            setPartnerMismatchData({
-              title: 'O cadastro não foi concluído',
-              subtitle: 'Divergência identificada no Documento da Empresa',
-              reasons: contractCheck.reasons || [contractCheck.message || 'Divergência no Documento da Empresa.'],
-              authorizedPartners: [],
-              buttonText: 'Reenviar Documento da Empresa',
-              hideReupload: false,
-              shouldResetForm: false
-            });
-            setShowPartnerMismatchModal(true);
-            setIsValidatingPartnerDoc(false);
-            return;
+          // 1. Validação do Documento da Empresa (Contrato Social / Cartão CNPJ)
+          if (docContract) {
+            let contractCheck = docContractValidation;
+            if (!contractCheck || !contractCheck.isValid) {
+              contractCheck = await validateCompanyAttachment(docContract, {
+                expectedCnpj: cleanCnpj,
+                expectedName: fullName,
+                partnersList: partners
+              });
+            }
+
+            if (!contractCheck.isValid) {
+              setPartnerMismatchData({
+                title: 'O cadastro não foi concluído',
+                subtitle: 'Divergência identificada no Documento da Empresa',
+                reasons: contractCheck.reasons || [contractCheck.message || 'Divergência no Documento da Empresa.'],
+                authorizedPartners: [],
+                buttonText: 'Reenviar Documento da Empresa',
+                hideReupload: false,
+                shouldResetForm: false
+              });
+              setShowPartnerMismatchModal(true);
+              setIsValidatingPartnerDoc(false);
+              return;
+            }
           }
-        }
 
-        // 2. Validação do Documento do Sócio (RG / CNH) contra o QSA e CNPJ
-        if (docPartnerPhoto) {
-          let partnerCheck = docPartnerPhotoValidation;
-          if (!partnerCheck || !partnerCheck.isValid) {
-            partnerCheck = await validatePartnerDocument(
-              docPartnerPhoto,
-              partners,
-              cleanCnpj,
-              fullName || cnpjInfo?.razaoSocial || ''
-            );
+          // 2. Validação do Documento do Sócio (RG / CNH) contra o QSA e CNPJ
+          if (docPartnerPhoto) {
+            let partnerCheck = docPartnerPhotoValidation;
+            if (!partnerCheck || !partnerCheck.isValid) {
+              partnerCheck = await validatePartnerDocument(
+                docPartnerPhoto,
+                partners,
+                cleanCnpj,
+                fullName || cnpjInfo?.razaoSocial || ''
+              );
+            }
+
+            if (!partnerCheck.isValid) {
+              setPartnerMismatchData({
+                title: 'O cadastro não foi concluído',
+                subtitle: 'Divergência identificada no Quadro Societário (QSA)',
+                reasons: partnerCheck.reasons || [partnerCheck.message || 'O documento anexado não pertence a nenhum dos sócios do CNPJ.'],
+                authorizedPartners: partnerCheck.authorizedPartners || partners.map(p => p.nome || p.nome_socio).filter(Boolean),
+                buttonText: 'Reenviar Documentos do Sócio',
+                hideReupload: false,
+                shouldResetForm: false
+              });
+              setShowPartnerMismatchModal(true);
+              setIsValidatingPartnerDoc(false);
+              return;
+            }
           }
-
-          if (!partnerCheck.isValid) {
-            setPartnerMismatchData({
-              title: 'O cadastro não foi concluído',
-              subtitle: 'Divergência identificada no Quadro Societário (QSA)',
-              reasons: partnerCheck.reasons || [partnerCheck.message || 'O documento anexado não pertence a nenhum dos sócios do CNPJ.'],
-              authorizedPartners: partnerCheck.authorizedPartners || partners.map(p => p.nome || p.nome_socio).filter(Boolean),
-              buttonText: 'Reenviar Documentos do Sócio',
-              hideReupload: false,
-              shouldResetForm: false
-            });
-            setShowPartnerMismatchModal(true);
-            setIsValidatingPartnerDoc(false);
-            return;
-          }
-        }
-
-        // 3. Validação do SINTEGRA / Inscrição Estadual (SEFAZ) - COMENTADO TEMPORARIAMENTE
-        /*
-        let sintegraRes = bureauAuditResultRef.current?.data?.sintegra;
-        if (!sintegraRes && bureauAuditPromiseRef.current) {
-          const bRes = await bureauAuditPromiseRef.current;
-          if (bRes?.data?.sintegra) {
-            sintegraRes = bRes.data.sintegra;
-          }
-        }
-        if (!sintegraRes) {
-          sintegraRes = await consultarSintegra(cleanCnpj, ufState);
-        }
-
-        const sitClean = String(sintegraRes?.situacaoCadastral || '').trim().toLowerCase();
-        const isHabilitado = Boolean(
-          sintegraRes &&
-          sintegraRes.success &&
-          ['habilitado', 'ativo', 'ativa'].includes(sitClean)
-        );
-
-        if (!isHabilitado) {
-          const sitDesc = sintegraRes?.situacaoCadastral || sintegraRes?.error || 'Não Habilitado';
-          setPartnerMismatchData({
-            title: 'O cadastro não foi concluído',
-            subtitle: 'Divergência identificada na validação cadastral (SINTEGRA)',
-            reasons: [
-              `Situação Cadastral no SINTEGRA: "${sitDesc}".`,
-              'O cadastro como Pessoa Jurídica (PJ) exige que a Situação Cadastral no SINTEGRA conste como "Habilitado" ou "Ativo".',
-              `A situação atual ("${sitDesc}") impede a conclusão do cadastro no estado de ${sintegraRes?.uf || ufState}.`
-            ],
-            authorizedPartners: [],
-            hideReupload: true,
-            closeButtonText: 'Fechar formulário',
-            shouldResetForm: true
-          });
-          setShowPartnerMismatchModal(true);
+        } catch (checkErr) {
+          console.warn('Erro ao validar documentos antecipadamente:', checkErr);
+        } finally {
           setIsValidatingPartnerDoc(false);
-          return;
         }
-
-        sintegraResultRef.current = sintegraRes;
-        */
-      } catch (checkErr) {
-        console.warn('Erro ao validar documentos antecipadamente:', checkErr);
-      } finally {
-        setIsValidatingPartnerDoc(false);
       }
-    }
 
-    // Validação de CRMV (Situação no CFMV, Cruzamento com CPF e Documento Anexado) para Pessoa Física
-    if (personType === 'PF') {
-      setIsValidatingPartnerDoc(true);
-      try {
-        // 1. Checagem de situação ativa no CFMV e cruzamento com CPF via Infosimples
-        let crmvRes = crmvData;
-        if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
-          crmvRes = await handleCrmvBlur(crmv);
-        }
-        if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
-          setPartnerMismatchData({
-            title: 'O cadastro não foi concluído',
-            subtitle: 'Divergência identificada no Conselho de Medicina Veterinária (CFMV)',
-            reasons: [
-              crmvRes?.error || 'Não foi possível confirmar a regularidade do CRMV ou houve divergência com o CPF informado.',
-              'O cadastro como Pessoa Física exige registro profissional ATIVO no CRMV e correspondente ao CPF do titular.',
-              `Profissional consultado: ${crmvRes?.nome || fullName || 'Não identificado'}.`
-            ],
-            authorizedPartners: [],
-            hideReupload: true,
-            closeButtonText: 'Fechar e revisar CRMV',
-            shouldResetForm: false
-          });
-          setShowPartnerMismatchModal(true);
-          setIsValidatingPartnerDoc(false);
-          return;
-        }
-
-        // 2. Cruzamento do documento anexado do CRMV contra o CRMV informado no formulário
-        if (docCRMV && crmv) {
-          let crmvDocCheck = docCRMVValidation;
-          if (!crmvDocCheck || !crmvDocCheck.isValid) {
-            crmvDocCheck = await validateCrmvAttachment(docCRMV, {
-              expectedCrmv: crmv,
-              expectedName: fullName,
-              expectedCpf: documentNumber,
-              expectedUf: state || 'SP'
-            });
+      // Validação de CRMV (Situação no CFMV, Cruzamento com CPF e Documento Anexado) para Pessoa Física
+      if (personType === 'PF') {
+        setIsValidatingPartnerDoc(true);
+        try {
+          // 1. Checagem de situação ativa no CFMV e cruzamento com CPF via Infosimples
+          let crmvRes = crmvData;
+          if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
+            crmvRes = await handleCrmvBlur(crmv);
           }
-
-          if (!crmvDocCheck.isValid) {
+          if (!crmvRes || !crmvRes.isValid || !crmvRes.isAtivo || crmvRes.isMismatch) {
             setPartnerMismatchData({
               title: 'O cadastro não foi concluído',
-              subtitle: 'Divergência identificada no Anexo do CRMV',
-              reasons: crmvDocCheck.reasons || [crmvDocCheck.message || 'Divergência no anexo do CRMV.'],
+              subtitle: 'Divergência identificada no Conselho de Medicina Veterinária (CFMV)',
+              reasons: [
+                crmvRes?.error || 'Não foi possível confirmar a regularidade do CRMV ou houve divergência com o CPF informado.',
+                'O cadastro como Pessoa Física exige registro profissional ATIVO no CRMV e correspondente ao CPF do titular.',
+                `Profissional consultado: ${crmvRes?.nome || fullName || 'Não identificado'}.`
+              ],
               authorizedPartners: [],
-              buttonText: 'Reenviar Documento do CRMV',
-              hideReupload: false,
+              hideReupload: true,
+              closeButtonText: 'Fechar e revisar CRMV',
               shouldResetForm: false
             });
             setShowPartnerMismatchModal(true);
             setIsValidatingPartnerDoc(false);
             return;
           }
+
+          // 2. Cruzamento do documento anexado do CRMV contra o CRMV informado no formulário
+          if (docCRMV && crmv) {
+            let crmvDocCheck = docCRMVValidation;
+            if (!crmvDocCheck || !crmvDocCheck.isValid) {
+              crmvDocCheck = await validateCrmvAttachment(docCRMV, {
+                expectedCrmv: crmv,
+                expectedName: fullName,
+                expectedCpf: documentNumber,
+                expectedUf: state || 'SP'
+              });
+            }
+
+            if (!crmvDocCheck.isValid) {
+              setPartnerMismatchData({
+                title: 'O cadastro não foi concluído',
+                subtitle: 'Divergência identificada no Anexo do CRMV',
+                reasons: crmvDocCheck.reasons || [crmvDocCheck.message || 'Divergência no anexo do CRMV.'],
+                authorizedPartners: [],
+                buttonText: 'Reenviar Documento do CRMV',
+                hideReupload: false,
+                shouldResetForm: false
+              });
+              setShowPartnerMismatchModal(true);
+              setIsValidatingPartnerDoc(false);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Erro ao validar CRMV antecipadamente:', err);
+        } finally {
+          setIsValidatingPartnerDoc(false);
         }
-      } catch (err) {
-        console.warn('Erro ao validar CRMV antecipadamente:', err);
-      } finally {
-        setIsValidatingPartnerDoc(false);
       }
-    }
 
-    // Checagem prévia se o documento informado já possui cadastro APROVADO no sistema
-    const cleanDocToSubmit = unmask(documentNumber);
-    const dupCheck = await checkExistingApprovedClient(cleanDocToSubmit);
-    if (dupCheck.exists) {
-      setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
-      setSubmitError('Este CNPJ/CPF já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
+      // Checagem prévia se o documento informado já possui cadastro APROVADO no sistema
+      const cleanDocToSubmit = unmask(documentNumber);
+      const dupCheck = await checkExistingApprovedClient(cleanDocToSubmit);
+      if (dupCheck.exists) {
+        setDuplicateApprovedClient(dupCheck.client || { status: 'aprovado' });
+        setSubmitError('Este CNPJ/CPF já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
 
-    // Checagem prévia de Rate Limiting por IP antes de prosseguir (5 tentativas a cada 5 minutos)
-    const rateCheck = await checkRateLimit(null, 5, 5);
-    if (!rateCheck.allowed) {
-      setSubmitError(rateCheck.message || 'Limite de cadastros excedido para este dispositivo/IP. Por segurança, aguarde alguns minutos antes de tentar novamente.');
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      return;
-    }
+      // Checagem prévia de Rate Limiting por IP antes de prosseguir (5 tentativas a cada 5 minutos)
+      const rateCheck = await checkRateLimit(null, 5, 5);
+      if (!rateCheck.allowed) {
+        setSubmitError(rateCheck.message || 'Limite de cadastros excedido para este dispositivo/IP. Por segurança, aguarde alguns minutos antes de tentar novamente.');
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        return;
+      }
 
-    // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
-    setShowPasswordModal(true);
+      // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
+      setShowPasswordModal(true);
+    } catch (submitPrepErr) {
+      console.warn('Erro na preparação do envio:', submitPrepErr);
+    } finally {
+      setIsPreparingSubmit(false);
+    }
   };
 
   // Envio final do formulário com e-mail e senha informados na modal
@@ -2539,14 +2505,16 @@ export const RegistrationForm = ({ onSuccess }) => {
             {/* ========================================================================= */}
             <button
               type="submit"
-              disabled={isSubmitting || isValidatingPartnerDoc}
+              disabled={isSubmitting || isValidatingPartnerDoc || isPreparingSubmit}
               style={{ backgroundColor: '#1d5b79', color: '#ffffff' }}
               className="w-full py-4 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] active:scale-[0.99] !text-white font-bold text-base sm:text-lg tracking-wide shadow-lg shadow-[#1d5b79]/30 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
             >
-              {isValidatingPartnerDoc ? (
+              {isPreparingSubmit || isValidatingPartnerDoc ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin text-white" />
-                  <span className="text-white font-bold">Validando documento e sócios...</span>
+                  <span className="text-white font-bold">
+                    {isValidatingPartnerDoc ? 'Validando documento e sócios...' : 'Processando cadastro...'}
+                  </span>
                 </>
               ) : isSubmitting ? (
                 <>
