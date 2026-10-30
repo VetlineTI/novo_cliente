@@ -111,11 +111,17 @@ export const getSecureDocumentUrl = async (rawUrl, expiresInSeconds = 7200) => {
 export const uploadDocument = async (file, folder = 'geral', clientDocument = '') => {
   if (!file) return null;
 
-  const cleanDoc = (clientDocument || '').replace(/\D/g, '') || 'geral';
+  let cleanDoc = (clientDocument || '').replace(/\D/g, '');
+  if (!cleanDoc || cleanDoc.length < 11) {
+    cleanDoc = `${Date.now()}`.padEnd(11, '0').slice(0, 11);
+  }
+  const cleanFolder = (folder || 'geral').replace(/[^a-zA-Z0-9_-]/g, '_');
   const bucketName = 'novos_clientes';
-  const fileExt = file.name ? file.name.split('.').pop() : 'jpg';
-  const sanitizedFileName = file.name ? file.name.replace(/[^a-zA-Z0-9._-]/g, '_') : `doc_${Date.now()}.${fileExt}`;
-  const filePath = `${cleanDoc}/${folder}/${Date.now()}_${sanitizedFileName}`;
+  const fileExt = file.name ? file.name.split('.').pop().toLowerCase() : 'jpg';
+  const sanitizedFileName = (file.name || `doc_${Date.now()}`)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `${cleanDoc}/${cleanFolder}/${Date.now()}_${sanitizedFileName}`;
 
   // Se o Supabase estiver configurado
   if (isSupabaseConfigured && supabase) {
@@ -124,27 +130,22 @@ export const uploadDocument = async (file, folder = 'geral', clientDocument = ''
         .from(bucketName)
         .upload(filePath, file, {
           cacheControl: '3600',
-          upsert: true
+          upsert: false,
+          contentType: file.type || undefined
         });
 
-      if (data?.path) {
-        // Tenta gerar Signed URL ou URL de storage segura
-        const { data: signedData } = await supabase.storage
-          .from(bucketName)
-          .createSignedUrl(data.path, 7200);
-
-        const { data: publicUrlData } = supabase.storage
-          .from(bucketName)
-          .getPublicUrl(data.path);
-
-        return signedData?.signedUrl || publicUrlData?.publicUrl || `supabase://${bucketName}/${data.path}`;
+      if (!error && data?.path) {
+        return `supabase://${bucketName}/${data.path}`;
+      }
+      if (error) {
+        console.warn('Aviso no upload para Supabase Storage:', error.message);
       }
     } catch (err) {
       console.warn('Erro no upload para Supabase Storage:', err);
     }
   }
 
-  // Modo Local/Demonstração: Converte o arquivo real para Data URL para visualização 100% fiel no admin
+  // Modo Local/Demonstração ou fallback: Converte o arquivo real para Data URL para visualização 100% fiel no admin
   try {
     const dataUrl = await fileToDataUrl(file);
     return dataUrl;

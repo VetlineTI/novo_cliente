@@ -108,6 +108,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/migrate_from_public.sql` | Script de migração segura de dados de `public.data_new_client` para `novo_cliente.data_new_cliente`. |
 | `supabase/fix_rls_security.sql` | Script SQL de correção definitiva de segurança e LGPD nas políticas de RLS de `data_new_cliente` e `admin_profiles` (bloqueio total de escalonamento de privilégios, remoção de UPDATE/DELETE anônimo e RPC segura). |
 | `supabase/fechar_brechas_finais.sql` | Script SQL consolidado para fechar definitivamente o escalonamento de privilégios: revoga `ensure_client_auth_user` para `anon`, blinda `admin_profiles` contra auto-promoção e fecha a view `data_new_client`. |
+| `supabase/corrigir_insert_formulario.sql` | Script SQL de correção de permissões de INSERT e RPCs públicas (`insert_novo_cliente`, `check_client_already_approved` e upload no bucket `novos_clientes`) mantendo o RLS blindado contra leitura e alteração. |
 | `supabase/fix_rate_limit_and_storage.sql` | Script SQL para rate limiting real capturado via cabeçalhos HTTP do servidor (`request.headers`), bloqueio de bypass por IP vazio, validação automática na RPC `insert_novo_cliente` e restrição de pastas no Supabase Storage. |
 | `supabase/migrate_functions_to_novo_cliente.sql` | Script SQL definitivo de blindagem das RPCs no schema `novo_cliente`: checagem estrita de privilégios (`novo_cliente.is_admin()`), remoção de `EXECUTE` para `anon`, correção contra sequestro de contas em `ensure_client_auth_user` e eliminação de RPCs obsoletas. |
 | `supabase/restore_auth_users_view.sql` | Script SQL para recriar/restaurar a view `public.auth_users_view` com permissões adequadas de consulta. |
@@ -241,11 +242,12 @@ Para utilizar os templates com as cores e visual profissional da Vetline:
 
 O sistema foi desenhado para operar **exclusivamente no schema `novo_cliente`** (tabela `novo_cliente.data_new_client`), sem salvar dados de clientes no schema `public`.
 
-Para garantir o funcionamento completo no seu Supabase:
+Para garantir o funcionamento completo e seguro no seu Supabase:
 
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
-3. Abra ou copie o conteúdo do arquivo [`supabase/schema.sql`](file:///supabase/schema.sql) e [`supabase/add_bureau_columns.sql`](file:///supabase/add_bureau_columns.sql);
+3. Para eliminar todos os erros de console e garantir 100% de conformidade com as regras de segurança Vetline, execute o script consolidado:
+   - [`supabase/corrigir_erros_console.sql`](file:///supabase/corrigir_erros_console.sql): Configuração de RPCs blindadas (`check_client_already_approved`, `insert_novo_cliente`), Rate Limiting no servidor com captura de IP, RLS seguro e configuração de bucket privado com upload controlado.
 4. Clique no botão verde **Run** (Executar).
 
 > 💡 **Dica (Opcional)**: Caso queira expor o schema `novo_cliente` diretamente para consultas REST além das funções RPC, acesse no Supabase: **Project Settings > API > Data API Settings > "Exposed schemas"** e adicione `novo_cliente`.
