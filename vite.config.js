@@ -17,7 +17,8 @@ export default defineConfig(({ mode }) => {
             req.url.startsWith('/api/send-whatsapp-signup') ||
             req.url.startsWith('/api/telecom-lookup') ||
             req.url.startsWith('/api/directd') ||
-            req.url.startsWith('/api/infosimples')
+            req.url.startsWith('/api/infosimples') ||
+            req.url.startsWith('/api/aprovar-cliente')
           )) {
             try {
               const urlObj = new URL(req.url, 'http://localhost');
@@ -54,6 +55,9 @@ export default defineConfig(({ mode }) => {
                 } else if (req.url.startsWith('/api/infosimples')) {
                   const { default: infosimplesHandler } = await import('./api/infosimples.js');
                   await infosimplesHandler(req, res);
+                } else if (req.url.startsWith('/api/aprovar-cliente')) {
+                  const { default: aprovarHandler } = await import('./api/aprovar-cliente.js');
+                  await aprovarHandler(req, res);
                 } else {
                   const { default: handler } = await import('./api/send-whatsapp-signup.js');
                   await handler(req, res);
