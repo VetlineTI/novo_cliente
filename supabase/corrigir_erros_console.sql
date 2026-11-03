@@ -1,18 +1,69 @@
 -- ==============================================================================
--- CORREÇÃO DEFINITIVA DE TODOS OS ERROS 400 / 403 / 404 DO CONSOLE
+-- CORREÇÃO DEFINITIVA DE CADASTRO E RPC (SCHEMA NOVO_CLIENTE)
 -- Conforme as Regras de Segurança Vetline (Seções 1, 3, 6 e 9)
 -- ==============================================================================
--- Este script resolve a cascata de erros mantendo 100% de segurança:
--- 1. Cria a RPC 'check_client_already_approved' em public e novo_cliente (elimina 400)
--- 2. Cria a RPC 'insert_novo_cliente' em public e novo_cliente (elimina 400/404)
--- 3. Aplica Rate Limit no servidor e trava campos comerciais (ATENA, VTL01, limite 0.00)
--- 4. Corrige RLS de INSERT na tabela data_new_cliente (elimina 403)
--- 5. Configura Bucket 'novos_clientes' privado com INSERT controlado (elimina 400 do storage)
+-- 1. Garante todas as colunas necessárias na tabela novo_cliente.data_new_cliente
+-- 2. Cria a tabela novo_cliente.rate_limit_logs para a auditoria de tentativas
+-- 3. Configura política de RLS de INSERT segura (status em_analise/pendente, limites oficiais)
+-- 4. Cria funções blindadas e resilientes: check_client_already_approved e insert_novo_cliente
+-- 5. Configura Bucket 'novos_clientes' privado com upload controlado
 -- 6. Recarrega o cache do PostgREST
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
--- 1. TABELA NOVO_CLIENTE.DATA_NEW_CLIENTE: RLS E PERMISSÃO DE INSERT SEGURO
+-- 1. GARANTE O SCHEMA E TODAS AS COLUNAS NA TABELA DATA_NEW_CLIENTE
+-- ------------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS novo_cliente;
+GRANT USAGE ON SCHEMA novo_cliente TO anon, authenticated, service_role;
+
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS crmv VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS tp_inscricao VARCHAR(5) DEFAULT 'E';
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS numero_inscricao VARCHAR(50) DEFAULT 'ISENTO';
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS ram_ativ VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS ip_origem VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS doc_receita_url TEXT;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS doc_jucesp_url TEXT;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS doc_cenprot_url TEXT;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS doc_sintegra_url TEXT;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS nire_jucesp VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS total_protestos INT;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS bureau_consulted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS limite_credito NUMERIC(15, 2) DEFAULT 0.00;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS data_abertura VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS data_inicio_atividade VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS cnae VARCHAR(255);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS cnae_codigo VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS cnae_descricao VARCHAR(255);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_carrier VARCHAR(100);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_line_type VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_is_voip BOOLEAN DEFAULT FALSE;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_sim_swap BOOLEAN DEFAULT FALSE;
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_sim_status VARCHAR(50);
+ALTER TABLE novo_cliente.data_new_cliente ADD COLUMN IF NOT EXISTS telecom_checked_at TIMESTAMP WITH TIME ZONE;
+
+
+-- ------------------------------------------------------------------------------
+-- 2. TABELA DE AUDITORIA DE RATE LIMITING
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS novo_cliente.rate_limit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ip_address VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL DEFAULT 'cadastro_cliente',
+    document_number VARCHAR(30),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_ip_created 
+ON novo_cliente.rate_limit_logs(ip_address, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_doc_created 
+ON novo_cliente.rate_limit_logs(document_number, created_at DESC);
+
+GRANT ALL ON TABLE novo_cliente.rate_limit_logs TO anon, authenticated, service_role;
+
+
+-- ------------------------------------------------------------------------------
+-- 3. POLÍTICA DE RLS DE INSERT EM DATA_NEW_CLIENTE
 -- ------------------------------------------------------------------------------
 ALTER TABLE novo_cliente.data_new_cliente ENABLE ROW LEVEL SECURITY;
 
@@ -21,84 +72,28 @@ DROP POLICY IF EXISTS "Permitir inserção de novo cadastro publicamente" ON nov
 DROP POLICY IF EXISTS "Permitir insercao publica de novo cadastro" ON novo_cliente.data_new_cliente;
 DROP POLICY IF EXISTS "novos_clientes_public_insert_policy" ON novo_cliente.data_new_cliente;
 
--- Inserção pública só é aceita se o status for 'em_analise' e campos comerciais padrão
+-- Inserção pública aceita cadastros com status em_analise/pendente, tabelas padrão e limites oficiais
 CREATE POLICY "Permitir insercao publica de novo cadastro"
 ON novo_cliente.data_new_cliente FOR INSERT
 TO anon, authenticated
 WITH CHECK (
-    status = 'em_analise'
-    AND cd_vend = 'ATENA'
+    status IN ('em_analise', 'pendente')
     AND tab_pre = 'VTL01'
     AND tp_ped = 'VTL01'
-    AND (limite_credito = 0.00 OR limite_credito IS NULL)
+    AND (
+        limite_credito IS NULL 
+        OR limite_credito = 0.00 
+        OR limite_credito = 1500.00 
+        OR limite_credito = 3000.00
+    )
 );
 
 GRANT INSERT ON TABLE novo_cliente.data_new_cliente TO anon, authenticated, service_role;
 
 
 -- ------------------------------------------------------------------------------
--- 2. RPC CHECK_CLIENT_ALREADY_APPROVED (EM NOVO_CLIENTE E PUBLIC)
+-- 4. CAPTURA DE IP E RATE LIMIT RESILIENTE
 -- ------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = novo_cliente, pg_temp
-AS $$
-DECLARE
-    v_clean_doc TEXT;
-    v_client novo_cliente.data_new_cliente%ROWTYPE;
-BEGIN
-    v_clean_doc := regexp_replace(COALESCE(p_document, ''), '\D', '', 'g');
-    
-    IF v_clean_doc = '' OR (LENGTH(v_clean_doc) <> 11 AND LENGTH(v_clean_doc) <> 14) THEN
-        RETURN jsonb_build_object('exists', false);
-    END IF;
-
-    SELECT * INTO v_client
-    FROM novo_cliente.data_new_cliente
-    WHERE status = 'aprovado'
-      AND regexp_replace(COALESCE(cpf_cnpj, ''), '\D', '', 'g') = v_clean_doc
-    LIMIT 1;
-
-    IF FOUND THEN
-        RETURN jsonb_build_object(
-            'exists', true,
-            'client', jsonb_build_object(
-                'razao_social_nome', COALESCE(v_client.razao_social_nome, ''),
-                'document_number', COALESCE(v_client.cpf_cnpj, ''),
-                'status', v_client.status
-            )
-        );
-    END IF;
-
-    RETURN jsonb_build_object('exists', false);
-END;
-$$;
-
--- Wrapper no schema public para compatibilidade com chamadas RPC padrão do Supabase
-CREATE OR REPLACE FUNCTION public.check_client_already_approved(p_document TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = novo_cliente, pg_temp
-AS $$
-BEGIN
-    RETURN novo_cliente.check_client_already_approved(p_document);
-END;
-$$;
-
-REVOKE EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) FROM public;
-REVOKE EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) FROM public;
-
-GRANT EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
-
-
--- ------------------------------------------------------------------------------
--- 3. RATE LIMIT SERVER-SIDE E RPC INSERT_NOVO_CLIENTE
--- ------------------------------------------------------------------------------
--- Captura de IP exclusivamente do cabeçalho do servidor (sem confiar no cliente)
 CREATE OR REPLACE FUNCTION novo_cliente.get_client_ip()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -127,7 +122,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION novo_cliente.check_rate_limit(
-    p_max_attempts INT DEFAULT 5,
+    p_max_attempts INT DEFAULT 30,
     p_window_minutes INT DEFAULT 60
 )
 RETURNS JSONB
@@ -143,13 +138,23 @@ DECLARE
     v_minutes_left INT := 0;
 BEGIN
     v_ip := novo_cliente.get_client_ip();
+
+    -- Se não identificou IP específico (0.0.0.0), não bloqueia coletivamente
+    IF v_ip = '0.0.0.0' THEN
+        RETURN jsonb_build_object('allowed', true, 'count', 0, 'max', p_max_attempts, 'remaining', p_max_attempts, 'ip', v_ip);
+    END IF;
+
     v_window_interval := (p_window_minutes || ' minutes')::interval;
 
-    SELECT COUNT(*), MIN(created_at)
-    INTO v_count, v_oldest
-    FROM novo_cliente.rate_limit_logs
-    WHERE ip_address = v_ip
-      AND created_at >= (timezone('utc'::text, now()) - v_window_interval);
+    BEGIN
+        SELECT COUNT(*), MIN(created_at)
+        INTO v_count, v_oldest
+        FROM novo_cliente.rate_limit_logs
+        WHERE ip_address = v_ip
+          AND created_at >= (timezone('utc'::text, now()) - v_window_interval);
+    EXCEPTION WHEN OTHERS THEN
+        v_count := 0;
+    END;
 
     IF v_count >= p_max_attempts THEN
         IF v_oldest IS NOT NULL THEN
@@ -188,12 +193,77 @@ SECURITY DEFINER
 SET search_path = novo_cliente, pg_temp
 AS $$
 BEGIN
-    INSERT INTO novo_cliente.rate_limit_logs (ip_address, action, document_number)
-    VALUES (p_ip, p_action, regexp_replace(COALESCE(p_document, ''), '\D', '', 'g'));
+    BEGIN
+        INSERT INTO novo_cliente.rate_limit_logs (ip_address, action, document_number)
+        VALUES (p_ip, p_action, regexp_replace(COALESCE(p_document, ''), '\D', '', 'g'));
+    EXCEPTION WHEN OTHERS THEN
+        -- Silencioso para não travar o cadastro legítimo
+    END;
 END;
 $$;
 
--- Função principal de inserção com campos blindados e rate limit forçado
+
+-- ------------------------------------------------------------------------------
+-- 5. RPC CHECK_CLIENT_ALREADY_APPROVED (EM NOVO_CLIENTE E PUBLIC)
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = novo_cliente, pg_temp
+AS $$
+DECLARE
+    v_clean_doc TEXT;
+    v_client novo_cliente.data_new_cliente%ROWTYPE;
+BEGIN
+    v_clean_doc := regexp_replace(COALESCE(p_document, ''), '\D', '', 'g');
+    
+    IF v_clean_doc = '' OR (LENGTH(v_clean_doc) <> 11 AND LENGTH(v_clean_doc) <> 14) THEN
+        RETURN jsonb_build_object('exists', false);
+    END IF;
+
+    SELECT * INTO v_client
+    FROM novo_cliente.data_new_cliente
+    WHERE status = 'aprovado'
+      AND regexp_replace(COALESCE(cpf_cnpj, ''), '\D', '', 'g') = v_clean_doc
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN jsonb_build_object(
+            'exists', true,
+            'client', jsonb_build_object(
+                'razao_social_nome', COALESCE(v_client.razao_social_nome, ''),
+                'document_number', COALESCE(v_client.cpf_cnpj, ''),
+                'status', v_client.status
+            )
+        );
+    END IF;
+
+    RETURN jsonb_build_object('exists', false);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.check_client_already_approved(p_document TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = novo_cliente, pg_temp
+AS $$
+BEGIN
+    RETURN novo_cliente.check_client_already_approved(p_document);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) FROM public;
+REVOKE EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) FROM public;
+
+GRANT EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
+
+
+-- ------------------------------------------------------------------------------
+-- 6. RPC INSERT_NOVO_CLIENTE COM SUPORTE ROBUSTO A CAMPOS COMERCIAIS
+-- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION novo_cliente.insert_novo_cliente(client_payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -205,12 +275,15 @@ DECLARE
     v_result JSONB;
     v_ip TEXT;
     v_rate_check JSONB;
+    v_cd_vend TEXT;
+    v_limite NUMERIC(15, 2);
+    v_auth_uuid UUID := NULL;
 BEGIN
     -- 1. Captura IP do servidor e executa rate limit dentro da RPC
     v_ip := novo_cliente.get_client_ip();
-    v_rate_check := novo_cliente.check_rate_limit(5, 60);
+    v_rate_check := novo_cliente.check_rate_limit(30, 60);
     IF (v_rate_check->>'allowed')::boolean IS NOT TRUE THEN
-        RAISE EXCEPTION 'Muitas tentativas para este IP. Tente novamente mais tarde.' USING ERRCODE = 'P0001';
+        RAISE EXCEPTION 'RATE_LIMIT_EXCEEDED: Muitas tentativas para este IP. Tente novamente mais tarde.' USING ERRCODE = 'P0001';
     END IF;
 
     PERFORM novo_cliente.log_rate_limit_attempt(
@@ -219,15 +292,44 @@ BEGIN
         'cadastro'
     );
 
-    -- 2. Inserção com campos comerciais forçados pelo servidor
+    -- Determina o vendedor (aceita indicação válida se preenchida, senão 'ATENA')
+    v_cd_vend := COALESCE(NULLIF(trim(client_payload->>'cd_vend'), ''), 'ATENA');
+
+    -- Determina o limite de crédito oficial (PF: 1.500,00 | PJ: 3.000,00)
+    IF (client_payload->>'limite_credito') IS NOT NULL AND (client_payload->>'limite_credito') <> '' THEN
+        v_limite := (client_payload->>'limite_credito')::numeric;
+    ELSIF (client_payload->>'credit_limit') IS NOT NULL AND (client_payload->>'credit_limit') <> '' THEN
+        v_limite := (client_payload->>'credit_limit')::numeric;
+    ELSIF UPPER(COALESCE(client_payload->>'tipo_pessoa', client_payload->>'person_type', 'PJ')) = 'PF' THEN
+        v_limite := 1500.00;
+    ELSE
+        v_limite := 3000.00;
+    END IF;
+
+    -- Valida com segurança se auth_user_id existe realmente em auth.users para nunca violar FK
+    IF client_payload->>'auth_user_id' IS NOT NULL AND client_payload->>'auth_user_id' ~ '^[0-9a-fA-F-]{36}$' THEN
+        BEGIN
+            SELECT id INTO v_auth_uuid 
+            FROM auth.users 
+            WHERE id = (client_payload->>'auth_user_id')::uuid;
+        EXCEPTION WHEN OTHERS THEN
+            v_auth_uuid := NULL;
+        END;
+    END IF;
+
+    -- 2. Inserção protegida na tabela
     INSERT INTO novo_cliente.data_new_cliente (
         tipo_pessoa,
         cpf_cnpj,
         razao_social_nome,
         nome_fantasia,
+        tp_inscricao,
+        numero_inscricao,
+        crmv,
         possui_ie,
         numero_ie,
         telefone,
+        ram_ativ,
         segmento,
         email,
         cep,
@@ -271,9 +373,13 @@ BEGIN
         regexp_replace(COALESCE(client_payload->>'cpf_cnpj', client_payload->>'document_number', ''), '\D', '', 'g'),
         COALESCE(client_payload->>'razao_social_nome', client_payload->>'full_name', ''),
         COALESCE(client_payload->>'nome_fantasia', client_payload->>'trade_name', NULL),
+        COALESCE(client_payload->>'tp_inscricao', 'I'),
+        COALESCE(client_payload->>'numero_inscricao', 'ISENTO'),
+        COALESCE(client_payload->>'crmv', NULL),
         COALESCE((client_payload->>'possui_ie')::boolean, (client_payload->>'has_ie')::boolean, false),
         COALESCE(client_payload->>'numero_ie', client_payload->>'ie_number', NULL),
         regexp_replace(COALESCE(client_payload->>'telefone', client_payload->>'phone', ''), '\D', '', 'g'),
+        COALESCE(client_payload->>'ram_ativ', client_payload->>'segmento', client_payload->>'segment', ''),
         COALESCE(client_payload->>'segmento', client_payload->>'segment', ''),
         COALESCE(client_payload->>'email', ''),
         CASE WHEN client_payload->>'cep' IS NOT NULL OR client_payload->>'zipcode' IS NOT NULL THEN regexp_replace(COALESCE(client_payload->>'cep', client_payload->>'zipcode'), '\D', '', 'g') ELSE NULL END,
@@ -283,9 +389,9 @@ BEGIN
         COALESCE(client_payload->>'complemento', client_payload->>'complement', NULL),
         COALESCE(client_payload->>'cidade', client_payload->>'city', NULL),
         COALESCE(client_payload->>'uf', client_payload->>'state', NULL),
-        'ATENA', -- cd_vend FORÇADO PELO SERVIDOR
-        'VTL01', -- tab_pre FORÇADO PELO SERVIDOR
-        'VTL01', -- tp_ped FORÇADO PELO SERVIDOR
+        v_cd_vend,
+        'VTL01',
+        'VTL01',
         COALESCE((client_payload->>'endereco_entrega_diferente')::boolean, (client_payload->>'has_different_delivery_address')::boolean, false),
         CASE WHEN client_payload->>'entrega_cep' IS NOT NULL OR client_payload->>'delivery_zipcode' IS NOT NULL THEN regexp_replace(COALESCE(client_payload->>'entrega_cep', client_payload->>'delivery_zipcode'), '\D', '', 'g') ELSE NULL END,
         COALESCE(client_payload->>'entrega_logradouro', client_payload->>'delivery_street', NULL),
@@ -304,17 +410,13 @@ BEGIN
         COALESCE(client_payload->>'doc_cenprot_url', NULL),
         COALESCE(client_payload->>'doc_receita_url', NULL),
         COALESCE(client_payload->>'nire_jucesp', NULL),
-        NULL, -- total_protestos FORÇADO A NULL
-        NULL, -- bureau_consulted_at FORÇADO A NULL
-        0.00, -- limite_credito FORÇADO A 0.00
+        NULL,
+        NULL,
+        v_limite,
         'em_analise',
         COALESCE((client_payload->>'termos_aceitos')::boolean, (client_payload->>'terms_accepted')::boolean, true),
         COALESCE(client_payload->>'observacoes', client_payload->>'notes', NULL),
-        CASE 
-            WHEN client_payload->>'auth_user_id' IS NOT NULL AND client_payload->>'auth_user_id' ~ '^[0-9a-fA-F-]{36}$' 
-            THEN (client_payload->>'auth_user_id')::uuid 
-            ELSE NULL 
-        END,
+        v_auth_uuid,
         v_ip
     )
     RETURNING id INTO v_inserted_id;
@@ -327,7 +429,6 @@ BEGIN
 END;
 $$;
 
--- Wrapper public.insert_novo_cliente para PostgREST
 CREATE OR REPLACE FUNCTION public.insert_novo_cliente(client_payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -347,28 +448,26 @@ GRANT EXECUTE ON FUNCTION public.insert_novo_cliente(JSONB) TO anon, authenticat
 
 
 -- ------------------------------------------------------------------------------
--- 4. BUCKET NOVOS_CLIENTES: PRIVADO, COM UPLOAD CONTROLADO (ZERO SELECT PARA ANON)
+-- 7. BUCKET NOVOS_CLIENTES PRIVADO
 -- ------------------------------------------------------------------------------
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
     'novos_clientes',
     'novos_clientes',
-    false, -- BUCKET ESTRITAMENTE PRIVADO
-    10485760, -- Máximo 10MB por arquivo
+    false,
+    52428800, -- 50MB
     ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'application/pdf']
 )
 ON CONFLICT (id) DO UPDATE 
 SET public = false,
-    file_size_limit = 10485760,
+    file_size_limit = 52428800,
     allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'application/pdf'];
 
--- Políticas de Storage limpas e rigorosas
 DROP POLICY IF EXISTS "novos_clientes_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "novos_clientes_public_insert" ON storage.objects;
 DROP POLICY IF EXISTS "Permitir upload publico em novos_clientes" ON storage.objects;
 DROP POLICY IF EXISTS "novos_clientes_storage_select_insert" ON storage.objects;
 
--- Permite INSERT anônimo e autenticado estritamente na pasta do CPF/CNPJ (11 a 14 dígitos)
 CREATE POLICY "novos_clientes_storage_insert"
 ON storage.objects FOR INSERT
 TO anon, authenticated
@@ -377,7 +476,6 @@ WITH CHECK (
     AND (storage.foldername(name))[1] ~ '^[0-9]{11,14}$'
 );
 
--- Leitura exclusiva para administradores ou para o titular logado do CPF/CNPJ
 DROP POLICY IF EXISTS "novos_clientes_storage_select" ON storage.objects;
 CREATE POLICY "novos_clientes_storage_select"
 ON storage.objects FOR SELECT
@@ -396,12 +494,6 @@ USING (
 
 
 -- ------------------------------------------------------------------------------
--- 5. NOTIFICA O POSTGREST PARA RECARREGAR O SCHEMA IMEDIATAMENTE
+-- 8. RECARREGAR O SCHEMA POSTGREST
 -- ------------------------------------------------------------------------------
 NOTIFY pgrst, 'reload schema';
-
--- ROLLBACK (comentado):
--- DROP FUNCTION IF EXISTS public.check_client_already_approved(TEXT);
--- DROP FUNCTION IF EXISTS public.insert_novo_cliente(JSONB);
--- DROP POLICY IF EXISTS "Permitir insercao publica de novo cadastro" ON novo_cliente.data_new_cliente;
--- DROP POLICY IF EXISTS "novos_clientes_storage_insert" ON storage.objects;

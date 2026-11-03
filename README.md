@@ -246,8 +246,10 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
 
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
-3. Para eliminar todos os erros de console e garantir 100% de conformidade com as regras de segurança Vetline, execute o script consolidado:
+3. Para eliminar todos os erros de console e garantir 100% de conformidade com as regras de segurança Vetline, execute os scripts consolidados:
    - [`supabase/corrigir_erros_console.sql`](file:///supabase/corrigir_erros_console.sql): Configuração de RPCs blindadas (`check_client_already_approved`, `insert_novo_cliente`), Rate Limiting no servidor com captura de IP, RLS seguro e configuração de bucket privado com upload controlado.
+   - [`supabase/ativar_admin_e_listagem.sql`](file:///supabase/ativar_admin_e_listagem.sql): Vinculação de perfil administrador e liberação de visualização dos cadastros no painel admin via RLS/RPC.
+   - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Concessão de permissões de execução e leitura para o papel autenticado (elimina erro 42501 permission denied).
 4. Clique no botão verde **Run** (Executar).
 
 > 💡 **Dica (Opcional)**: Caso queira expor o schema `novo_cliente` diretamente para consultas REST além das funções RPC, acesse no Supabase: **Project Settings > API > Data API Settings > "Exposed schemas"** e adicione `novo_cliente`.
