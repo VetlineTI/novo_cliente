@@ -56,7 +56,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - **Pessoa Física (PF)**: Validação de CPF e obrigatoriedade do número e anexo da carteira do CRMV (Médico Veterinário) + Comprovante de Endereço.
 - **Segmentos de Atuação (`ram_ativ` & `descricao`)**: Lista de segmentos carregada dinamicamente da tabela `novo_cliente.segmento` exibindo a `descricao` amigável no formulário e gravando o código `ram_ativ` no banco de dados.
 - **Endereço Principal & Entrega**: Preenchimento automático via CEP (BrasilAPI / ViaCEP).
-- **Vendedor Responsável (`cd_vend`)**: Seleção de vendedor da tabela `public.vendedor` ou padrão `'ATENA'`.
+- **Vendedor Responsável (`cd_vend`)**: Seleção de vendedor ativo do schema `talao` (tabela `talao.vendedor`, via RPC `listar_vendedores`) ou padrão `'ATENA'`. O servidor só grava códigos existentes; valor inválido vira `'ATENA'`.
 
 ### 5. 👑 Painel Administrativo (`/admin`)
 - Rota dedicada para administradores e analistas de cadastro da Vetline.
@@ -247,6 +247,7 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
 3. Para eliminar todos os erros de console e garantir 100% de conformidade com as regras de segurança Vetline, execute os scripts consolidados:
+   - [`supabase/vendedores_talao.sql`](file:///supabase/vendedores_talao.sql): RPC `listar_vendedores()` que expõe ao formulário apenas `cd_vend` + `nome_vendedor` dos vendedores ativos de `talao.vendedor` (sem grant na tabela do outro sistema). **Rodar antes** do script abaixo.
    - [`supabase/corrigir_erros_console.sql`](file:///supabase/corrigir_erros_console.sql): Configuração de RPCs blindadas (`check_client_already_approved`, `insert_novo_cliente`), Rate Limiting no servidor com captura de IP, RLS seguro e configuração de bucket privado com upload controlado.
    - [`supabase/ativar_admin_e_listagem.sql`](file:///supabase/ativar_admin_e_listagem.sql): Vinculação de perfil administrador e liberação de visualização dos cadastros no painel admin via RLS/RPC.
    - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Concessão de permissões de execução e leitura para o papel autenticado (elimina erro 42501 permission denied).

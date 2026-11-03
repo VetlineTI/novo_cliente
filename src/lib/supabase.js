@@ -158,7 +158,7 @@ export const uploadDocument = async (file, folder = 'geral', clientDocument = ''
 let cachedSalespeople = null;
 
 /**
- * Busca a lista de vendedores da tabela public.vendedor (cd_vend, nome_vendedor)
+ * Busca a lista de vendedores ativos do schema talao (via RPC listar_vendedores)
  * @param {boolean} forceRefresh Força atualização ignorando cache
  * @returns {Promise<{success: boolean, data: Array<{cd_vend: string, nome_vendedor: string}>}>}
  */
@@ -169,17 +169,11 @@ export const fetchSalespeople = async (forceRefresh = false) => {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      // 1. Tenta consulta direta no schema public
-      let res = await supabase
-        .from('vendedor')
-        .select('*');
-
-      // 2. Se falhar ou vier vazio, tenta explicitar schema public
-      if (res.error || !res.data || res.data.length === 0) {
-        res = await supabase
-          .schema('public')
-          .from('vendedor')
-          .select('*');
+      // Lista de vendedores do schema talao via RPC mínima (cd_vend + nome_vendedor).
+      // A tabela talao.vendedor não é exposta diretamente ao formulário público.
+      let res = await supabase.schema('novo_cliente').rpc('listar_vendedores');
+      if (res.error) {
+        res = await supabase.rpc('listar_vendedores');
       }
 
       if (res.data && res.data.length > 0) {

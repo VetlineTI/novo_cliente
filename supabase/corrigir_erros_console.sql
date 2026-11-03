@@ -292,8 +292,16 @@ BEGIN
         'cadastro'
     );
 
-    -- Determina o vendedor (aceita indicação válida se preenchida, senão 'ATENA')
-    v_cd_vend := COALESCE(NULLIF(trim(client_payload->>'cd_vend'), ''), 'ATENA');
+    -- Determina o vendedor: só aceita cd_vend existente e ativo em talao.vendedor, senão 'ATENA'
+    v_cd_vend := NULL;
+    IF NULLIF(trim(client_payload->>'cd_vend'), '') IS NOT NULL THEN
+        SELECT trim(v.cd_vend::text) INTO v_cd_vend
+        FROM talao.vendedor v
+        WHERE lower(trim(v.cd_vend::text)) = lower(trim(client_payload->>'cd_vend'))
+          AND COALESCE(v.nome_equipe::text, '') NOT ILIKE '%INATIV%'
+        LIMIT 1;
+    END IF;
+    v_cd_vend := COALESCE(v_cd_vend, 'ATENA');
 
     -- Determina o limite de crédito oficial (PF: 1.500,00 | PJ: 3.000,00)
     IF (client_payload->>'limite_credito') IS NOT NULL AND (client_payload->>'limite_credito') <> '' THEN
