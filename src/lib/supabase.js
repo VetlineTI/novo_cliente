@@ -172,9 +172,6 @@ export const fetchSalespeople = async (forceRefresh = false) => {
       // Lista de vendedores do schema talao via RPC mínima (cd_vend + nome_vendedor).
       // A tabela talao.vendedor não é exposta diretamente ao formulário público.
       let res = await supabase.schema('novo_cliente').rpc('listar_vendedores');
-      if (res.error) {
-        res = await supabase.rpc('listar_vendedores');
-      }
 
       if (res.data && res.data.length > 0) {
         // Normaliza as colunas e remove ATENA da lista de seleção manual

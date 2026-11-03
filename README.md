@@ -250,7 +250,8 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
    - [`supabase/vendedores_talao.sql`](file:///supabase/vendedores_talao.sql): RPC `listar_vendedores()` que expõe ao formulário apenas `cd_vend` + `nome_vendedor` dos vendedores ativos de `talao.vendedor` (sem grant na tabela do outro sistema). **Rodar antes** do script abaixo.
    - [`supabase/corrigir_erros_console.sql`](file:///supabase/corrigir_erros_console.sql): Configuração de RPCs blindadas (`check_client_already_approved`, `insert_novo_cliente`), Rate Limiting no servidor com captura de IP, RLS seguro e configuração de bucket privado com upload controlado.
    - [`supabase/ativar_admin_e_listagem.sql`](file:///supabase/ativar_admin_e_listagem.sql): Vinculação de perfil administrador e liberação de visualização dos cadastros no painel admin via RLS/RPC.
-   - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Concessão de permissões de execução e leitura para o papel autenticado (elimina erro 42501 permission denied).
+   - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Permissões da listagem do admin apenas para `authenticated` (as funções checam `is_admin()`).
+   - [`supabase/revogar_funcoes_admin_anon.sql`](file:///supabase/revogar_funcoes_admin_anon.sql): **Obrigatório.** Revoga de `PUBLIC`/`anon` as funções administrativas (`grant_role_by_email`, `set_user_role`, `list_auth_users_with_profiles`, `get_novo_cliente_clients`, `update_novo_cliente`, `delete_novo_cliente`, `ensure_client_auth_user`), restringe a leitura da tabela a dono ou admin e emite relatório de privilégios.
 4. Clique no botão verde **Run** (Executar).
 
 > 📥 **Importação de clientes do ERP**: cargas em massa (ex.: `importar_clientes_erp.sql` / `data_new_cliente_import.csv`) ficam em `supabase/import/`, pasta **ignorada pelo git** por conter dados pessoais (LGPD). Execute-as apenas pelo SQL Editor do Supabase.

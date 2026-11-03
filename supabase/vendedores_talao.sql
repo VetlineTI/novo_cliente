@@ -13,7 +13,6 @@
 --
 -- ROLLBACK (comentado):
 -- REVOKE EXECUTE ON FUNCTION novo_cliente.listar_vendedores() FROM anon, authenticated;
--- DROP FUNCTION IF EXISTS public.listar_vendedores();
 -- DROP FUNCTION IF EXISTS novo_cliente.listar_vendedores();
 -- ==============================================================================
 
@@ -46,21 +45,8 @@ AS $$
     LIMIT 2000;
 $$;
 
--- Wrapper no public (o client do Supabase chama o schema public por padrão)
-CREATE OR REPLACE FUNCTION public.listar_vendedores()
-RETURNS TABLE (cd_vend TEXT, nome_vendedor TEXT)
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = novo_cliente, pg_temp
-AS $$
-    SELECT * FROM novo_cliente.listar_vendedores();
-$$;
-
 REVOKE EXECUTE ON FUNCTION novo_cliente.listar_vendedores() FROM public, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.listar_vendedores() FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION novo_cliente.listar_vendedores() TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.listar_vendedores() TO anon, authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
 

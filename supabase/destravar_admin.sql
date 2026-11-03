@@ -1,22 +1,18 @@
 -- ==============================================================================
--- DESTRAVAR DEFINITIVO DA LISTAGEM DO ADMIN E CONTAGEM
+-- DESTRAVAR LISTAGEM DO ADMIN (VERSÃO SEGURA)
+-- ==============================================================================
+-- ATENÇÃO: a versão anterior deste arquivo concedia EXECUTE/SELECT para anon,
+-- o que expunha todos os cadastros sem login. Corrigido: só authenticated, e as
+-- funções administrativas checam is_admin() internamente.
+-- Para fechar de vez, rode também: supabase/revogar_funcoes_admin_anon.sql
 -- ==============================================================================
 
--- 1. Elimina de vez o erro 42501 concedendo EXECUTE para as funções de listagem
-GRANT EXECUTE ON FUNCTION public.get_novo_cliente_clients(TEXT, TEXT) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_clients(TEXT, TEXT) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_clients(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION novo_cliente.get_novo_cliente_clients(TEXT, TEXT) TO authenticated, service_role;
 
--- 2. Garante SELECT na tabela de clientes
-GRANT SELECT ON TABLE novo_cliente.data_new_cliente TO anon, authenticated, service_role;
+REVOKE SELECT ON TABLE novo_cliente.data_new_cliente FROM anon;
+GRANT SELECT ON TABLE novo_cliente.data_new_cliente TO authenticated, service_role;
 
--- 3. Recarrega o cache do PostgREST
 NOTIFY pgrst, 'reload schema';
 
--- 4. VERIFICAÇÃO DIRETA: Quantos clientes existem realmente no banco agora?
-SELECT 
-    COUNT(*) AS total_clientes_no_banco,
-    CASE 
-        WHEN COUNT(*) = 0 THEN 'A tabela está VAZIA. Nenhum cliente foi salvo ainda porque o cadastro anterior foi barrado antes de gravar.'
-        ELSE 'Existem cadastros no banco! Recarregue a página /admin.'
-    END AS status_explicativo
-FROM novo_cliente.data_new_cliente;
+SELECT COUNT(*) AS total_clientes_no_banco FROM novo_cliente.data_new_cliente;

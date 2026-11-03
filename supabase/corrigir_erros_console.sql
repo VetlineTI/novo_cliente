@@ -204,7 +204,7 @@ $$;
 
 
 -- ------------------------------------------------------------------------------
--- 5. RPC CHECK_CLIENT_ALREADY_APPROVED (EM NOVO_CLIENTE E PUBLIC)
+-- 5. RPC CHECK_CLIENT_ALREADY_APPROVED (SOMENTE NO SCHEMA NOVO_CLIENTE)
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION novo_cliente.check_client_already_approved(p_document TEXT)
 RETURNS JSONB
@@ -243,22 +243,9 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.check_client_already_approved(p_document TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = novo_cliente, pg_temp
-AS $$
-BEGIN
-    RETURN novo_cliente.check_client_already_approved(p_document);
-END;
-$$;
-
 REVOKE EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) FROM public;
-REVOKE EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) FROM public;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.check_client_already_approved(TEXT) TO anon, authenticated, service_role;
 
 
 -- ------------------------------------------------------------------------------
@@ -433,22 +420,9 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.insert_novo_cliente(client_payload JSONB)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = novo_cliente, pg_temp
-AS $$
-BEGIN
-    RETURN novo_cliente.insert_novo_cliente(client_payload);
-END;
-$$;
-
 REVOKE EXECUTE ON FUNCTION novo_cliente.insert_novo_cliente(JSONB) FROM public;
-REVOKE EXECUTE ON FUNCTION public.insert_novo_cliente(JSONB) FROM public;
 
 GRANT EXECUTE ON FUNCTION novo_cliente.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.insert_novo_cliente(JSONB) TO anon, authenticated, service_role;
 
 
 -- ------------------------------------------------------------------------------
