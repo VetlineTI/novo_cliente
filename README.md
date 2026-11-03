@@ -252,6 +252,8 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
    - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Concessão de permissões de execução e leitura para o papel autenticado (elimina erro 42501 permission denied).
 4. Clique no botão verde **Run** (Executar).
 
+> 📥 **Importação de clientes do ERP**: cargas em massa (ex.: `importar_clientes_erp.sql` / `data_new_cliente_import.csv`) ficam em `supabase/import/`, pasta **ignorada pelo git** por conter dados pessoais (LGPD). Execute-as apenas pelo SQL Editor do Supabase.
+
 > 💡 **Dica (Opcional)**: Caso queira expor o schema `novo_cliente` diretamente para consultas REST além das funções RPC, acesse no Supabase: **Project Settings > API > Data API Settings > "Exposed schemas"** e adicione `novo_cliente`.
 
 ---

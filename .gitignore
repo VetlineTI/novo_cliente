@@ -28,3 +28,6 @@ dist-ssr
 
 .vercel
 .env*
+
+# Planilhas/cargas com dados pessoais de clientes (LGPD) - nunca versionar
+supabase/import/
