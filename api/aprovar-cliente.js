@@ -198,8 +198,12 @@ export default async function handler(req, res) {
     }
 
     const item = items[0] || {};
+    if (item.error) {
+      // Erro real do ERP fica só no log do servidor (Vercel > Logs), nunca vai para o navegador
+      console.error(`aprovar-cliente: erro do ERP para cliente ${clientRecord.id} (${clientRecord.cpf_cnpj}):`, item.error);
+    }
     return res.status(200).json({
-      success: n8nResponse.ok,
+      success: n8nResponse.ok && !item.error,
       status: n8nResponse.status,
       qtd: 1,
       data: [{

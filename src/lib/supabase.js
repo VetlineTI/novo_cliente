@@ -560,8 +560,10 @@ export const toPortuguesePayload = (data) => {
   if (data.limite_credito !== undefined || data.credit_limit !== undefined) {
     p.limite_credito = Number(data.limite_credito ?? data.credit_limit ?? 0);
   }
-  if (data.status !== undefined || !p.status) {
-    p.status = (data.status === 'pendente' || !data.status) ? 'em_analise' : data.status;
+  // Só envia status quando ele foi informado. Antes, qualquer atualização parcial
+  // (ex.: gravar cd_clien/alerta após aprovar) sobrescrevia o status para 'em_analise'.
+  if (data.status !== undefined && data.status !== null && data.status !== '') {
+    p.status = data.status === 'pendente' ? 'em_analise' : data.status;
   }
   if (data.termos_aceitos !== undefined || data.terms_accepted !== undefined) {
     p.termos_aceitos = data.termos_aceitos ?? data.terms_accepted ?? true;
