@@ -183,10 +183,30 @@ export default async function handler(req, res) {
       responseData = responseText;
     }
 
+    // Trava de segurança: a aprovação é de UM cliente. Se o n8n devolver mais de um item,
+    // o workflow processou outros cadastros; não devolvemos cd_clien para não gravar código errado.
+    const items = Array.isArray(responseData) ? responseData : (responseData ? [responseData] : []);
+    if (items.length !== 1) {
+      console.error(`aprovar-cliente: n8n retornou ${items.length} itens para o cliente ${clientRecord.id}`);
+      return res.status(502).json({
+        success: false,
+        qtd: items.length,
+        error: items.length === 0
+          ? 'O ERP não processou este cadastro (nenhum retorno do workflow). Verifique se o status foi salvo como aprovado.'
+          : `O workflow do ERP processou ${items.length} cadastros em vez de 1. O código do cliente NÃO foi gravado. Verifique o workflow no n8n.`
+      });
+    }
+
+    const item = items[0] || {};
     return res.status(200).json({
       success: n8nResponse.ok,
       status: n8nResponse.status,
-      data: responseData
+      qtd: 1,
+      data: [{
+        cd_clien: item.cd_clien ?? null,
+        resultado: item.resultado ?? null,
+        error: item.error ? 'Erro ao gravar no ERP.' : undefined
+      }]
     });
   } catch (err) {
     console.error('Erro na rota aprovar-cliente:', err);
