@@ -279,13 +279,12 @@ BEGIN
         'cadastro'
     );
 
-    -- Determina o vendedor: só aceita cd_vend existente e ativo em talao.vendedor, senão 'ATENA'
+    -- Determina o vendedor: só aceita cd_vend existente em novo_cliente.vendedor, senão 'ATENA'
     v_cd_vend := NULL;
     IF NULLIF(trim(client_payload->>'cd_vend'), '') IS NOT NULL THEN
         SELECT trim(v.cd_vend::text) INTO v_cd_vend
-        FROM talao.vendedor v
+        FROM novo_cliente.vendedor v
         WHERE lower(trim(v.cd_vend::text)) = lower(trim(client_payload->>'cd_vend'))
-          AND COALESCE(v.nome_equipe::text, '') NOT ILIKE '%INATIV%'
         LIMIT 1;
     END IF;
     v_cd_vend := COALESCE(v_cd_vend, 'ATENA');

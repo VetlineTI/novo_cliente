@@ -247,7 +247,7 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
 1. Acesse seu painel no [Supabase](https://supabase.com);
 2. Clique em **SQL Editor** no menu lateral esquerdo;
 3. Para eliminar todos os erros de console e garantir 100% de conformidade com as regras de segurança Vetline, execute os scripts consolidados:
-   - [`supabase/vendedores_talao.sql`](file:///supabase/vendedores_talao.sql): RPC `listar_vendedores()` que expõe ao formulário apenas `cd_vend` + `nome_vendedor` dos vendedores ativos de `talao.vendedor` (sem grant na tabela do outro sistema). **Rodar antes** do script abaixo.
+   - [`supabase/vendedores_novo_cliente.sql`](file:///supabase/vendedores_novo_cliente.sql): Configura a leitura segura da tabela `novo_cliente.vendedor` (RLS + RPC `novo_cliente.listar_vendedores`), sem expor dados desnecessários e mantendo a lista de vendedores 100% atualizada para o formulário e painel.
    - [`supabase/corrigir_erros_console.sql`](file:///supabase/corrigir_erros_console.sql): Configuração de RPCs blindadas (`check_client_already_approved`, `insert_novo_cliente`), Rate Limiting no servidor com captura de IP, RLS seguro e configuração de bucket privado com upload controlado.
    - [`supabase/ativar_admin_e_listagem.sql`](file:///supabase/ativar_admin_e_listagem.sql): Vinculação de perfil administrador e liberação de visualização dos cadastros no painel admin via RLS/RPC.
    - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Permissões da listagem do admin apenas para `authenticated` (as funções checam `is_admin()`).

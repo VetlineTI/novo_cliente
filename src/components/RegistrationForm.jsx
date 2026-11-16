@@ -206,7 +206,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Carrega lista de vendedores da tabela public.vendedor
+  // Carrega lista de vendedores da tabela novo_cliente.vendedor
   const loadSalespeopleData = async (force = false) => {
     setLoadingSalespeople(true);
     try {

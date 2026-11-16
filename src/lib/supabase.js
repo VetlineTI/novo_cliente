@@ -158,9 +158,9 @@ export const uploadDocument = async (file, folder = 'geral', clientDocument = ''
 let cachedSalespeople = null;
 
 /**
- * Busca a lista de vendedores ativos do schema talao (via RPC listar_vendedores)
+ * Busca a lista de vendedores ativos da tabela novo_cliente.vendedor (via RPC listar_vendedores ou direto na tabela)
  * @param {boolean} forceRefresh Força atualização ignorando cache
- * @returns {Promise<{success: boolean, data: Array<{cd_vend: string, nome_vendedor: string}>}>}
+ * @returns {Promise<{success: boolean, data: Array<{cd_vend: string, nome_vendedor: string, nome_equipe?: string, nome_gerencia?: string}>}>}
  */
 export const fetchSalespeople = async (forceRefresh = false) => {
   if (!forceRefresh && cachedSalespeople && cachedSalespeople.length > 0) {
@@ -169,26 +169,53 @@ export const fetchSalespeople = async (forceRefresh = false) => {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      // Lista de vendedores do schema talao via RPC mínima (cd_vend + nome_vendedor).
-      // A tabela talao.vendedor não é exposta diretamente ao formulário público.
-      let res = await supabase.schema('novo_cliente').rpc('listar_vendedores');
+      let rawList = null;
 
-      if (res.data && res.data.length > 0) {
+      // 1. Tenta via RPC novo_cliente.listar_vendedores() (método mais rápido, seguro e sem expor colunas sensíveis)
+      try {
+        const resRpc = await supabase.schema('novo_cliente').rpc('listar_vendedores');
+        if (resRpc.data && resRpc.data.length > 0) {
+          rawList = resRpc.data;
+        }
+      } catch (eRpc) {
+        // Fallback silencioso caso a RPC não esteja criada ou esteja em manutenção
+      }
+
+      // 2. Se a RPC não retornou dados, busca diretamente na tabela novo_cliente.vendedor
+      if (!rawList || rawList.length === 0) {
+        const resTable = await supabase
+          .schema('novo_cliente')
+          .from('vendedor')
+          .select('*')
+          .limit(2000);
+
+        if (resTable.data && resTable.data.length > 0) {
+          rawList = resTable.data;
+        }
+      }
+
+      if (rawList && rawList.length > 0) {
         // Normaliza as colunas e remove ATENA da lista de seleção manual
-        const normalized = res.data.map((item) => {
+        const normalized = rawList.map((item) => {
           const cd = item.cd_vend ?? item.CD_VEND ?? item.cd_vendedor ?? item.CD_VENDEDOR ?? item.codigo ?? item.id ?? '';
           const nome = item.nome_vendedor ?? item.NOME_VENDEDOR ?? item.nome ?? item.NOME ?? item.vendedor ?? item.VENDEDOR ?? item.descricao ?? '';
+          const ativo = item.ativo !== undefined 
+            ? item.ativo 
+            : (item.status !== undefined ? (item.status === 'A' || item.status === 'ATIVO' || item.status === true) : true);
           return {
             cd_vend: String(cd).trim(),
             nome_vendedor: String(nome).trim(),
             nome_equipe: item.nome_equipe || '',
-            nome_gerencia: item.nome_gerencia || ''
+            nome_gerencia: item.nome_gerencia || '',
+            ativo
           };
         }).filter((item) => (
           item.cd_vend && 
           item.nome_vendedor && 
           item.cd_vend.toUpperCase() !== 'ATENA' &&
-          !item.nome_vendedor.toUpperCase().includes('ATENA')
+          !item.nome_vendedor.toUpperCase().includes('ATENA') &&
+          item.ativo !== false &&
+          !String(item.nome_equipe).toUpperCase().includes('INATIV')
         ));
 
         // Ordena por nome do vendedor
@@ -197,7 +224,7 @@ export const fetchSalespeople = async (forceRefresh = false) => {
         return { success: true, data: normalized };
       }
     } catch (err) {
-      // ignore
+      console.warn('Erro ao carregar vendedores de novo_cliente.vendedor:', err);
     }
   }
 
