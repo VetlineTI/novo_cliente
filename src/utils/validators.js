@@ -207,6 +207,7 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           cnaeCodigo: cnaeCode,
           cnaeDescricao: cnaeDesc,
           cnae: fullCnae,
+          inscricaoEstadual: null,
           suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.qsa || data.socios || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',
@@ -252,6 +253,7 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           cnaeCodigo: cnaeCode,
           cnaeDescricao: cnaeDesc,
           cnae: fullCnae,
+          inscricaoEstadual: null,
           suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.qsa || data.socios || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',
@@ -291,6 +293,13 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
         const cnaeDesc = est.atividade_principal?.descricao || '';
         const fullCnae = cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc);
 
+        // Extrai Inscrição Estadual ativa se disponível
+        const inscricoes = est.inscricoes_estaduais || [];
+        const ativa = (Array.isArray(inscricoes) && inscricoes.length > 0)
+          ? (inscricoes.find(i => i.ativo && i.inscricao_estadual) || inscricoes.find(i => i.inscricao_estadual) || inscricoes[0])
+          : null;
+        const ieCnpjWs = ativa?.inscricao_estadual ? String(ativa.inscricao_estadual).trim() : null;
+
         return {
           razaoSocial: data.razao_social || '',
           nomeFantasia: est.nome_fantasia || '',
@@ -300,6 +309,7 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
           cnaeCodigo: cnaeCode,
           cnaeDescricao: cnaeDesc,
           cnae: fullCnae,
+          inscricaoEstadual: ieCnpjWs,
           suggestedSegment: mapSegment(cnaeDesc),
           socios: (data.socios || data.qsa || []).map(s => ({
             nome: s.nome || s.nome_socio || s.nome_do_socio || '',

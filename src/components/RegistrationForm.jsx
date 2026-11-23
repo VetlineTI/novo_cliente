@@ -20,7 +20,8 @@ import {
   X,
   Trash2,
   RotateCcw,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
@@ -30,7 +31,7 @@ import { PartnerMismatchModal } from './PartnerMismatchModal';
 import { registerClientWithAuth } from '../lib/clientAuth';
 import { checkPhoneTelecom } from '../lib/telecom';
 import { sendWhatsAppSignupConfirmation } from '../lib/zapi';
-import { consultarSintegra, consultarCRMV, validarCRMVComCPF } from '../lib/infosimples';
+import { consultarSintegra, consultarCRMV, validarCRMVComCPF, consultarInscricaoEstadual } from '../lib/infosimples';
 import { validatePartnerDocument, validateCompanyAttachment, validateCrmvAttachment } from '../utils/documentValidator';
 import {
   maskCPF,
@@ -84,6 +85,7 @@ export const RegistrationForm = ({ onSuccess }) => {
 
   // BrasilAPI Dados do CNPJ
   const [loadingCnpj, setLoadingCnpj] = useState(false);
+  const [loadingInscricao, setLoadingInscricao] = useState(false);
   const [cnpjInfo, setCnpjInfo] = useState(null);
   const [cnpjAlert, setCnpjAlert] = useState('');
 
@@ -393,6 +395,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     setDuplicateApprovedClient(null);
 
     setLoadingCnpj(true);
+    setLoadingInscricao(true);
     setCnpjAlert('');
     try {
       const data = await fetchCNPJDataFromBrasilAPI(cleanCnpj);
@@ -416,6 +419,39 @@ export const RegistrationForm = ({ onSuccess }) => {
             }
             if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
           }
+
+          // Consulta automática de Inscrição Estadual (Sintegra / CADESP / SEFAZ com fallback)
+          try {
+            const uf = data.endereco?.uf || 'SP';
+            // Se o próprio provedor de CNPJ já trouxe IE (ex: CNPJ.ws)
+            if (data.inscricaoEstadual) {
+              setTpInscricao('E');
+              setNumeroInscricao(data.inscricaoEstadual);
+            }
+
+            const ieRes = await consultarInscricaoEstadual(cleanCnpj, uf);
+            if (ieRes && ieRes.hasIE && ieRes.ie) {
+              setTpInscricao('E');
+              setNumeroInscricao(ieRes.ie);
+              if (ieRes.sintegraResult) {
+                sintegraResultRef.current = ieRes.sintegraResult;
+              }
+            } else if (!data.inscricaoEstadual) {
+              setTpInscricao('I');
+              setNumeroInscricao('ISENTO');
+              if (ieRes?.sintegraResult) {
+                sintegraResultRef.current = ieRes.sintegraResult;
+              }
+            }
+            if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
+            if (errors.tpInscricao) setErrors(prev => ({ ...prev, tpInscricao: null }));
+          } catch (ieErr) {
+            console.warn('Erro ao consultar Inscrição Estadual do CNPJ:', ieErr);
+            if (!numeroInscricao) {
+              setTpInscricao('I');
+              setNumeroInscricao('ISENTO');
+            }
+          }
         } else {
           // CNPJ Inapto, Baixado, Suspenso ou Inativo
           setCnpjAlert(`Atenção: Este CNPJ consta como ${data.situacaoCadastral || 'Inapta'} na Receita Federal.`);
@@ -433,6 +469,7 @@ export const RegistrationForm = ({ onSuccess }) => {
       setCnpjAlert('Não foi possível verificar a situação cadastral do CNPJ na Receita Federal.');
     } finally {
       setLoadingCnpj(false);
+      setLoadingInscricao(false);
     }
   };
 
@@ -462,6 +499,9 @@ export const RegistrationForm = ({ onSuccess }) => {
       if (clean.length < 14) {
         setCnpjInfo(null);
         setFullName('');
+        setTpInscricao('E');
+        setNumeroInscricao('');
+        sintegraResultRef.current = null;
       } else if (clean.length === 14 && isValidCNPJ(clean)) {
         await executeCnpjQuery(clean);
       }
@@ -1439,11 +1479,18 @@ export const RegistrationForm = ({ onSuccess }) => {
 
               {/* Tipo de Inscrição */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Tipo de Inscrição <span className="text-red-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Tipo de Inscrição <span className="text-red-500">*</span></span>
+                  {personType === 'PJ' && (
+                    <span className="text-[10px] font-normal text-slate-500 flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                      Definido via CNPJ
+                    </span>
+                  )}
                 </label>
                 <select
                   value={tpInscricao}
+                  disabled={personType === 'PJ'}
                   onChange={(e) => {
                     const newTp = e.target.value;
                     setTpInscricao(newTp);
@@ -1455,8 +1502,12 @@ export const RegistrationForm = ({ onSuccess }) => {
                     if (errors.tpInscricao) setErrors(prev => ({ ...prev, tpInscricao: null }));
                     if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
                   }}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all cursor-pointer ${errors.tpInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
-                    }`}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-all ${
+                    personType === 'PJ'
+                      ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-slate-200 font-medium'
+                      : 'bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green cursor-pointer ' +
+                        (errors.tpInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200')
+                  }`}
                 >
                   <option value="E">Estadual</option>
                   <option value="I">Isento</option>
@@ -1469,27 +1520,60 @@ export const RegistrationForm = ({ onSuccess }) => {
 
               {/* Número da Inscrição */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Número da Inscrição {tpInscricao !== 'I' && <span className="text-red-500">*</span>}
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Número da Inscrição {tpInscricao !== 'I' && <span className="text-red-500">*</span>}</span>
+                  {personType === 'PJ' && (
+                    <span className="text-[10px] font-normal text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" />
+                      {loadingInscricao ? 'Buscando...' : 'Somente leitura'}
+                    </span>
+                  )}
                 </label>
-                <input
-                  type="text"
-                  value={tpInscricao === 'I' ? 'ISENTO' : numeroInscricao}
-                  disabled={tpInscricao === 'I'}
-                  readOnly={tpInscricao === 'I'}
-                  onChange={(e) => {
-                    setNumeroInscricao(e.target.value);
-                    if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
-                  }}
-                  placeholder={tpInscricao === 'I' ? 'ISENTO' : (tpInscricao === 'E' ? 'Número da Inscrição Estadual' : 'Número da Inscrição Municipal')}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 transition-all ${tpInscricao === 'I'
-                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-medium'
-                    : 'bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green ' +
-                    (errors.numeroInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200')
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={
+                      loadingInscricao
+                        ? 'Consultando Inscrição...'
+                        : (tpInscricao === 'I' ? 'ISENTO' : numeroInscricao)
+                    }
+                    disabled={personType === 'PJ' || tpInscricao === 'I'}
+                    readOnly={personType === 'PJ' || tpInscricao === 'I'}
+                    onChange={(e) => {
+                      if (personType !== 'PJ') {
+                        setNumeroInscricao(e.target.value);
+                        if (errors.numeroInscricao) setErrors(prev => ({ ...prev, numeroInscricao: null }));
+                      }
+                    }}
+                    placeholder={
+                      loadingInscricao
+                        ? 'Consultando Sintegra / SEFAZ...'
+                        : (tpInscricao === 'I' ? 'ISENTO' : 'Número da Inscrição Estadual')
+                    }
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-all ${
+                      personType === 'PJ' || tpInscricao === 'I'
+                        ? 'bg-slate-100 text-slate-700 cursor-not-allowed select-none border-slate-200 font-semibold'
+                        : 'bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green ' +
+                          (errors.numeroInscricao ? 'border-red-400 bg-red-50/20' : 'border-slate-200')
                     }`}
-                />
+                  />
+                  {loadingInscricao && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-brand-green font-medium">
+                      <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
+                    </div>
+                  )}
+                </div>
                 {errors.numeroInscricao && (
                   <p className="text-xs text-red-500 mt-1 font-medium">{errors.numeroInscricao}</p>
+                )}
+                {personType === 'PJ' && !loadingInscricao && (
+                  <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                    {tpInscricao === 'E' && numeroInscricao ? (
+                      <span className="text-emerald-700">✓ Inscrição Estadual identificada e vinculada ao CNPJ.</span>
+                    ) : (
+                      <span className="text-slate-500">ℹ Empresa identificada como isenta de Inscrição Estadual.</span>
+                    )}
+                  </p>
                 )}
               </div>
             </div>

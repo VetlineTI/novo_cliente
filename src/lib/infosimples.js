@@ -265,6 +265,106 @@ import {
 export const consultarSintegra = async (cnpj, uf = 'SP') => {
   return await consultarDirectDataSintegra(cnpj, uf);
 };
+
+/**
+ * Consulta unificada e resiliente de Inscrição Estadual (Sintegra Direct Data + fallback CNPJ.ws)
+ * Identifica se a empresa possui Inscrição Estadual ativa ou se é ISENTA.
+ * @param {string} cnpj CNPJ da empresa
+ * @param {string} uf Sigla do estado (ex: 'SP')
+ * @returns {Promise<{success: boolean, ie: string, hasIE: boolean, receiptUrl?: string, sintegraResult?: any}>}
+ */
+export const consultarInscricaoEstadual = async (cnpj, uf = 'SP') => {
+  const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) {
+    return { success: false, ie: 'ISENTO', hasIE: false, error: 'CNPJ inválido' };
+  }
+
+  const cleanUf = String(uf || 'SP').trim().toUpperCase() || 'SP';
+
+  // 1. Tenta consulta oficial no SINTEGRA / CADESP via Direct Data
+  try {
+    const sintegraRes = await consultarDirectDataSintegra(cleanCnpj, cleanUf);
+    if (sintegraRes && sintegraRes.success) {
+      const rawIe = sintegraRes.ie;
+      const isentoKeywords = ['ISENTO', 'ISENTA', '-', 'NÃO POSSUI', 'NAO POSSUI', 'N/A', 'SEM INSCRIÇÃO', 'SEM INSCRICAO'];
+      const hasValidIe = Boolean(
+        rawIe && 
+        String(rawIe).trim() !== '' && 
+        !isentoKeywords.includes(String(rawIe).trim().toUpperCase())
+      );
+
+      if (hasValidIe) {
+        return {
+          success: true,
+          ie: String(rawIe).trim(),
+          hasIE: true,
+          receiptUrl: sintegraRes.receiptUrl || null,
+          sintegraResult: sintegraRes
+        };
+      } else {
+        return {
+          success: true,
+          ie: 'ISENTO',
+          hasIE: false,
+          receiptUrl: sintegraRes.receiptUrl || null,
+          sintegraResult: sintegraRes
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Falha na consulta Direct Data Sintegra, tentando fallback CNPJ.ws...', err);
+  }
+
+  // 2. Fallback via CNPJ.ws (base pública com inscrições estaduais sincronizadas)
+  try {
+    const res = await fetch(`https://publica.cnpj.ws/cnpj/${cleanCnpj}`);
+    if (res.ok) {
+      const data = await res.json();
+      const est = data.estabelecimento || {};
+      const inscricoes = est.inscricoes_estaduais || [];
+
+      if (Array.isArray(inscricoes) && inscricoes.length > 0) {
+        // Procura inscrição ativa do estado ou qualquer ativa
+        const targetIe = inscricoes.find(i => i.ativo && (i.estado?.sigla?.toUpperCase() === cleanUf || !cleanUf))
+          || inscricoes.find(i => i.ativo)
+          || inscricoes.find(i => i.estado?.sigla?.toUpperCase() === cleanUf)
+          || inscricoes[0];
+
+        const rawIe = targetIe?.inscricao_estadual;
+        const isentoKeywords = ['ISENTO', 'ISENTA', '-', 'NÃO POSSUI', 'NAO POSSUI', 'N/A'];
+        const hasValidIe = Boolean(
+          rawIe && 
+          String(rawIe).trim() !== '' && 
+          !isentoKeywords.includes(String(rawIe).trim().toUpperCase())
+        );
+
+        if (hasValidIe) {
+          return {
+            success: true,
+            ie: String(rawIe).trim(),
+            hasIE: true
+          };
+        }
+      }
+
+      // Se a lista de inscrições estaduais está vazia, a empresa é isenta
+      return {
+        success: true,
+        ie: 'ISENTO',
+        hasIE: false
+      };
+    }
+  } catch (err) {
+    console.warn('Erro no fallback CNPJ.ws para Inscrição Estadual:', err);
+  }
+
+  // 3. Se nenhuma fonte retornou inscrição estadual ativa, define como isento
+  return {
+    success: true,
+    ie: 'ISENTO',
+    hasIE: false
+  };
+};
 export const consultarProtestosCenprot = async (cnpj) => {
   const cleanCnpj = String(cnpj || '').replace(/\D/g, '');
   if (!cleanCnpj || (cleanCnpj.length !== 14 && cleanCnpj.length !== 11)) {
