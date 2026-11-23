@@ -64,11 +64,11 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
             <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
               <MessageCircle className="w-4 h-4" />
             </div>
-            <span>Confirmação Enviada via WhatsApp!</span>
+            <span>Cadastro em Análise Comercial</span>
           </div>
 
           <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
-            Para sua comodidade e segurança, enviamos o link oficial de confirmação de cadastro para o seu WhatsApp:
+            Seus dados cadastrais foram encaminhados com sucesso para a equipe comercial da Vetline. Retornaremos o contato pelo seu WhatsApp informado:
           </p>
 
           {data?.phone ? (
@@ -78,23 +78,25 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
                 <span className="truncate">{data.phone}</span>
               </div>
               <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
-                WhatsApp Enviado
+                WhatsApp de Contato
               </span>
             </div>
           ) : null}
 
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between break-all">
-            <div className="flex items-center gap-2 truncate">
-              <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-              <span className="truncate">{data?.email || 'seu e-mail'}</span>
+          {data?.email ? (
+            <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between break-all">
+              <div className="flex items-center gap-2 truncate">
+                <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                <span className="truncate">{data.email}</span>
+              </div>
+              <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
+                E-mail Cadastrado
+              </span>
             </div>
-            <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full uppercase ml-2 flex-shrink-0">
-              Acesso Criado
-            </span>
-          </div>
+          ) : null}
 
           <p className="text-xs text-slate-600 leading-relaxed">
-            Basta <strong>tocar no link recebido no WhatsApp</strong> para confirmar sua conta e ativar seu acesso. Você também pode acessar diretamente com seu e-mail e senha cadastrados.
+            Assim que a análise for concluída pela retaguarda, você receberá a notificação da liberação do seu cadastro para compras.
           </p>
         </div>
 
@@ -103,7 +105,7 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
           <div className="flex items-center justify-between border-b border-slate-200 pb-2">
             <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
               <FileCheck className="w-3.5 h-3.5 text-brand-teal" />
-              <span>Protocolo de Análise</span>
+              <span>Protocolo de Solicitação</span>
             </span>
             <span className="text-xs font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200 font-mono">
               {protocolNumber}
@@ -128,19 +130,16 @@ export const SuccessModal = ({ isOpen, onClose, data, onReset }) => {
           </div>
         </div>
 
-        {/* Botão de Ação: Ir para o Login */}
-        <div className="pt-2 space-y-2">
+        {/* Botão de Concluir */}
+        <div className="pt-2">
           <button
             type="button"
             onClick={handleConfirm}
-            className="w-full py-3.5 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] text-white font-bold text-sm sm:text-base shadow-lg shadow-[#1d5b79]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 px-6 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-sm sm:text-base shadow-lg shadow-brand-green/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Entendi, Ir para a Tela de Login</span>
-            <ArrowRight className="w-4 h-4 text-emerald-300" />
+            <span>Concluir</span>
+            <CheckCircle2 className="w-4 h-4 text-white" />
           </button>
-          <p className="text-[11px] text-slate-400">
-            Abra seu WhatsApp e toque no link oficial para validar seu cadastro antes de entrar.
-          </p>
         </div>
       </div>
     </div>

@@ -25,10 +25,8 @@ import {
 } from 'lucide-react';
 import { DocumentUpload } from './DocumentUpload';
 import { TermsModal } from './TermsModal';
-import { CreatePasswordModal } from './CreatePasswordModal';
 import { SegmentHelpModal } from './SegmentHelpModal';
 import { PartnerMismatchModal } from './PartnerMismatchModal';
-import { registerClientWithAuth } from '../lib/clientAuth';
 import { checkPhoneTelecom } from '../lib/telecom';
 import { sendWhatsAppSignupConfirmation } from '../lib/zapi';
 import { consultarSintegra, consultarCRMV, validarCRMVComCPF, consultarInscricaoEstadual } from '../lib/infosimples';
@@ -141,7 +139,6 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsModalTab, setTermsModalTab] = useState('terms');
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showSegmentModal, setShowSegmentModal] = useState(false);
   const [partnerMismatchData, setPartnerMismatchData] = useState(null);
   const [showPartnerMismatchModal, setShowPartnerMismatchModal] = useState(false);
@@ -1043,8 +1040,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         return;
       }
 
-      // Abre a modal para o cliente criar sua senha de acesso apenas se tudo estiver validado
-      setShowPasswordModal(true);
+      // Envio direto do cadastro sem criação de senha
+      await handleDirectSubmit();
     } catch (submitPrepErr) {
       console.warn('Erro na preparação do envio:', submitPrepErr);
     } finally {
@@ -1052,8 +1049,8 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
-  // Envio final do formulário com e-mail e senha informados na modal
-  const handlePasswordSubmit = async (confirmedEmail, password) => {
+  // Envio final direto do formulário (sem pedido de senha)
+  const handleDirectSubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -1063,21 +1060,11 @@ export const RegistrationForm = ({ onSuccess }) => {
     if (dupCheckFinal.exists) {
       setDuplicateApprovedClient(dupCheckFinal.client || { status: 'aprovado' });
       setSubmitError('Este CNPJ/CPF já possui cadastro APROVADO e integrado no sistema. Não é permitido novo envio.');
-      setShowPasswordModal(false);
       setIsSubmitting(false);
       return;
     }
 
-    // Garante extração correta caso venha como 2 parâmetros ou como objeto
-    let finalEmail = email;
-    let finalPassword = password;
-
-    if (typeof confirmedEmail === 'string' && password) {
-      finalEmail = confirmedEmail.trim().toLowerCase();
-      finalPassword = password;
-    } else if (typeof confirmedEmail === 'string' && !password) {
-      finalPassword = confirmedEmail;
-    }
+    const finalEmail = email.trim().toLowerCase();
 
     try {
       // Upload dos documentos anexados para a pasta do CNPJ/CPF no bucket 'novos_clientes'
@@ -1103,27 +1090,12 @@ export const RegistrationForm = ({ onSuccess }) => {
         }
       }
 
-      // Protestos e Bureau serão consultados exclusivamente no aceite de confirmação do WhatsApp
-      let docJucespUrl = null;
-      let docCenprotUrl = null;
       let docSintegraUrl = sintegraResultRef.current?.receiptUrl || null;
       let sintegraIe = sintegraResultRef.current?.ie || null;
-      let nireJucesp = null;
-      let totalProtestos = null;
-      let bureauConsultedAt = null;
 
-      const hasIe = Boolean(sintegraIe && sintegraIe !== 'ISENTO' && sintegraIe !== 'ISENTA' && sintegraIe !== '-');
-
-      // Cálculo do Limite de Crédito inicial conforme regra de negócios:
-      // PJ sem protestos: R$ 3.000,00
-      // PF sem protestos: R$ 1.500,00
-      // Com protestos (>0): R$ 0,00
-      const numProtestos = typeof totalProtestos === 'number' ? totalProtestos : (Number(totalProtestos) || 0);
-      const hasProtestos = numProtestos > 0;
-      const initialCreditLimit = !hasProtestos ? (personType === 'PJ' ? 3000.00 : 1500.00) : 0.00;
+      const initialCreditLimit = personType === 'PJ' ? 3000.00 : 1500.00;
 
       // Auditoria de Linha Telecom (Twilio Lookups v2: VOIP e SIM Swap)
-      // Conforme regra de negócio: NÃO impede o cadastro, mas registra alerta e operadora
       let telecomData = null;
       try {
         telecomData = await checkPhoneTelecom(phone);
@@ -1134,12 +1106,8 @@ export const RegistrationForm = ({ onSuccess }) => {
       let telecomObsTag = '';
       if (telecomData && telecomData.success) {
         const parts = [];
-        if (telecomData.is_voip) {
-          parts.push('⚠️ ALERTA: Linha VOIP/Virtual detectada');
-        }
-        if (telecomData.sim_swapped_recently) {
-          parts.push('⚠️ ALERTA: Troca recente de chip (SIM Swap)');
-        }
+        if (telecomData.is_voip) parts.push('⚠️ ALERTA: Linha VOIP/Virtual detectada');
+        if (telecomData.sim_swapped_recently) parts.push('⚠️ ALERTA: Troca recente de chip (SIM Swap)');
         parts.push(`Operadora: ${telecomData.carrier || 'Desconhecida'}`);
         parts.push(`Tipo: ${telecomData.is_voip ? 'VOIP' : (telecomData.is_mobile ? 'Móvel' : (telecomData.is_landline ? 'Fixo' : telecomData.line_type || 'Desconhecido'))}`);
         parts.push(`SIM Swap: ${telecomData.sim_swapped_recently ? 'Recente' : (telecomData.sim_swap_status === 'trial_account_limitation' ? 'Pendente upgrade Twilio' : 'Estável')}`);
@@ -1214,11 +1182,11 @@ export const RegistrationForm = ({ onSuccess }) => {
         doc_address_url: docAddressUrl,
         doc_ie_url: docSintegraUrl,
         doc_sintegra_url: docSintegraUrl,
-        doc_jucesp_url: docJucespUrl,
-        doc_cenprot_url: docCenprotUrl,
-        nire_jucesp: nireJucesp,
-        total_protestos: totalProtestos,
-        bureau_consulted_at: bureauConsultedAt,
+        doc_jucesp_url: null,
+        doc_cenprot_url: null,
+        nire_jucesp: null,
+        total_protestos: null,
+        bureau_consulted_at: null,
         ip_origem: await getClientIp(),
         telecom_carrier: telecomData?.carrier || null,
         telecom_line_type: telecomData?.line_type || null,
@@ -1233,37 +1201,20 @@ export const RegistrationForm = ({ onSuccess }) => {
         status: 'em_analise',
       };
 
-      const result = await registerClientWithAuth(payload, finalPassword);
+      const result = await submitNewClient(payload);
 
       if (!result.success) {
-        throw new Error(result.error || 'Erro ao registrar cadastro e criar senha.');
+        throw new Error(result.error || 'Erro ao registrar cadastro.');
       }
 
-      // Sincronização e garantia de persistência dos documentos de Bureau no painel ADM (PJ e PF)
-      const createdClientId = result.client?.id;
-      if (createdClientId) {
-        if (docJucespUrl || docCenprotUrl || docSintegraUrl || nireJucesp || totalProtestos !== null || bureauConsultedAt) {
-          updateClientData(createdClientId, {
-            doc_jucesp_url: docJucespUrl,
-            doc_cenprot_url: docCenprotUrl,
-            doc_ie_url: docSintegraUrl,
-            doc_sintegra_url: docSintegraUrl,
-            nire_jucesp: nireJucesp,
-            total_protestos: totalProtestos,
-            bureau_consulted_at: bureauConsultedAt || new Date().toISOString()
-          }).catch(err => console.warn('Erro na atualização direta de bureau:', err));
-        }
-      }
-
-      // Dispara o envio de confirmação com link oficial via Z-API (WhatsApp)
+      // Dispara o envio de confirmação via Z-API (WhatsApp)
       sendWhatsAppSignupConfirmation({
-        email: finalEmail || email,
+        email: finalEmail,
         phone: phone,
-        fullName: fullName || payload.full_name,
-        password: finalPassword
+        fullName: fullName || payload.full_name
       }).then(res => {
         if (res.success) {
-          console.log('Link oficial de confirmação enviado via WhatsApp Z-API:', res.phone);
+          console.log('Confirmação enviada via WhatsApp Z-API:', res.phone);
         } else {
           console.warn('Alerta no envio de WhatsApp Z-API:', res.error);
         }
@@ -1271,23 +1222,16 @@ export const RegistrationForm = ({ onSuccess }) => {
         console.warn('Erro ao chamar Z-API de WhatsApp:', err);
       });
 
-      // Atualiza o e-mail no formulário caso tenha sido ajustado na modal
-      if (finalEmail !== email) {
-        setEmail(finalEmail);
-      }
-
-      setShowPasswordModal(false);
       if (onSuccess) {
         const clientWithContact = {
-          ...(result.client || payload),
+          ...(result.data?.[0] || payload),
           phone: phone,
-          email: finalEmail || email
+          email: finalEmail
         };
-        onSuccess(clientWithContact, result.session);
+        onSuccess(clientWithContact);
       }
     } catch (err) {
       setSubmitError(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');
-      setShowPasswordModal(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -2690,16 +2634,6 @@ export const RegistrationForm = ({ onSuccess }) => {
         onClose={() => setShowTermsModal(false)}
         onAccept={() => setAgreedTerms(true)}
         initialTab={termsModalTab}
-      />
-
-      {/* Modal de Criação de Senha de Acesso */}
-      <CreatePasswordModal
-        isOpen={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
-        email={email}
-        fullName={fullName}
-        onSubmit={handlePasswordSubmit}
-        isSubmitting={isSubmitting}
       />
 
       {/* Modal de Ajuda de Segmento */}

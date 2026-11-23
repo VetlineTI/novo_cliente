@@ -1,29 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
-import { ClientPortalAuth } from './components/client/ClientPortalAuth';
-import { ClientDashboard } from './components/client/ClientDashboard';
-import { ResetPasswordModal } from './components/client/ResetPasswordModal';
+import { LeftSidebar } from './components/LeftSidebar';
+import { RegistrationForm } from './components/RegistrationForm';
 import { SuccessModal } from './components/SuccessModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
-import { getClientSession, logoutClient, confirmClientWhatsApp } from './lib/clientAuth';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { ShieldCheck, Lock, ExternalLink, Cookie } from 'lucide-react';
+import { ShieldCheck, Cookie, CheckCircle } from 'lucide-react';
 import { TermsModal } from './components/TermsModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
 
 export function App() {
   const [successData, setSuccessData] = useState(null);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
-  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
-  const [portalTab, setPortalTab] = useState('register'); // 'register' | 'login'
-  const [activationMessage, setActivationMessage] = useState('');
-  const [initialLoginEmail, setInitialLoginEmail] = useState('');
+  const [whatsappConfirmed, setWhatsappConfirmed] = useState(false);
   const [policyModal, setPolicyModal] = useState({ isOpen: false, tab: 'terms' });
-
-  // Sessão do Cliente
-  const [clientSession, setClientSession] = useState(() => getClientSession());
 
   // Controle de Rota: 'portal' ou 'admin'
   const isInitialAdmin =
@@ -35,108 +26,23 @@ export function App() {
   const [currentRoute, setCurrentRoute] = useState(isInitialAdmin ? 'admin' : 'portal');
   const [adminUser, setAdminUser] = useState(() => getAdminSession());
 
-  // Escuta histórico de navegação e eventos de recuperação/ativação de conta
+  // Escuta confirmação do link enviado via WhatsApp
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const urlSearch = window.location.search || '';
-    const urlHash = window.location.hash || '';
     const urlParams = new URLSearchParams(window.location.search);
-    const emailFromUrl = (urlParams.get('email') || '').trim();
 
-    // Abre direto na aba de Login se solicitado pela URL
-    if (urlSearch.includes('tab=login') || urlHash.includes('tab=login') || urlHash.includes('#login') || urlParams.get('confirmed') === 'whatsapp') {
-      setPortalTab('login');
-      if (emailFromUrl) {
-        setInitialLoginEmail(emailFromUrl);
-      }
-    }
-
-    // 1. Detecta parâmetros de ativação de conta (link recebido no WhatsApp / e-mail)
-    const isSignupConfirmed =
+    const isConfirmed =
       urlParams.get('confirmed') === 'whatsapp' ||
       urlParams.get('activated') === 'true' ||
       urlSearch.includes('confirmed=whatsapp') ||
-      urlSearch.includes('activated=true') ||
-      urlSearch.includes('type=signup') ||
-      urlSearch.includes('type=magiclink') ||
-      urlSearch.includes('type=signup-confirmed') ||
-      urlSearch.includes('account_confirmed=true') ||
-      urlHash.includes('type=signup') ||
-      urlHash.includes('type=magiclink') ||
-      urlHash.includes('access_token=');
+      urlSearch.includes('activated=true');
 
-    const handleAccountActivation = async (userEmail = '') => {
-      setPortalTab('login');
-      setActivationMessage('🎉 Cadastro ativado com sucesso pelo WhatsApp! Informe sua senha abaixo para entrar.');
-      const finalEmail = userEmail || emailFromUrl;
-      if (finalEmail) {
-        setInitialLoginEmail(finalEmail);
-      }
-      try {
-        await confirmClientWhatsApp(finalEmail);
-      } catch (e) {
-        console.warn('Erro ao confirmar WhatsApp do cliente:', e);
-      }
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase.auth.signOut();
-        } catch (e) {}
-      }
+    if (isConfirmed) {
+      setWhatsappConfirmed(true);
       window.history.replaceState({}, '', window.location.pathname);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    if (isSignupConfirmed) {
-      if (emailFromUrl) {
-        handleAccountActivation(emailFromUrl);
-      } else if (isSupabaseConfigured && supabase) {
-        supabase.auth.getUser().then(({ data }) => {
-          const userEmail = data?.user?.email || '';
-          handleAccountActivation(userEmail);
-        }).catch(() => {
-          handleAccountActivation('');
-        });
-      } else {
-        handleAccountActivation('');
-      }
-    }
-
-    // 2. Detecta parâmetros de recuperação de senha
-    const isRecoveryUrl =
-      urlSearch.includes('type=recovery') ||
-      urlHash.includes('type=recovery') ||
-      urlSearch.includes('reset_password=true');
-
-    if (isRecoveryUrl) {
-      setIsResetPasswordOpen(true);
-    }
-
-    // 3. Listener do Supabase Auth
-    if (isSupabaseConfigured && supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          setIsResetPasswordOpen(true);
-        } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          const currentHash = window.location.hash || '';
-          const currentSearch = window.location.search || '';
-          const isActivationFlow = 
-            currentHash.includes('type=signup') || 
-            currentHash.includes('type=magiclink') || 
-            currentHash.includes('access_token=') ||
-            currentSearch.includes('type=signup') ||
-            currentSearch.includes('type=magiclink');
-
-          if (isActivationFlow) {
-            const userEmail = session?.user?.email || '';
-            await handleAccountActivation(userEmail);
-          }
-        }
-      });
-
-      return () => {
-        authListener?.subscription?.unsubscribe?.();
-      };
     }
   }, []);
 
@@ -150,7 +56,6 @@ export function App() {
 
       setCurrentRoute(isAdminPath ? 'admin' : 'portal');
       setAdminUser(getAdminSession());
-      setClientSession(getClientSession());
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -167,7 +72,6 @@ export function App() {
   const navigateToPortal = () => {
     window.history.pushState({}, '', '/');
     setCurrentRoute('portal');
-    setClientSession(getClientSession());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -181,40 +85,15 @@ export function App() {
     setAdminUser(null);
   };
 
-  // Handlers do Cliente
-  const handleClientLoginSuccess = (session) => {
-    setClientSession(session);
-    setActivationMessage('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleClientLogout = () => {
-    logoutClient();
-    setClientSession(null);
-    setPortalTab('register');
-    setActivationMessage('');
-    navigateToPortal();
-  };
-
-  const handleRegistrationSuccess = (submittedData, session) => {
+  // Handler de Sucesso do Cadastro
+  const handleRegistrationSuccess = (submittedData) => {
     setSuccessData(submittedData);
-    if (submittedData?.email) {
-      setInitialLoginEmail(submittedData.email);
-    }
-    if (session) {
-      setClientSession(session);
-    }
     setIsSuccessOpen(true);
   };
 
   const handleSuccessClose = () => {
     setIsSuccessOpen(false);
-    // Posiciona o usuário na aba "Já sou cliente" para ele logar após confirmar o e-mail
-    setPortalTab('login');
-    const current = getClientSession();
-    if (current) {
-      setClientSession(current);
-    }
+    setSuccessData(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -241,35 +120,53 @@ export function App() {
   }
 
   // ============================================================================
-  // ROTA DO CLIENTE (/): SE LOGADO MOSTRA DASHBOARD, SE NÃO MOSTRA LOGIN/CADASTRO
+  // ROTA DO CLIENTE (/): EXCLUSIVAMENTE A TELA DE FORMULÁRIO DE CADASTRO
   // ============================================================================
   return (
     <div className="min-h-screen flex flex-col bg-[#f5f8fa] text-slate-800 selection:bg-brand-green selection:text-white">
-      {/* Cabeçalho Oficial com suporte a sessão de cliente */}
+      {/* Cabeçalho Oficial */}
       <Header
         onNavigateToAdmin={navigateToAdmin}
         onNavigateToHome={navigateToPortal}
-        clientSession={clientSession}
-        onLogoutClient={handleClientLogout}
       />
 
-      {/* Conteúdo Principal */}
+      {/* Conteúdo Principal: Apenas Formulário de Credenciamento */}
       <div className="flex-1">
-        {clientSession?.isAuthenticated ? (
-          /* Cliente Autenticado: Painel & Perfil do Cliente */
-          <ClientDashboard
-            onLogout={handleClientLogout}
-          />
-        ) : (
-          /* Cliente Não Autenticado: Tela com Abas "Já sou cliente" e "Ainda não sou" */
-          <ClientPortalAuth
-            onLoginSuccess={handleClientLoginSuccess}
-            onRegistrationSuccess={handleRegistrationSuccess}
-            initialTab={portalTab}
-            activationSuccessMessage={activationMessage}
-            initialLoginEmail={initialLoginEmail}
-          />
+        {/* Banner de Confirmação do WhatsApp (quando o cliente clica no link do zap) */}
+        {whatsappConfirmed && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+            <div className="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-900 flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                <div>
+                  <p className="font-bold text-sm">🎉 Contato via WhatsApp confirmado com sucesso!</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">Sua solicitação foi validada e está sendo analisada pela equipe comercial da Vetline.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsappConfirmed(false)}
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
         )}
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-12 items-start">
+            {/* Coluna Esquerda: Apresentação & Benefícios Vetline */}
+            <div className="lg:col-span-5 xl:col-span-5 order-2 lg:order-1">
+              <LeftSidebar />
+            </div>
+
+            {/* Coluna Direita: Formulário de Cadastro */}
+            <div className="lg:col-span-7 xl:col-span-7 order-1 lg:order-2">
+              <RegistrationForm onSuccess={handleRegistrationSuccess} />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Rodapé Moderno com Políticas e LGPD */}
@@ -330,17 +227,6 @@ export function App() {
         onClose={handleSuccessClose}
         data={successData}
         onReset={() => { }}
-      />
-
-      {/* Modal de Redefinição de Senha (via link do e-mail) */}
-      <ResetPasswordModal
-        isOpen={isResetPasswordOpen}
-        onClose={() => setIsResetPasswordOpen(false)}
-        onSuccess={() => {
-          setIsResetPasswordOpen(false);
-          setPortalTab('login');
-          navigateToPortal();
-        }}
       />
     </div>
   );

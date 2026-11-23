@@ -275,9 +275,9 @@ export default async function handler(req, res) {
         }
       }
 
-      // Se for o redirecionamento oficial ao clicar no link do WhatsApp, joga direto para a tela de login
+      // Se for o redirecionamento oficial ao clicar no link do WhatsApp, redireciona com status de confirmação
       if (isConfirmRedirect) {
-        const destUrl = `${baseUrl.replace(/\/$/, '')}/?tab=login&activated=true&email=${encodeURIComponent(cleanEmail)}`;
+        const destUrl = `${baseUrl.replace(/\/$/, '')}/?confirmed=whatsapp&email=${encodeURIComponent(cleanEmail)}`;
         res.setHeader('Location', destUrl);
         return res.status(302).end();
       }
@@ -444,14 +444,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2. Monta a mensagem personalizada da Vetline com o link oficial do Supabase
+    // 2. Monta a mensagem personalizada da Vetline com o link oficial de confirmação
     const message = [
       `Olá, *${cleanName}*! 👋`,
       '',
       'Seja bem-vindo(a) à *Vetline Distribuidora*!',
       '',
-      'Recebemos seu cadastro e preparamos seu acesso à *Área do Cliente*.',
-      'Para confirmar sua conta e liberar seu acesso, clique no link seguro abaixo:',
+      'Recebemos sua solicitação de cadastro comercial.',
+      'Para validar seus dados cadastrais, toque no link seguro abaixo:',
       '',
       `👉 ${actionLink}`,
       '',
