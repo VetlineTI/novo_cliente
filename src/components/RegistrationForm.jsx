@@ -420,6 +420,46 @@ export const RegistrationForm = ({ onSuccess }) => {
             if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
           }
 
+          // Preenche automaticamente o endereço cadastral da empresa (CEP, Rua, Bairro, Cidade, UF)
+          // Deixando Número e Complemento para preenchimento manual pelo cliente conforme solicitado
+          if (data.endereco) {
+            const rawCep = data.endereco.cep ? maskCEP(data.endereco.cep) : '';
+            if (rawCep) setZipcode(rawCep);
+            if (data.endereco.logradouro) setStreet(data.endereco.logradouro);
+            if (data.endereco.bairro) setNeighborhood(data.endereco.bairro);
+            if (data.endereco.municipio) setCity(data.endereco.municipio);
+            if (data.endereco.uf) setState(data.endereco.uf.toUpperCase());
+
+            // Número e complemento permanecem vazios para preenchimento manual obrigatório pelo cliente
+            setNumber('');
+            setComplement('');
+            setMainCepError('');
+
+            setErrors(prev => ({
+              ...prev,
+              zipcode: null,
+              street: null,
+              neighborhood: null,
+              city: null,
+              state: null
+            }));
+
+            // Se o logradouro não veio pelo CNPJ mas temos o CEP, busca os detalhes adicionais
+            if (rawCep && (!data.endereco.logradouro || !data.endereco.bairro)) {
+              const cleanCep = unmask(rawCep);
+              if (cleanCep.length === 8) {
+                fetchAddressByCEP(cleanCep).then(cepData => {
+                  if (cepData) {
+                    if (cepData.street && !data.endereco.logradouro) setStreet(cepData.street);
+                    if (cepData.neighborhood && !data.endereco.bairro) setNeighborhood(cepData.neighborhood);
+                    if (cepData.city && !data.endereco.municipio) setCity(cepData.city);
+                    if (cepData.state && !data.endereco.uf) setState(cepData.state.toUpperCase());
+                  }
+                }).catch(() => {});
+              }
+            }
+          }
+
           // Consulta automática de Inscrição Estadual (Sintegra / CADESP / SEFAZ com fallback)
           try {
             const uf = data.endereco?.uf || 'SP';
@@ -502,6 +542,14 @@ export const RegistrationForm = ({ onSuccess }) => {
         setTpInscricao('E');
         setNumeroInscricao('');
         sintegraResultRef.current = null;
+        setZipcode('');
+        setStreet('');
+        setNumber('');
+        setComplement('');
+        setNeighborhood('');
+        setCity('');
+        setState('');
+        setMainCepError('');
       } else if (clean.length === 14 && isValidCNPJ(clean)) {
         await executeCnpjQuery(clean);
       }
@@ -2144,10 +2192,12 @@ export const RegistrationForm = ({ onSuccess }) => {
                     <Info className="w-4 h-4 text-brand-green flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="font-bold text-slate-800">
-                        Preencha o CEP para buscar os dados de endereço
+                        {personType === 'PJ' && zipcode ? 'Endereço vinculado aos dados oficiais do CNPJ' : 'Preencha o CEP para buscar os dados de endereço'}
                       </p>
                       <p className="text-[11px] text-slate-600 mt-0.5">
-                        Ao digitar o CEP, os dados de Rua, Bairro, Cidade e Estado são preenchidos automaticamente abaixo.
+                        {personType === 'PJ' && zipcode
+                          ? 'Os dados de CEP, Rua, Bairro, Cidade e Estado foram preenchidos pelo CNPJ. Preencha o Número e Complemento abaixo.'
+                          : 'Ao digitar o CEP, os dados de Rua, Bairro, Cidade e Estado são preenchidos automaticamente abaixo.'}
                       </p>
                     </div>
                   </div>
@@ -2178,8 +2228,13 @@ export const RegistrationForm = ({ onSuccess }) => {
 
                   {/* Número */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Número <span className="text-red-500">*</span>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Número <span className="text-red-500">*</span></span>
+                      {personType === 'PJ' && (
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          Preenchimento obrigatório
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
