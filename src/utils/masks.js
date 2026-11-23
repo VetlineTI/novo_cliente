@@ -47,7 +47,11 @@ export const maskPhone = (value = '') => {
 
 // Máscara de CEP: 00000-000
 export const maskCEP = (value = '') => {
-  const clean = unmask(value).slice(0, 8);
+  let clean = unmask(value);
+  if (clean.length > 0 && clean.length < 8 && /^\d+$/.test(clean)) {
+    clean = clean.padStart(8, '0');
+  }
+  clean = clean.slice(0, 8);
   return clean.replace(/^(\d{5})(\d)/, '$1-$2');
 };
 

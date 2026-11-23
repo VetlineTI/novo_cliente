@@ -332,6 +332,53 @@ export const fetchCNPJDataFromBrasilAPI = async (cnpj) => {
         };
       }
     }
+  } catch (err) {
+    console.warn('Tentando próximo provedor de CNPJ (DirectData / Proxy)...', err);
+  }
+
+  // Provedor 4: DirectData via Proxy Seguro do Servidor (/api/directd)
+  try {
+    const response = await fetch(`/api/directd?service=CadastroPessoaJuridicaPlus&CNPJ=${clean}`);
+    if (response.ok) {
+      const result = await response.json();
+      const retorno = result.retorno || {};
+      if (retorno && (retorno.cnpj || retorno.razaoSocial)) {
+        const cnaeDesc = retorno.cnaePrincipalDescricao || retorno.atividadePrincipalDescricao || '';
+        const cnaeCode = formatCnaeCode(retorno.cnaePrincipalCodigo || retorno.cnae || '');
+        const fullCnae = cnaeCode && cnaeDesc ? `${cnaeCode} - ${cnaeDesc}` : (cnaeCode || cnaeDesc);
+
+        return {
+          razaoSocial: retorno.razaoSocial || retorno.nomeEmpresarial || '',
+          nomeFantasia: retorno.nomeFantasia || '',
+          situacaoCadastral: retorno.situacaoCadastral || 'ATIVA',
+          isAtiva: (retorno.situacaoCadastral || '').toUpperCase() === 'ATIVA',
+          dataAbertura: retorno.dataFundacao || retorno.dataAbertura || '',
+          cnaeCodigo: cnaeCode,
+          cnaeDescricao: cnaeDesc,
+          cnae: fullCnae,
+          inscricaoEstadual: retorno.inscricaoEstadual || null,
+          suggestedSegment: mapSegment(cnaeDesc),
+          socios: Array.isArray(retorno.socios) ? retorno.socios.map(s => ({
+            nome: s.nome || s.nomeSocio || '',
+            qualificacao: s.qualificacao || s.cargo || '',
+            cpf_cnpj_socio: s.documento || s.cpf || '',
+            documento: s.documento || s.cpf || '',
+            cpfRepresentante: ''
+          })) : [],
+          endereco: {
+            cep: retorno.cep ? maskCEP(retorno.cep) : '',
+            logradouro: retorno.logradouro || '',
+            numero: retorno.numero || '',
+            complemento: retorno.complemento || '',
+            bairro: retorno.bairroDistrito || retorno.bairro || '',
+            municipio: retorno.municipio || '',
+            uf: (retorno.uf || '').trim().toUpperCase()
+          },
+          telefone: retorno.telefonePrincipal ? maskPhone(retorno.telefonePrincipal) : '',
+          email: retorno.email ? String(retorno.email).toLowerCase() : ''
+        };
+      }
+    }
   } catch (error) {
     console.warn('Todos os provedores de CNPJ falharam:', error);
   }

@@ -369,9 +369,9 @@ export const RegistrationForm = ({ onSuccess }) => {
     }
   };
 
-  // Função central de consulta e validação de situação cadastral do CNPJ na Receita Federal
+  // Função central de consulta e validação de situação cadastral do CNPJ na Receita Federal (exclusivo para PJ)
   const executeCnpjQuery = async (cleanCnpj) => {
-    if (!cleanCnpj || cleanCnpj.length !== 14 || !isValidCNPJ(cleanCnpj)) return;
+    if (personType !== 'PJ' || !cleanCnpj || cleanCnpj.length !== 14 || !isValidCNPJ(cleanCnpj)) return;
 
     // 1. Checagem prévia se o CNPJ já está APROVADO no sistema
     setLoadingDuplicateCheck(true);
@@ -407,66 +407,82 @@ export const RegistrationForm = ({ onSuccess }) => {
             setFullName(data.razaoSocial);
             if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
           }
-          if (data.suggestedSegment && !segment) {
-            const matched = segmentsList.find(s =>
-              s.descricao.toLowerCase().includes(data.suggestedSegment.toLowerCase()) ||
-              data.suggestedSegment.toLowerCase().includes(s.descricao.toLowerCase())
-            );
-            if (matched) {
-              setSegment(matched.ram_ativ);
-            } else {
-              setSegment(data.suggestedSegment);
+          // Mapeamento resiliente do segmento sugerido
+          if (data.suggestedSegment && !segment && Array.isArray(segmentsList)) {
+            try {
+              const term = String(data.suggestedSegment).toLowerCase();
+              const matched = segmentsList.find(s => {
+                const desc = String(s?.descricao || '').toLowerCase();
+                return desc && (desc.includes(term) || term.includes(desc));
+              });
+              if (matched?.ram_ativ) {
+                setSegment(matched.ram_ativ);
+              }
+              if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+            } catch (segErr) {
+              console.warn('Erro ao mapear segmento sugerido:', segErr);
             }
-            if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
           }
 
           // Preenche automaticamente o endereço cadastral da empresa (CEP, Rua, Bairro, Cidade, UF)
           // Deixando Número e Complemento para preenchimento manual pelo cliente conforme solicitado
-          if (data.endereco) {
-            const rawCep = data.endereco.cep ? maskCEP(data.endereco.cep) : '';
-            if (rawCep) setZipcode(rawCep);
-            if (data.endereco.logradouro) setStreet(data.endereco.logradouro);
-            if (data.endereco.bairro) setNeighborhood(data.endereco.bairro);
-            if (data.endereco.municipio) setCity(data.endereco.municipio);
-            if (data.endereco.uf) setState(data.endereco.uf.toUpperCase());
+          const end = data.endereco || {};
+          let rawCep = end.cep || data.cep || '';
+          let cleanCep = unmask(rawCep);
+          if (cleanCep.length > 0 && cleanCep.length < 8) {
+            cleanCep = cleanCep.padStart(8, '0');
+          }
 
-            // Número e complemento permanecem vazios para preenchimento manual obrigatório pelo cliente
-            setNumber('');
-            setComplement('');
-            setMainCepError('');
+          let streetVal = end.logradouro || end.rua || data.logradouro || '';
+          let neighborhoodVal = end.bairro || data.bairro || '';
+          let cityVal = end.municipio || end.cidade || data.municipio || '';
+          let stateVal = (end.uf || end.estado || data.uf || '').trim().toUpperCase();
 
-            setErrors(prev => ({
-              ...prev,
-              zipcode: null,
-              street: null,
-              neighborhood: null,
-              city: null,
-              state: null
-            }));
-
-            // Se o logradouro não veio pelo CNPJ mas temos o CEP, busca os detalhes adicionais
-            if (rawCep && (!data.endereco.logradouro || !data.endereco.bairro)) {
-              const cleanCep = unmask(rawCep);
-              if (cleanCep.length === 8) {
-                fetchAddressByCEP(cleanCep).then(cepData => {
-                  if (cepData) {
-                    if (cepData.street && !data.endereco.logradouro) setStreet(cepData.street);
-                    if (cepData.neighborhood && !data.endereco.bairro) setNeighborhood(cepData.neighborhood);
-                    if (cepData.city && !data.endereco.municipio) setCity(cepData.city);
-                    if (cepData.state && !data.endereco.uf) setState(cepData.state.toUpperCase());
-                  }
-                }).catch(() => {});
+          // Se tiver CEP mas faltar logradouro, bairro ou cidade, busca imediatamente via fetchAddressByCEP
+          if (cleanCep.length === 8 && cleanCep !== '00000000') {
+            if (!streetVal || !neighborhoodVal || !cityVal) {
+              try {
+                const cepData = await fetchAddressByCEP(cleanCep);
+                if (cepData) {
+                  if (!streetVal && cepData.street) streetVal = cepData.street;
+                  if (!neighborhoodVal && cepData.neighborhood) neighborhoodVal = cepData.neighborhood;
+                  if (!cityVal && cepData.city) cityVal = cepData.city;
+                  if (!stateVal && cepData.state) stateVal = cepData.state.toUpperCase();
+                }
+              } catch (cepErr) {
+                console.warn('Erro ao buscar dados do CEP:', cepErr);
               }
             }
+
+            setZipcode(maskCEP(cleanCep));
           }
+
+          if (streetVal) setStreet(streetVal);
+          if (neighborhoodVal) setNeighborhood(neighborhoodVal);
+          if (cityVal) setCity(cityVal);
+          if (stateVal) setState(stateVal);
+
+          // Número e complemento permanecem vazios para preenchimento manual obrigatório pelo cliente
+          setNumber('');
+          setComplement('');
+          setMainCepError('');
+
+          setErrors(prev => ({
+            ...prev,
+            zipcode: null,
+            street: null,
+            neighborhood: null,
+            city: null,
+            state: null
+          }));
 
           // Consulta automática de Inscrição Estadual (Sintegra / CADESP / SEFAZ com fallback)
           try {
-            const uf = data.endereco?.uf || 'SP';
-            // Se o próprio provedor de CNPJ já trouxe IE (ex: CNPJ.ws)
-            if (data.inscricaoEstadual) {
+            const uf = stateVal || end.uf || 'SP';
+            // Se o próprio provedor de CNPJ já trouxe IE (ex: CNPJ.ws ou DirectData)
+            if (data.inscricaoEstadual && String(data.inscricaoEstadual).trim().toUpperCase() !== 'ISENTO') {
               setTpInscricao('E');
-              setNumeroInscricao(data.inscricaoEstadual);
+              setNumeroInscricao(String(data.inscricaoEstadual).trim());
             }
 
             const ieRes = await consultarInscricaoEstadual(cleanCnpj, uf);
@@ -476,7 +492,7 @@ export const RegistrationForm = ({ onSuccess }) => {
               if (ieRes.sintegraResult) {
                 sintegraResultRef.current = ieRes.sintegraResult;
               }
-            } else if (!data.inscricaoEstadual) {
+            } else if (!data.inscricaoEstadual || String(data.inscricaoEstadual).trim().toUpperCase() === 'ISENTO') {
               setTpInscricao('I');
               setNumeroInscricao('ISENTO');
               if (ieRes?.sintegraResult) {
