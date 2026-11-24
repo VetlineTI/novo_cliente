@@ -270,6 +270,153 @@ export default async function handler(req, res) {
           } catch (eAudit) {
             console.warn('Erro ao disparar auditoria Direct Data na ativação:', eAudit);
           }
+
+          // 4. REGRA DE NEGÓCIO: Aprovação automática e envio imediato para o ERP Moinho via n8n ao clicar no link do WhatsApp
+          try {
+            // Busca o registro completo e mais recente do cliente no schema novo_cliente
+            const clientFullRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}&select=*&order=criado_em.desc.nullslast&limit=1`, {
+              headers: {
+                'apikey': supabaseServiceKey,
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Accept-Profile': 'novo_cliente'
+              }
+            });
+
+            if (clientFullRes.ok) {
+              const fullList = await clientFullRes.json();
+              const clientRecord = fullList && fullList[0];
+
+              if (clientRecord) {
+                // Se o cliente já possui código no ERP (cd_clien), não reenvia para evitar duplicidade
+                if (clientRecord.cd_clien) {
+                  console.log(`Cliente ${cleanEmail} já possui cd_clien (${clientRecord.cd_clien}). Envio duplicado ignorado.`);
+                } else {
+                  const n8nWebhookUrl = 
+                    process.env.N8N_MOINHO_WEBHOOK_URL || 
+                    'https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho';
+                  
+                  const n8nSecret = 
+                    process.env.N8N_WEBHOOK_SECRET || 
+                    process.env.INTERNAL_API_SECRET || 
+                    '';
+
+                  const moinhoPayload = {
+                    event: 'CLIENT_APPROVED',
+                    action: 'confirmar_cadastro',
+                    timestamp: new Date().toISOString(),
+                    aprovado_por: 'whatsapp_confirm_auto',
+                    origem: 'whatsapp_click',
+                    cliente: {
+                      id: clientRecord.id,
+                      auth_user_id: clientRecord.auth_user_id || null,
+                      tipo_pessoa: clientRecord.tipo_pessoa || 'PJ',
+                      cpf_cnpj: clientRecord.cpf_cnpj || '',
+                      razao_social_nome: clientRecord.razao_social_nome || '',
+                      nome_fantasia: clientRecord.nome_fantasia || '',
+                      tp_inscricao: clientRecord.tp_inscricao || (clientRecord.tipo_pessoa === 'PF' ? 'I' : 'E'),
+                      numero_inscricao: clientRecord.numero_inscricao || clientRecord.numero_ie || 'ISENTO',
+                      crmv: clientRecord.crmv || null,
+                      telefone: clientRecord.telefone || '',
+                      email: clientRecord.email || '',
+                      segmento: clientRecord.segmento || clientRecord.ram_ativ || '',
+                      ram_ativ: clientRecord.ram_ativ || clientRecord.segmento || '',
+                      cd_vend: clientRecord.cd_vend || 'ATENA',
+                      tab_pre: clientRecord.tab_pre || 'VTL01',
+                      tp_ped: clientRecord.tp_ped || 'VTL01',
+                      limite_credito: Number(clientRecord.limite_credito || 0),
+                      cep: clientRecord.cep || '',
+                      logradouro: clientRecord.logradouro || '',
+                      numero: clientRecord.numero || '',
+                      complemento: clientRecord.complemento || '',
+                      bairro: clientRecord.bairro || '',
+                      cidade: clientRecord.cidade || '',
+                      uf: clientRecord.uf || '',
+                      endereco_entrega_diferente: Boolean(clientRecord.endereco_entrega_diferente),
+                      entrega_cep: clientRecord.entrega_cep || null,
+                      entrega_logradouro: clientRecord.entrega_logradouro || null,
+                      entrega_numero: clientRecord.entrega_numero || null,
+                      entrega_complemento: clientRecord.entrega_complemento || null,
+                      entrega_bairro: clientRecord.entrega_bairro || null,
+                      entrega_cidade: clientRecord.entrega_cidade || null,
+                      entrega_uf: clientRecord.entrega_uf || null,
+                      doc_contrato_social_url: clientRecord.doc_contrato_social_url || null,
+                      doc_identificacao_url: clientRecord.doc_identificacao_url || null,
+                      doc_crmv_url: clientRecord.doc_crmv_url || null,
+                      doc_comprovante_endereco_url: clientRecord.doc_comprovante_endereco_url || null,
+                      doc_ie_url: clientRecord.doc_ie_url || null,
+                      doc_jucesp_url: clientRecord.doc_jucesp_url || null,
+                      doc_cenprot_url: clientRecord.doc_cenprot_url || null,
+                      doc_sipeagro_url: clientRecord.doc_sipeagro_url || null,
+                      tem_sipeagro: Boolean(clientRecord.tem_sipeagro),
+                      nire_jucesp: clientRecord.nire_jucesp || null,
+                      status: 'aprovado',
+                      observacoes: clientRecord.observacoes || '',
+                      approved_at: new Date().toISOString(),
+                      created_at: clientRecord.criado_em || clientRecord.created_at || null
+                    }
+                  };
+
+                  const headers = {
+                    'Content-Type': 'application/json'
+                  };
+                  if (n8nSecret) {
+                    headers['X-Webhook-Secret'] = n8nSecret;
+                    headers['Authorization'] = `Bearer ${n8nSecret}`;
+                  }
+
+                  const n8nResponse = await fetch(n8nWebhookUrl, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(moinhoPayload)
+                  });
+
+                  const responseText = await n8nResponse.text();
+                  let responseData = null;
+                  try {
+                    responseData = JSON.parse(responseText);
+                  } catch (_) {
+                    responseData = responseText;
+                  }
+
+                  const items = Array.isArray(responseData) ? responseData : (responseData && typeof responseData === 'object' ? [responseData] : []);
+                  const item = items[0] || {};
+                  const cdClien = item.cd_clien ?? item.CD_CLIEN ?? item.cd_cliente ?? null;
+
+                  const dbUpdates = {
+                    status: 'aprovado',
+                    aprovado_em: new Date().toISOString(),
+                    aprovado_por: 'whatsapp_confirm_auto'
+                  };
+
+                  if (cdClien) {
+                    dbUpdates.cd_clien = String(cdClien);
+                    console.log(`Cliente ${cleanEmail} aprovado no ERP Moinho com cd_clien: ${cdClien}`);
+                  }
+
+                  if (item.error) {
+                    console.warn(`Erro retornado pelo n8n/Moinho para o cliente ${clientRecord.id}:`, item.error);
+                    const curObs = clientRecord.observacoes || '';
+                    dbUpdates.observacoes = curObs ? `${curObs} | [Moinho: ${item.error}]` : `[Moinho: ${item.error}]`;
+                  }
+
+                  await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?id=eq.${clientRecord.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                      'apikey': supabaseServiceKey,
+                      'Authorization': `Bearer ${supabaseServiceKey}`,
+                      'Content-Type': 'application/json',
+                      'Prefer': 'return=minimal',
+                      'Accept-Profile': 'novo_cliente',
+                      'Content-Profile': 'novo_cliente'
+                    },
+                    body: JSON.stringify(dbUpdates)
+                  }).catch(ePatch => console.warn('Erro ao atualizar status/cd_clien no Supabase:', ePatch));
+                }
+              }
+            }
+          } catch (eMoinho) {
+            console.error('Erro ao enviar cliente ao Moinho na confirmação de WhatsApp:', eMoinho);
+          }
         } catch (e) {
           console.warn('Erro ao atualizar usuário como confirmado:', e);
         }

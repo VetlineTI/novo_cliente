@@ -139,8 +139,8 @@ export function App() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                 <div>
-                  <p className="font-bold text-sm">🎉 Contato via WhatsApp confirmado com sucesso!</p>
-                  <p className="text-xs text-emerald-700 mt-0.5">Sua solicitação foi validada e está sendo analisada pela equipe comercial da Vetline.</p>
+                  <p className="font-bold text-sm">🎉 Cadastro confirmado e aprovado com sucesso!</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">Seus dados foram integrados ao ERP Vetline e nosso time entrará em contato em breve para dar início ao seu atendimento.</p>
                 </div>
               </div>
               <button
