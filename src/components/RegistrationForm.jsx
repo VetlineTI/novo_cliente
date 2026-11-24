@@ -1924,6 +1924,77 @@ export const RegistrationForm = ({ onSuccess }) => {
                 </select>
                 {errors.segment && <p className="text-xs text-red-500 mt-1 font-medium">{errors.segment}</p>}
               </div>
+
+              {/* SIPEAGRO para PJ - Posicionado logo abaixo do Segmento de Atuação */}
+              {personType === 'PJ' && (
+                <div className="sm:col-span-2 bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/90 space-y-3 mt-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+                        <FileCheck className="w-4 h-4 text-brand-green" />
+                        <span>Tem SIPEAGRO?</span>
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+                        Sistema Integrado de Produtos e Estabelecimentos Agropecuários (MAPA). Se possuir registro, selecione "Sim" e anexe o documento.
+                      </p>
+                    </div>
+
+                    {/* Botões Sim / Não */}
+                    <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl self-start sm:self-auto border border-slate-200 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasSipeagro(false);
+                          setDocSipeagro(null);
+                          if (errors.docSipeagro) setErrors(prev => ({ ...prev, docSipeagro: null }));
+                        }}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          !hasSipeagro
+                            ? 'bg-slate-700 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        Não
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasSipeagro(true);
+                        }}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          hasSipeagro
+                            ? 'bg-brand-green text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        Sim
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Upload do Documento SIPEAGRO quando Sim */}
+                  {hasSipeagro && (
+                    <div className="pt-3 border-t border-slate-200/60 animate-fade-in">
+                      <DocumentUpload
+                        label="Certificado / Comprovante SIPEAGRO (Imagem ou PDF)"
+                        file={docSipeagro}
+                        onFileChange={(f) => {
+                          setDocSipeagro(f);
+                          if (errors.docSipeagro) setErrors(prev => ({ ...prev, docSipeagro: null }));
+                        }}
+                        onValidationChange={setDocSipeagroValidation}
+                        required={true}
+                        error={errors.docSipeagro}
+                        expectedDocument={documentNumber}
+                        expectedName={fullName}
+                        category="OTHER"
+                        helperText="PDF, JPG ou PNG do registro SIPEAGRO"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ========================================================================= */}
@@ -2469,117 +2540,46 @@ export const RegistrationForm = ({ onSuccess }) => {
 
               {/* Grade de Documentos PJ */}
               {personType === 'PJ' ? (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-                    {/* 1. Contrato Social (PJ) */}
-                    <DocumentUpload
-                      label="Contrato Social ou Doc. Constitutivo"
-                      file={docContract}
-                      onFileChange={(f) => {
-                        setDocContract(f);
-                        if (errors.docContract || errors.docPJGroup) {
-                          setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
-                        }
-                      }}
-                      onValidationChange={setDocContractValidation}
-                      required={!docPartnerPhoto}
-                      error={errors.docContract}
-                      expectedDocument={documentNumber}
-                      expectedName={fullName}
-                      expectedPartners={cnpjInfo?.socios || []}
-                      category="CONTRACT"
-                    />
+                  {/* 1. Contrato Social (PJ) */}
+                  <DocumentUpload
+                    label="Contrato Social ou Doc. Constitutivo"
+                    file={docContract}
+                    onFileChange={(f) => {
+                      setDocContract(f);
+                      if (errors.docContract || errors.docPJGroup) {
+                        setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
+                      }
+                    }}
+                    onValidationChange={setDocContractValidation}
+                    required={!docPartnerPhoto}
+                    error={errors.docContract}
+                    expectedDocument={documentNumber}
+                    expectedName={fullName}
+                    expectedPartners={cnpjInfo?.socios || []}
+                    category="CONTRACT"
+                  />
 
-                    {/* 2. Documento com Foto de um dos Sócios (PJ) */}
-                    <DocumentUpload
-                      label="Documento com Foto de um dos Sócios (RG/CNH)"
-                      file={docPartnerPhoto}
-                      onFileChange={(f) => {
-                        setDocPartnerPhoto(f);
-                        if (errors.docPartnerPhoto || errors.docPJGroup) {
-                          setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
-                        }
-                      }}
-                      onValidationChange={setDocPartnerPhotoValidation}
-                      required={!docContract}
-                      error={errors.docPartnerPhoto}
-                      expectedDocument={documentNumber}
-                      expectedName={fullName}
-                      expectedPartners={cnpjInfo?.socios || []}
-                      category="IDENTIFICATION"
-                    />
-                  </div>
-
-                  {/* 3. Pergunta SIPEAGRO para PJ */}
-                  <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/90 space-y-3 mt-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <label className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
-                          <FileCheck className="w-4 h-4 text-brand-green" />
-                          <span>Tem SIPEAGRO?</span>
-                          <span className="text-red-500">*</span>
-                        </label>
-                        <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
-                          Sistema Integrado de Produtos e Estabelecimentos Agropecuários (MAPA). Se possuir registro, selecione "Sim" e anexe o documento.
-                        </p>
-                      </div>
-
-                      {/* Botões Sim / Não */}
-                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl self-start sm:self-auto border border-slate-200 shadow-2xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHasSipeagro(false);
-                            setDocSipeagro(null);
-                            if (errors.docSipeagro) setErrors(prev => ({ ...prev, docSipeagro: null }));
-                          }}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            !hasSipeagro
-                              ? 'bg-slate-700 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                          }`}
-                        >
-                          Não
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHasSipeagro(true);
-                          }}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            hasSipeagro
-                              ? 'bg-brand-green text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                          }`}
-                        >
-                          Sim
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Upload do Documento SIPEAGRO quando Sim */}
-                    {hasSipeagro && (
-                      <div className="pt-3 border-t border-slate-200/60 animate-fade-in">
-                        <DocumentUpload
-                          label="Certificado / Comprovante SIPEAGRO (Imagem ou PDF)"
-                          file={docSipeagro}
-                          onFileChange={(f) => {
-                            setDocSipeagro(f);
-                            if (errors.docSipeagro) setErrors(prev => ({ ...prev, docSipeagro: null }));
-                          }}
-                          onValidationChange={setDocSipeagroValidation}
-                          required={true}
-                          error={errors.docSipeagro}
-                          expectedDocument={documentNumber}
-                          expectedName={fullName}
-                          category="OTHER"
-                          helperText="PDF, JPG ou PNG do registro SIPEAGRO"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
+                  {/* 2. Documento com Foto de um dos Sócios (PJ) */}
+                  <DocumentUpload
+                    label="Documento com Foto de um dos Sócios (RG/CNH)"
+                    file={docPartnerPhoto}
+                    onFileChange={(f) => {
+                      setDocPartnerPhoto(f);
+                      if (errors.docPartnerPhoto || errors.docPJGroup) {
+                        setErrors(prev => ({ ...prev, docContract: null, docPartnerPhoto: null, docPJGroup: null }));
+                      }
+                    }}
+                    onValidationChange={setDocPartnerPhotoValidation}
+                    required={!docContract}
+                    error={errors.docPartnerPhoto}
+                    expectedDocument={documentNumber}
+                    expectedName={fullName}
+                    expectedPartners={cnpjInfo?.socios || []}
+                    category="IDENTIFICATION"
+                  />
+                </div>
               ) : (
                 /* Grade de Documentos PF (Comprovante de Endereço + CRMV obrigatórios) */
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
