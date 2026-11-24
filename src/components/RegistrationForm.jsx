@@ -811,9 +811,15 @@ export const RegistrationForm = ({ onSuccess }) => {
       setSubmitError(`O cadastro não pode ser concluído. O CNPJ informado consta como "${sit}" na Receita Federal. Apenas empresas com situação ATIVA podem se credenciar.`);
       return;
     }
-    if (personType === 'PF' && (!crmvData || !crmvData.isAtivo)) {
-      setSubmitError('O cadastro não pode ser concluído. É obrigatório informar e validar um CRMV com situação Ativa e Regular no CFMV.');
-      return;
+    if (personType === 'PF') {
+      if (!crmv || !crmv.trim()) {
+        setSubmitError('O cadastro não pode ser concluído. É obrigatório informar o número do CRMV.');
+        return;
+      }
+      if (crmvData && !crmvData.isAtivo && !crmvData.isPendingManualCheck) {
+        setSubmitError('O cadastro não pode ser concluído. O CRMV informado consta como inativo ou divergente no CFMV.');
+        return;
+      }
     }
 
     if (!validateForm()) {
@@ -1207,10 +1213,10 @@ export const RegistrationForm = ({ onSuccess }) => {
   // Regras de bloqueio de formulário:
   // - Bloqueia se o documento já possui cadastro APROVADO no sistema
   // - Para PJ: bloqueia se CNPJ não for informado ou não estiver com situação ATIVA na Receita Federal
-  // - Para PF: bloqueia se CRMV não for informado, não estiver ATIVO no CFMV ou divergir do CPF informado
+  // - Para PF: permite colocar CEP e trazer o endereço normalmente (bloqueia apenas se CPF já for aprovado)
   const isPjBlocked = personType === 'PJ' && (!!duplicateApprovedClient || !cnpjInfo || !cnpjInfo.isAtiva);
-  const isPfBlocked = personType === 'PF' && (!!duplicateApprovedClient || !crmvData || !crmvData.isValid || !crmvData.isAtivo || crmvData.isMismatch);
-  const isFormBlocked = !!duplicateApprovedClient || (personType === 'PJ' ? isPjBlocked : isPfBlocked);
+  const isPfBlocked = personType === 'PF' && !!duplicateApprovedClient;
+  const isFormBlocked = isPjBlocked || isPfBlocked;
 
   return (
     <div className="w-full bg-white rounded-2xl sm:rounded-3xl shadow-elevated border border-slate-100 p-5 sm:p-8 lg:p-10">
@@ -1738,43 +1744,33 @@ export const RegistrationForm = ({ onSuccess }) => {
           )}
         </div>
 
-        {/* BLOQUEIO DE CAMPOS SE DUPLICADO APROVADO, CNPJ (PJ) OU CRMV (PF) NÃO ESTIVER ATIVO */}
+        {/* BLOQUEIO DE CAMPOS SE DUPLICADO APROVADO OU CNPJ (PJ) NÃO ESTIVER ATIVO */}
         {isFormBlocked ? (
           <div className="p-6 sm:p-8 rounded-2xl bg-amber-50/70 border-2 border-dashed border-amber-200 text-center space-y-3 animate-fade-in my-4">
             <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto shadow-2xs ${duplicateApprovedClient ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'
               }`}>
               {duplicateApprovedClient ? (
                 <BadgeAlert className="w-6 h-6 text-red-600" />
-              ) : personType === 'PJ' ? (
-                <Building2 className="w-6 h-6 text-amber-600" />
               ) : (
-                <ShieldCheck className="w-6 h-6 text-amber-600" />
+                <Building2 className="w-6 h-6 text-amber-600" />
               )}
             </div>
             <h4 className="text-base font-bold text-slate-800">
               {duplicateApprovedClient ? (
                 <span className="text-red-700 font-extrabold">Cadastro Bloqueado: Documento Já Aprovado no Sistema</span>
-              ) : personType === 'PJ' ? (
+              ) : (
                 cnpjInfo && !cnpjInfo.isAtiva
                   ? `Campos bloqueados: CNPJ ${cnpjInfo.situacaoCadastral || 'Inativo'} na Receita Federal`
                   : 'Campos bloqueados: Validação de CNPJ Ativo Obrigatória'
-              ) : (
-                crmvData && !crmvData.isAtivo
-                  ? 'Campos bloqueados: CRMV Inativo / Não Regular no CFMV'
-                  : 'Campos bloqueados: Validação de CRMV Obrigatória'
               )}
             </h4>
             <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
               {duplicateApprovedClient ? (
                 'Não é possível prosseguir pois este documento já possui cadastro aprovado e integrado no sistema. Para solicitar novos pedidos ou alterações, entre em contato com seu representante comercial.'
-              ) : personType === 'PJ' ? (
+              ) : (
                 cnpjInfo && !cnpjInfo.isAtiva
                   ? `O CNPJ informado consta com situação cadastral "${cnpjInfo.situacaoCadastral}" na Receita Federal. O cadastro na plataforma é permitido exclusivamente para empresas com situação ATIVA.`
                   : 'Para prosseguir com o credenciamento de Pessoa Jurídica, digite o CNPJ da empresa acima (14 dígitos) para confirmar a situação ATIVA na Receita Federal e desbloquear os dados de inscrição, contato, endereço e envio de documentos.'
-              ) : (
-                crmvData && !crmvData.isAtivo
-                  ? `O CRMV informado consta como "${crmvData.situacao || 'Inativo'}" no Conselho de Medicina Veterinária. É necessário informar um CRMV ativo e regular para liberar o formulário.`
-                  : 'Para prosseguir com o credenciamento de Pessoa Física, digite seu CRMV acima e clique em "Validar CRMV" para desbloquear os dados de contato, endereço e envio de documentos.'
               )}
             </p>
           </div>
