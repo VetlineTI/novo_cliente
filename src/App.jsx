@@ -15,6 +15,7 @@ export function App() {
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [whatsappConfirmed, setWhatsappConfirmed] = useState(false);
   const [policyModal, setPolicyModal] = useState({ isOpen: false, tab: 'terms' });
+  const [formKey, setFormKey] = useState(0);
 
   // Controle de Rota: 'portal' ou 'admin'
   const isInitialAdmin =
@@ -94,6 +95,7 @@ export function App() {
   const handleSuccessClose = () => {
     setIsSuccessOpen(false);
     setSuccessData(null);
+    setFormKey(prev => prev + 1); // Força remonte do formulário, limpando todos os campos e uploads
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -163,7 +165,7 @@ export function App() {
 
             {/* Coluna Direita: Formulário de Cadastro */}
             <div className="lg:col-span-7 xl:col-span-7 order-1 lg:order-2">
-              <RegistrationForm onSuccess={handleRegistrationSuccess} />
+              <RegistrationForm key={formKey} onSuccess={handleRegistrationSuccess} />
             </div>
           </div>
         </div>
@@ -226,7 +228,7 @@ export function App() {
         isOpen={isSuccessOpen}
         onClose={handleSuccessClose}
         data={successData}
-        onReset={() => { }}
+        onReset={handleSuccessClose}
       />
     </div>
   );

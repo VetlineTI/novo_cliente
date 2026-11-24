@@ -1195,6 +1195,7 @@ export const RegistrationForm = ({ onSuccess }) => {
           email: finalEmail
         };
         onSuccess(clientWithContact);
+        resetForm();
       }
     } catch (err) {
       setSubmitError(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');
