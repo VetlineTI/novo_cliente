@@ -266,41 +266,7 @@ export default async function handler(req, res) {
             console.error('Erro ao enviar cliente ao Moinho na confirmação de WhatsApp:', eMoinho);
           }
 
-          // 3. Atualiza o usuário no Supabase Auth se existir
-          try {
-            const listRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users`, {
-              headers: {
-                'apikey': supabaseServiceKey,
-                'Authorization': `Bearer ${supabaseServiceKey}`
-              }
-            });
-            if (listRes.ok) {
-              const listData = await listRes.json();
-              const users = listData.users || [];
-              const foundUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-              if (foundUser) {
-                await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users/${foundUser.id}`, {
-                  method: 'PUT',
-                  headers: {
-                    'apikey': supabaseServiceKey,
-                    'Authorization': `Bearer ${supabaseServiceKey}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    user_metadata: {
-                      ...(foundUser.user_metadata || {}),
-                      whatsapp_confirmed: true
-                    },
-                    email_confirm: true
-                  })
-                });
-              }
-            }
-          } catch (eAuth) {
-            console.warn('Erro ao atualizar Supabase Auth:', eAuth);
-          }
-
-          // 4. Auditoria de Sócios e Protestos Direct Data (executado de forma segura sem travar resposta)
+          // 3. Auditoria de Sócios e Protestos Direct Data (executado de forma segura sem travar resposta)
           try {
             const clientQueryRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}&select=id,cpf_cnpj,tipo_pessoa,uf,doc_cenprot_url,doc_receita_url`, {
               headers: {
@@ -426,74 +392,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Link direto e oficial de confirmação cadastral da Vetline
+    // Link direto e oficial de confirmação cadastral da Vetline (sem necessidade de criação em auth.users)
     const cleanBase = baseUrl.replace(/\/$/, '');
     const confirmLink = `${cleanBase}/api/send-whatsapp-signup?action=confirm_redirect&email=${encodeURIComponent(cleanEmail)}`;
-
-    // Cria/atualiza o usuário no Supabase Auth de forma segura em background
-    try {
-      let generatePayload = {
-        type: 'signup',
-        email: cleanEmail,
-        options: {
-          data: {
-            full_name: cleanName
-          },
-          redirect_to: confirmLink
-        }
-      };
-
-      if (password) {
-        generatePayload.password = String(password);
-      }
-
-      const genRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`, {
-        method: 'POST',
-        headers: {
-          'apikey': supabaseServiceKey,
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(generatePayload)
-      });
-
-      if (!genRes.ok) {
-        // Se usuário já existe, atualiza metadata
-        const listRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users`, {
-          headers: {
-            'apikey': supabaseServiceKey,
-            'Authorization': `Bearer ${supabaseServiceKey}`
-          }
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          const users = listData.users || [];
-          const foundUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-          if (foundUser) {
-            const updatePayload = {
-              user_metadata: {
-                ...(foundUser.user_metadata || {}),
-                full_name: cleanName || foundUser.user_metadata?.full_name || 'Cliente'
-              }
-            };
-            if (password) {
-              updatePayload.password = String(password);
-            }
-            await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users/${foundUser.id}`, {
-              method: 'PUT',
-              headers: {
-                'apikey': supabaseServiceKey,
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(updatePayload)
-            });
-          }
-        }
-      }
-    } catch (errAuth) {
-      console.warn('Aviso ao sincronizar Auth no Supabase (não impede envio do WhatsApp):', errAuth);
-    }
 
     // 2. Monta a mensagem personalizada da Vetline com o link oficial de confirmação
     const message = [
