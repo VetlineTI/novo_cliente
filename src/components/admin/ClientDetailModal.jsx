@@ -33,7 +33,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { DocumentViewerModal } from './DocumentViewerModal';
-import { fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
+import { supabase, fetchSalespeople, fetchSegments, enviarWebhookNovoClienteMoinho, gerarTextoAlerta } from '../../lib/supabase';
 import { executarAuditoriaBureau } from '../../lib/infosimples';
 import { extractClientTelecomInfo, checkPhoneTelecom } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
@@ -78,6 +78,58 @@ export const ClientDetailModal = ({
   const [isAuditingTelecom, setIsAuditingTelecom] = useState(false);
   const [telecomFeedback, setTelecomFeedback] = useState(null);
   const [renderTick, setRenderTick] = useState(0);
+
+  // Anexo SIPEAGRO recuperado do Storage (fallback resiliente caso colunas não existam no banco)
+  const [sipeagroStorageDoc, setSipeagroStorageDoc] = useState(null);
+
+  // Busca anexo do SIPEAGRO diretamente no Storage se não veio na query do banco
+  useEffect(() => {
+    let isMounted = true;
+    if (!isOpen || !client) {
+      setSipeagroStorageDoc(null);
+      return;
+    }
+
+    if (client.doc_sipeagro_url) {
+      setSipeagroStorageDoc({ url: client.doc_sipeagro_url, fileName: 'sipeagro.pdf' });
+      return;
+    }
+
+    const checkStorageForSipeagro = async () => {
+      try {
+        const clean = (client.document_number || client.cpf_cnpj || client.cnpj || client.cpf || '').replace(/\D/g, '');
+        if (!clean) return;
+
+        const { data: files, error } = await supabase.storage
+          .from('novos_clientes')
+          .list(`${clean}/sipeagro`, { limit: 5 });
+
+        if (error || !files || files.length === 0) return;
+
+        const validFile = files.find(f => f.name && !f.name.startsWith('.'));
+        if (validFile && isMounted) {
+          const { data: publicData } = supabase.storage
+            .from('novos_clientes')
+            .getPublicUrl(`${clean}/sipeagro/${validFile.name}`);
+
+          if (publicData?.publicUrl) {
+            setSipeagroStorageDoc({
+              url: publicData.publicUrl,
+              fileName: validFile.name
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao verificar anexo SIPEAGRO no storage:', err);
+      }
+    };
+
+    checkStorageForSipeagro();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, client?.id, client?.document_number, client?.doc_sipeagro_url]);
 
   // Inicializa o formulário com os dados do cliente
   useEffect(() => {
@@ -236,6 +288,7 @@ export const ClientDetailModal = ({
   const cleanDoc = client.document_number?.replace(/\D/g, '') || 'geral';
   const bucketName = 'novos_clientes';
   const clientStoragePath = `${bucketName}/${cleanDoc}`;
+  const effectiveSipeagroUrl = client.doc_sipeagro_url || sipeagroStorageDoc?.url;
 
   // Executa consulta no Bureau da Infosimples sob demanda com tratamento real de erros
   const handleRunBureauAudit = async () => {
@@ -618,17 +671,17 @@ export const ClientDetailModal = ({
         id: 'sipeagro',
         name: 'SIPEAGRO (MAPA)',
         icon: FileCheck2,
-        badge: client.doc_sipeagro_url ? 'Anexado ✓' : ((client.tem_sipeagro || client.has_sipeagro) ? 'Pendente' : 'Não possui'),
-        hasDocs: Boolean(client.doc_sipeagro_url),
-        docs: client.doc_sipeagro_url ? [
+        badge: effectiveSipeagroUrl ? 'Anexado ✓' : ((client.tem_sipeagro || client.has_sipeagro || sipeagroStorageDoc) ? 'Pendente' : 'Não possui'),
+        hasDocs: Boolean(effectiveSipeagroUrl),
+        docs: effectiveSipeagroUrl ? [
           {
             id: 'doc_sipeagro',
             title: 'Certificado / Comprovante SIPEAGRO (MAPA)',
             category: 'Agropecuário / MAPA',
-            fileName: `sipeagro_${cleanDoc}.pdf`,
+            fileName: sipeagroStorageDoc?.fileName || `sipeagro_${cleanDoc}.pdf`,
             bucket: bucketName,
             path: `${clientStoragePath}/sipeagro/`,
-            url: client.doc_sipeagro_url,
+            url: effectiveSipeagroUrl,
             verificationBadge: 'SIPEAGRO Registrado',
             notes: `Armazenado em: ${clientStoragePath}/sipeagro/`
           }
@@ -1276,29 +1329,29 @@ export const ClientDetailModal = ({
                                 Registro SIPEAGRO (MAPA):
                               </label>
                               <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                                (client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                (client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                   ? 'bg-emerald-50/80 border-emerald-300'
                                   : 'bg-slate-50 border-slate-200'
                               }`}>
                                 <div className="flex items-center gap-2">
                                   <FileCheck2 className={`w-4 h-4 ${
-                                    (client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                    (client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                       ? 'text-brand-green'
                                       : 'text-slate-400'
                                   }`} />
                                   <span className="font-bold text-slate-900">
-                                    {(client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                    {(client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                       ? 'Sim (Possui Registro SIPEAGRO)'
                                       : 'Não informado / Não possui'}
                                   </span>
                                 </div>
-                                {client.doc_sipeagro_url ? (
+                                {effectiveSipeagroUrl ? (
                                   <button
                                     type="button"
                                     onClick={() => handleViewDoc({
                                       id: 'doc_sipeagro',
                                       title: 'Certificado / Comprovante SIPEAGRO (MAPA)',
-                                      url: client.doc_sipeagro_url,
+                                      url: effectiveSipeagroUrl,
                                       category: 'Agropecuário / MAPA'
                                     })}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"

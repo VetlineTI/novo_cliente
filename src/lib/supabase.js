@@ -456,9 +456,9 @@ export const normalizeClientRecord = (c) => {
     doc_jucesp_url: c.doc_jucesp_url || null,
     doc_cenprot_url: c.doc_cenprot_url || null,
     doc_sintegra_url: c.doc_sintegra_url || c.doc_ie_url || null,
-    doc_sipeagro_url: c.doc_sipeagro_url || null,
-    tem_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
-    has_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
+    doc_sipeagro_url: c.doc_sipeagro_url || (String(c.observacoes || '').match(/Doc:\s*([^\s\]]+)/i)?.[1]) || null,
+    tem_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || c.doc_sipeagro_url || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
+    has_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || c.doc_sipeagro_url || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
     nire_jucesp: c.nire_jucesp || null,
     total_protestos: c.total_protestos !== undefined ? c.total_protestos : null,
     bureau_consulted_at: c.bureau_consulted_at || null,
@@ -1060,6 +1060,17 @@ const safeInsertClient = async (tableName, initialPayload) => {
         const val = payload[missingCol];
         if (!String(payload.observacoes || '').includes('[Abertura:')) {
           payload.observacoes = payload.observacoes ? `${payload.observacoes} | [Abertura: ${val}]` : `[Abertura: ${val}]`;
+        }
+      }
+      if (missingCol === 'doc_sipeagro_url' && payload[missingCol]) {
+        const val = payload[missingCol];
+        if (!String(payload.observacoes || '').includes('[SIPEAGRO:')) {
+          payload.observacoes = payload.observacoes ? `${payload.observacoes} | [SIPEAGRO: Possui Registro - Doc: ${val}]` : `[SIPEAGRO: Possui Registro - Doc: ${val}]`;
+        }
+      }
+      if (missingCol === 'tem_sipeagro' && payload[missingCol]) {
+        if (!String(payload.observacoes || '').includes('[SIPEAGRO:')) {
+          payload.observacoes = payload.observacoes ? `${payload.observacoes} | [SIPEAGRO: Possui Registro]` : `[SIPEAGRO: Possui Registro]`;
         }
       }
       delete payload[missingCol];
