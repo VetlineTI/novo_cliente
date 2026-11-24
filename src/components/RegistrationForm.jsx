@@ -14,7 +14,6 @@ import {
   Phone,
   FileText,
   BadgeAlert,
-  Briefcase,
   UserCheck,
   ChevronDown,
   X,
@@ -49,7 +48,6 @@ import {
   uploadDocument,
   submitNewClient,
   updateClientData,
-  fetchSalespeople,
   fetchSegments,
   checkRateLimit,
   getClientIp,
@@ -71,15 +69,6 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [segmentsList, setSegmentsList] = useState([]);
   const [loadingSegments, setLoadingSegments] = useState(false);
   const [email, setEmail] = useState('');
-
-  // Vendedor / Atendimento
-  const [hasSalesperson, setHasSalesperson] = useState(false); // false = 'Não' (envia 'ATENA'), true = 'Sim'
-  const [salespeopleList, setSalespeopleList] = useState([]);
-  const [loadingSalespeople, setLoadingSalespeople] = useState(false);
-  const [selectedSalespersonCode, setSelectedSalespersonCode] = useState('');
-  const [salespersonSearch, setSalespersonSearch] = useState('');
-  const [isSalespersonDropdownOpen, setIsSalespersonDropdownOpen] = useState(false);
-  const salespersonDropdownRef = useRef(null);
 
   // BrasilAPI Dados do CNPJ
   const [loadingCnpj, setLoadingCnpj] = useState(false);
@@ -173,9 +162,6 @@ export const RegistrationForm = ({ onSuccess }) => {
     setPhone('');
     setSegment('');
     setEmail('');
-    setHasSalesperson(false);
-    setSelectedSalespersonCode('');
-    setSalespersonSearch('');
     setCnpjInfo(null);
     setCnpjAlert('');
     setDuplicateApprovedClient(null);
@@ -211,23 +197,7 @@ export const RegistrationForm = ({ onSuccess }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Carrega lista de vendedores da tabela novo_cliente.vendedor
-  const loadSalespeopleData = async (force = false) => {
-    setLoadingSalespeople(true);
-    try {
-      const res = await fetchSalespeople(force);
-      if (res.success && res.data && res.data.length > 0) {
-        setSalespeopleList(res.data);
-      }
-    } catch (e) {
-    } finally {
-      setLoadingSalespeople(false);
-    }
-  };
-
   useEffect(() => {
-    loadSalespeopleData();
-
     // Carrega segmentos da tabela novo_cliente.segmento
     const loadSegmentsData = async () => {
       setLoadingSegments(true);
@@ -244,31 +214,6 @@ export const RegistrationForm = ({ onSuccess }) => {
     };
     loadSegmentsData();
   }, []);
-
-  // Fechar dropdown de vendedor ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (salespersonDropdownRef.current && !salespersonDropdownRef.current.contains(e.target)) {
-        setIsSalespersonDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Filtro de vendedores por código (cd_vend) e por nome (nome_vendedor), ocultando 'ATENA'
-  const filteredSalespeople = salespeopleList.filter((v) => {
-    if (!v.cd_vend || !v.nome_vendedor) return false;
-    if (v.cd_vend.toUpperCase() === 'ATENA' || v.nome_vendedor.toUpperCase().includes('ATENA')) return false;
-    if (!salespersonSearch.trim()) return true;
-    const term = normalizeText(salespersonSearch);
-    const matchCd = normalizeText(v.cd_vend).includes(term);
-    const matchNome = normalizeText(v.nome_vendedor).includes(term);
-    const matchEquipe = v.nome_equipe ? normalizeText(v.nome_equipe).includes(term) : false;
-    return matchCd || matchNome || matchEquipe;
-  });
-
-  const selectedSalespersonObj = salespeopleList.find((v) => v.cd_vend === selectedSalespersonCode);
 
   // Seleciona segmento vindo do modal de ajuda mapeando para o ram_ativ
   const handleSelectSegmentFromModal = (selectedValue) => {
@@ -784,12 +729,7 @@ export const RegistrationForm = ({ onSuccess }) => {
       newErrors.email = 'Informe um e-mail válido.';
     }
 
-    // 7. Vendedor / Atendimento
-    if (hasSalesperson && !selectedSalespersonCode) {
-      newErrors.selectedSalesperson = 'Selecione o vendedor que realizou o atendimento.';
-    }
-
-    // 8. Endereço Principal / Cadastral (Obrigatório para PF e PJ)
+    // 7. Endereço Principal / Cadastral (Obrigatório para PF e PJ)
     if (!unmask(zipcode) || unmask(zipcode).length !== 8) {
       newErrors.zipcode = 'Informe um CEP válido.';
     }
@@ -1175,7 +1115,7 @@ export const RegistrationForm = ({ onSuccess }) => {
         city: city,
         uf: state,
         state: state,
-        cd_vend: hasSalesperson ? (selectedSalespersonCode || 'ATENA') : 'ATENA',
+        cd_vend: 'ATENA',
         tab_pre: 'VTL01',
         tp_ped: 'VTL01',
         limite_credito: initialCreditLimit,
@@ -1998,198 +1938,7 @@ export const RegistrationForm = ({ onSuccess }) => {
             </div>
 
             {/* ========================================================================= */}
-            {/* 4. ATENDIMENTO POR VENDEDOR                                              */}
-            {/* ========================================================================= */}
-            <div className={`bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3.5 relative ${isSalespersonDropdownOpen ? 'z-50' : 'z-20'}`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <label className="block text-xs sm:text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                  <Briefcase className="w-4 h-4 text-brand-green" />
-                  <span>Foi atendido por algum vendedor?</span>
-                  <span className="text-red-500">*</span>
-                </label>
-                {hasSalesperson && (
-                  <span className="text-[11px] font-medium text-brand-teal">
-                    Selecione o vendedor abaixo
-                  </span>
-                )}
-              </div>
-
-              {/* Botões de Escolha: Não / Sim */}
-              <div className="grid grid-cols-2 gap-3 max-w-xs sm:max-w-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHasSalesperson(false);
-                    setSelectedSalespersonCode('');
-                    setSalespersonSearch('');
-                    setIsSalespersonDropdownOpen(false);
-                    if (errors.salesperson) setErrors((prev) => ({ ...prev, salesperson: null }));
-                  }}
-                  className={`py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm border-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${!hasSalesperson
-                    ? 'border-brand-green bg-brand-green/10 text-brand-dark shadow-xs'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100/60'
-                    }`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full transition-colors ${!hasSalesperson ? 'bg-brand-green' : 'bg-slate-300'}`}></span>
-                  <span>Não</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHasSalesperson(true);
-                    setIsSalespersonDropdownOpen(true);
-                    if (salespeopleList.length === 0) {
-                      loadSalespeopleData(true);
-                    }
-                  }}
-                  className={`py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm border-2 transition-all flex items-center justify-center gap-2 cursor-pointer ${hasSalesperson
-                    ? 'border-brand-green bg-brand-green/10 text-brand-dark shadow-xs'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100/60'
-                    }`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full transition-colors ${hasSalesperson ? 'bg-brand-green' : 'bg-slate-300'}`}></span>
-                  <span>Sim</span>
-                </button>
-              </div>
-
-              {/* Campo de Busca Interativa de Vendedor (Quando marcado Sim) */}
-              {hasSalesperson && (
-                <div className="pt-2 border-t border-slate-200/80 space-y-2 animate-fade-in" ref={salespersonDropdownRef}>
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Vendedor Responsável <span className="text-red-500">*</span>
-                    </label>
-                    <span className="text-[11px] text-slate-400">
-                      {salespeopleList.length > 0 ? `${salespeopleList.length} vendedores disponíveis` : 'Busque por código ou nome'}
-                    </span>
-                  </div>
-
-                  <div className="relative">
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={
-                          selectedSalespersonObj && !isSalespersonDropdownOpen && !salespersonSearch
-                            ? `[${selectedSalespersonObj.cd_vend}] ${selectedSalespersonObj.nome_vendedor}`
-                            : salespersonSearch
-                        }
-                        onChange={(e) => {
-                          setSalespersonSearch(e.target.value);
-                          setSelectedSalespersonCode('');
-                          setIsSalespersonDropdownOpen(true);
-                          if (errors.salesperson) setErrors((prev) => ({ ...prev, salesperson: null }));
-                        }}
-                        onFocus={() => {
-                          setIsSalespersonDropdownOpen(true);
-                          if (salespeopleList.length === 0) {
-                            loadSalespeopleData(true);
-                          }
-                        }}
-                        placeholder="Digite o código ou nome do vendedor (ex: ADILSON, CARLOS...)"
-                        className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${errors.salesperson ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
-                          }`}
-                      />
-
-                      {(selectedSalespersonCode || salespersonSearch) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedSalespersonCode('');
-                            setSalespersonSearch('');
-                            setIsSalespersonDropdownOpen(true);
-                          }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 font-bold text-xs cursor-pointer"
-                          title="Limpar seleção"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Dropdown Flutuante de Seleção */}
-                    {isSalespersonDropdownOpen && (
-                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-100 animate-fade-in">
-                        {loadingSalespeople ? (
-                          <div className="p-4 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
-                            <span>Carregando vendedores cadastrados...</span>
-                          </div>
-                        ) : filteredSalespeople.length > 0 ? (
-                          <>
-                            <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium px-3 sticky top-0 z-10 backdrop-blur-xs">
-                              <span>{filteredSalespeople.length} {filteredSalespeople.length === 1 ? 'vendedor' : 'vendedores'}</span>
-                              {salespersonSearch.trim() && (
-                                <span>Filtrado por: "{salespersonSearch}"</span>
-                              )}
-                            </div>
-                            {filteredSalespeople.map((vend) => {
-                              const isSelected = selectedSalespersonCode === vend.cd_vend;
-                              return (
-                                <div
-                                  key={vend.cd_vend}
-                                  onClick={() => {
-                                    setSelectedSalespersonCode(vend.cd_vend);
-                                    setSalespersonSearch('');
-                                    setIsSalespersonDropdownOpen(false);
-                                    if (errors.salesperson) setErrors((prev) => ({ ...prev, salesperson: null }));
-                                  }}
-                                  className={`px-4 py-2.5 hover:bg-brand-green-light/40 flex items-center justify-between transition-colors cursor-pointer text-xs sm:text-sm ${isSelected ? 'bg-brand-green-light/60 font-bold text-brand-dark' : 'text-slate-700'
-                                    }`}
-                                >
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span className="font-mono px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold flex-shrink-0">
-                                      {vend.cd_vend}
-                                    </span>
-                                    <span className="truncate">{vend.nome_vendedor}</span>
-                                  </div>
-                                  {isSelected && (
-                                    <CheckCircle className="w-4 h-4 text-brand-green flex-shrink-0 ml-2" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </>
-                        ) : salespeopleList.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-500 space-y-2">
-                            <p>Nenhum vendedor carregado no momento.</p>
-                            <button
-                              type="button"
-                              onClick={() => loadSalespeopleData(true)}
-                              className="px-3 py-1.5 bg-brand-green text-white rounded-lg text-xs font-semibold hover:bg-brand-dark transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Loader2 className={`w-3 h-3 ${loadingSalespeople ? 'animate-spin' : 'hidden'}`} />
-                              Recarregar vendedores
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="p-4 text-center text-xs text-slate-400">
-                            Nenhum vendedor encontrado com o termo "{salespersonSearch}".
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {errors.salesperson && (
-                    <p className="text-xs text-red-500 font-medium">{errors.salesperson}</p>
-                  )}
-
-                  {selectedSalespersonObj && (
-                    <div className="flex items-center gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-900 font-medium">
-                      <UserCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span>
-                        Vendedor selecionado: <strong>[{selectedSalespersonObj.cd_vend}] {selectedSalespersonObj.nome_vendedor}</strong>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ========================================================================= */}
-            {/* 5. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
+            {/* 4. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
             {/* ========================================================================= */}
             <div className="bg-slate-50/90 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-4 relative z-10">
               <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 pb-2.5">
