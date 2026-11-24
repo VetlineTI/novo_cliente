@@ -28,7 +28,8 @@ import {
   X,
   Users,
   AlertTriangle,
-  Smartphone
+  Smartphone,
+  FileCheck
 } from 'lucide-react';
 import logoImg from '../../assets/vetline-logo.png';
 import { fetchClients, updateClientStatus, updateClientData, fetchSegments, enviarWebhookNovoClienteMoinho } from '../../lib/supabase';
@@ -199,6 +200,7 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
     if (c.doc_address_url) count++;
     if (c.doc_contract_url) count++;
     if (c.doc_ie_url) count++;
+    if (c.doc_sipeagro_url) count++;
     return count;
   };
 
@@ -611,6 +613,13 @@ export const AdminDashboard = ({ adminUser, onLogout, onNavigateToPortal }) => {
                                 <Receipt className="w-3 h-3 text-emerald-600" />
                                 <span>Tp: {client.tp_ped || 'VTL01'}</span>
                               </span>
+
+                              {(client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url) && (
+                                <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200" title="Registro SIPEAGRO MAPA">
+                                  <FileCheck className="w-3 h-3 text-teal-600" />
+                                  <span>SIPEAGRO {client.doc_sipeagro_url ? '✓' : ''}</span>
+                                </span>
+                              )}
                             </div>
 
                             {/* Alerta em Amarelo para PJ com CNAE fora do permitido */}

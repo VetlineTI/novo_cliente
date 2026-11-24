@@ -112,6 +112,7 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 | `supabase/fix_rate_limit_and_storage.sql` | Script SQL para rate limiting real capturado via cabeçalhos HTTP do servidor (`request.headers`), bloqueio de bypass por IP vazio, validação automática na RPC `insert_novo_cliente` e restrição de pastas no Supabase Storage. |
 | `supabase/migrate_functions_to_novo_cliente.sql` | Script SQL definitivo de blindagem das RPCs no schema `novo_cliente`: checagem estrita de privilégios (`novo_cliente.is_admin()`), remoção de `EXECUTE` para `anon`, correção contra sequestro de contas em `ensure_client_auth_user` e eliminação de RPCs obsoletas. |
 | `supabase/restore_auth_users_view.sql` | Script SQL para recriar/restaurar a view `public.auth_users_view` com permissões adequadas de consulta. |
+| `supabase/add_sipeagro_columns.sql` | Script SQL de migração para inclusão dos campos `tem_sipeagro` (BOOLEAN) e `doc_sipeagro_url` (TEXT) em `novo_cliente.data_new_cliente` e atualização da RPC `insert_novo_cliente`. |
 | `supabase/templates/confirm_signup.html` | Template HTML profissional e responsivo para e-mail de ativação de cadastro com cores da Vetline e logo oficial. |
 | `supabase/templates/reset_password.html` | Template HTML profissional para e-mail de recuperação de senha com identidade visual Vetline. |
 | `api/infosimples.js` | Serverless Function para Vercel: Proxy seguro para consultas à API Infosimples (evita 403 e CORS). |

@@ -613,6 +613,26 @@ export const ClientDetailModal = ({
             }
           ] : [])
         ]
+      },
+      {
+        id: 'sipeagro',
+        name: 'SIPEAGRO (MAPA)',
+        icon: FileCheck2,
+        badge: client.doc_sipeagro_url ? 'Anexado ✓' : ((client.tem_sipeagro || client.has_sipeagro) ? 'Pendente' : 'Não possui'),
+        hasDocs: Boolean(client.doc_sipeagro_url),
+        docs: client.doc_sipeagro_url ? [
+          {
+            id: 'doc_sipeagro',
+            title: 'Certificado / Comprovante SIPEAGRO (MAPA)',
+            category: 'Agropecuário / MAPA',
+            fileName: `sipeagro_${cleanDoc}.pdf`,
+            bucket: bucketName,
+            path: `${clientStoragePath}/sipeagro/`,
+            url: client.doc_sipeagro_url,
+            verificationBadge: 'SIPEAGRO Registrado',
+            notes: `Armazenado em: ${clientStoragePath}/sipeagro/`
+          }
+        ] : []
       }
     ] : [
       {
@@ -1246,6 +1266,52 @@ export const ClientDetailModal = ({
                                     <Clock className="w-3 h-3 text-amber-700" />
                                     Menos de 1 ano
                                   </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Registro SIPEAGRO (MAPA) para PJ */}
+                            <div className="sm:col-span-2">
+                              <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">
+                                Registro SIPEAGRO (MAPA):
+                              </label>
+                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+                                (client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                  ? 'bg-emerald-50/80 border-emerald-300'
+                                  : 'bg-slate-50 border-slate-200'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <FileCheck2 className={`w-4 h-4 ${
+                                    (client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                      ? 'text-brand-green'
+                                      : 'text-slate-400'
+                                  }`} />
+                                  <span className="font-bold text-slate-900">
+                                    {(client.tem_sipeagro || client.has_sipeagro || client.doc_sipeagro_url)
+                                      ? 'Sim (Possui Registro SIPEAGRO)'
+                                      : 'Não informado / Não possui'}
+                                  </span>
+                                </div>
+                                {client.doc_sipeagro_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewDoc({
+                                      id: 'doc_sipeagro',
+                                      title: 'Certificado / Comprovante SIPEAGRO (MAPA)',
+                                      url: client.doc_sipeagro_url,
+                                      category: 'Agropecuário / MAPA'
+                                    })}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-brand-green" />
+                                    Visualizar Anexo
+                                  </button>
+                                ) : (
+                                  (client.tem_sipeagro || client.has_sipeagro) && (
+                                    <span className="text-amber-700 font-semibold text-[11px]">
+                                      Anexo pendente
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>

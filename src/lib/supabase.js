@@ -456,6 +456,9 @@ export const normalizeClientRecord = (c) => {
     doc_jucesp_url: c.doc_jucesp_url || null,
     doc_cenprot_url: c.doc_cenprot_url || null,
     doc_sintegra_url: c.doc_sintegra_url || c.doc_ie_url || null,
+    doc_sipeagro_url: c.doc_sipeagro_url || null,
+    tem_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
+    has_sipeagro: Boolean(c.tem_sipeagro || c.has_sipeagro || String(c.observacoes || '').includes('[SIPEAGRO: Possui')),
     nire_jucesp: c.nire_jucesp || null,
     total_protestos: c.total_protestos !== undefined ? c.total_protestos : null,
     bureau_consulted_at: c.bureau_consulted_at || null,
@@ -581,6 +584,10 @@ export const toPortuguesePayload = (data) => {
   if (data.doc_receita_url !== undefined) p.doc_receita_url = data.doc_receita_url;
   if (data.doc_jucesp_url !== undefined) p.doc_jucesp_url = data.doc_jucesp_url;
   if (data.doc_cenprot_url !== undefined) p.doc_cenprot_url = data.doc_cenprot_url;
+  if (data.doc_sipeagro_url !== undefined) p.doc_sipeagro_url = data.doc_sipeagro_url;
+  if (data.tem_sipeagro !== undefined || data.has_sipeagro !== undefined) {
+    p.tem_sipeagro = Boolean(data.tem_sipeagro ?? data.has_sipeagro);
+  }
   if (data.nire_jucesp !== undefined) p.nire_jucesp = data.nire_jucesp;
   if (data.total_protestos !== undefined) p.total_protestos = data.total_protestos;
   if (data.bureau_consulted_at !== undefined) p.bureau_consulted_at = data.bureau_consulted_at;
@@ -613,6 +620,17 @@ export const toPortuguesePayload = (data) => {
   const cnaeToSave = data.cnae || (data.cnae_codigo ? `${data.cnae_codigo} - ${data.cnae_descricao || ''}` : data.cnae_descricao);
   if (cnaeToSave && !String(p.observacoes || '').includes('[CNAE:')) {
     p.observacoes = p.observacoes ? `${p.observacoes} | [CNAE: ${cnaeToSave}]` : `[CNAE: ${cnaeToSave}]`;
+  }
+
+  // SIPEAGRO (MAPA)
+  if (data.tem_sipeagro !== undefined || data.has_sipeagro !== undefined) {
+    const isSipeagro = Boolean(data.tem_sipeagro ?? data.has_sipeagro);
+    const sipeagroTag = isSipeagro
+      ? `[SIPEAGRO: Possui Registro${data.doc_sipeagro_url ? ` - Doc: ${data.doc_sipeagro_url}` : ''}]`
+      : '[SIPEAGRO: Não possui]';
+    if (!String(p.observacoes || '').includes('[SIPEAGRO:')) {
+      p.observacoes = p.observacoes ? `${p.observacoes} | ${sipeagroTag}` : sipeagroTag;
+    }
   }
 
   // Data de abertura do CNPJ
