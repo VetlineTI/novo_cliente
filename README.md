@@ -11,17 +11,18 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
   - **Aba "Já sou cliente"**: Formulário de login direto com e-mail e senha cadastrados no Supabase Auth, permitindo acesso imediato à Área do Cliente.
   - **Aba "Ainda não sou"**: Formulário completo de credenciamento e apresentação institucional da Vetline.
 
-### 2. 🛡️ Criação de Senha & Confirmação Obrigatória via WhatsApp (Z-API)
-- Ao preencher o formulário e clicar em **"Enviar cadastro"**, o sistema abre o modal **"Acesso à Área do Cliente"** (`CreatePasswordModal`).
-- O usuário confirma o **e-mail para login** e define sua **senha de acesso**.
-- O sistema registra o cliente no **Supabase Auth (`auth.users`)** com metadado `whatsapp_confirmed: false` e salva os dados cadastrais na tabela `novo_cliente.data_new_client`.
-- **Disparo Automático via Z-API**: Gera o link oficial de signup com token do Supabase Admin e dispara a mensagem no WhatsApp do cliente.
-- **Ativação Obrigatória no App**:
-  - Para acessar a Área do Cliente, é **obrigatório** tocar no link seguro enviado no WhatsApp.
-  - Se tentar logar antes de clicar no link, o sistema exibe alerta amigável de pendência e oferece o botão para **"Reenviar link no WhatsApp"**.
-  - Ao clicar no link do WhatsApp, a aplicação detecta o token, marca a conta como ativada (`whatsapp_confirmed: true`), dispara a consulta oficial de **Protestos em Cartório / Bureau** para o cliente ativado e libera o acesso à Área do Cliente.
-  - **Zero desperdício de créditos de API**: A consulta de protestos não é chamada prematuramente no formulário; ela ocorre estritamente para clientes que concluíram o cadastro e deram o aceite no WhatsApp.
-  - **Zero impacto nos demais sistemas**: A verificação é controlada na camada da aplicação, mantendo a flag global do Supabase desligada para não interferir em outros apps.
+### 2. 🛡️ Confirmação Via WhatsApp (Z-API) & Envio Automático ao ERP Moinho
+- Ao preencher o formulário e enviar o cadastro:
+  - O sistema registra o cliente com status `em_analise` e `whatsapp_confirmed: false`.
+  - Dispara automaticamente a mensagem no WhatsApp do cliente com o link oficial de validação e confirmação cadastral.
+- **Clique no Link do WhatsApp (Aprovação & Integração com Moinho Automática)**:
+  - Ao tocar no link recebido no WhatsApp (`/api/send-whatsapp-signup?action=confirm_redirect&email=...`), o backend da Vetline é acionado instantaneamente:
+    1. Marca `whatsapp_confirmed: true` no banco de dados.
+    2. Aciona o webhook do n8n (`https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho`) com os dados cadastrais e fiscais completos.
+    3. Recebe o código do cliente (`cd_clien`) do ERP Moinho e atualiza o cadastro no Supabase com `status: 'aprovado'` e o respectivo `cd_clien`.
+    4. Dispara a certidão de protestos/bureau em segundo plano.
+    5. Redireciona o cliente para o portal com feedback de sucesso em verde ("Credenciamento Confirmado com Sucesso!").
+  - O cliente não precisa fazer login após se cadastrar, apenas valida via WhatsApp e já tem o cadastro transmitido ao ERP.
 
 ### 3. 👤 Portal & Área do Cliente (`ClientDashboard`)
 - Painel exclusivo para o cliente autenticado acompanhar e gerenciar seu cadastro:

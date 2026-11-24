@@ -42,6 +42,13 @@ export function App() {
 
     if (isConfirmed) {
       setWhatsappConfirmed(true);
+      const emailParam = urlParams.get('email');
+      if (emailParam) {
+        // Redundância de segurança: garante o processamento da aprovação no servidor
+        fetch(`/api/send-whatsapp-signup?action=confirm&email=${encodeURIComponent(emailParam)}`, {
+          method: 'POST'
+        }).catch(() => {});
+      }
       window.history.replaceState({}, '', window.location.pathname);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
