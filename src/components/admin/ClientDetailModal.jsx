@@ -38,6 +38,7 @@ import { executarAuditoriaBureau } from '../../lib/infosimples';
 import { extractClientTelecomInfo, checkPhoneTelecom } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
 import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
+import { calcularCondicaoEPrazoPagamento } from '../../utils/paymentConditionValidator';
 
 export const ClientDetailModal = ({
   isOpen,
@@ -134,6 +135,20 @@ export const ClientDetailModal = ({
   // Inicializa o formulário com os dados do cliente
   useEffect(() => {
     if (client) {
+      const condPrazoPadrao = calcularCondicaoEPrazoPagamento({
+        tipo_pessoa: client.tipo_pessoa || client.person_type || 'PJ',
+        data_abertura: client.data_abertura || client.data_inicio_atividade,
+        total_protestos: client.total_protestos
+      });
+
+      const effectiveCondicao = (client.condicao_pagamento !== undefined && client.condicao_pagamento !== null && client.condicao_pagamento !== '')
+        ? client.condicao_pagamento
+        : condPrazoPadrao.condicao_pagamento;
+
+      const effectivePrazo = (client.praz_medio !== undefined && client.praz_medio !== null && client.praz_medio !== '')
+        ? client.praz_medio
+        : condPrazoPadrao.praz_medio;
+
       setFormData({
         full_name: client.full_name || '',
         trade_name: client.trade_name || '',
@@ -160,8 +175,8 @@ export const ClientDetailModal = ({
         cd_vend: client.cd_vend || 'ATENA',
         tab_pre: client.tab_pre || 'VTL01',
         tp_ped: client.tp_ped || 'VTL01',
-        condicao_pagamento: client.condicao_pagamento !== undefined && client.condicao_pagamento !== null ? client.condicao_pagamento : '',
-        praz_medio: client.praz_medio !== undefined && client.praz_medio !== null ? client.praz_medio : '',
+        condicao_pagamento: effectiveCondicao,
+        praz_medio: effectivePrazo,
         cd_clien: client.cd_clien || client.client_code || null,
         limite_credito: client.limite_credito !== undefined && client.limite_credito !== null ? Number(client.limite_credito) : (client.credit_limit !== undefined && client.credit_limit !== null ? Number(client.credit_limit) : 0),
         has_different_delivery_address: Boolean(client.has_different_delivery_address),
@@ -239,7 +254,7 @@ export const ClientDetailModal = ({
               updates.data_inicio_atividade = data.dataAbertura;
             }
             if (Object.keys(updates).length > 0) {
-              onUpdateClient(client.id, updates).catch(() => {});
+              onUpdateClient(client.id, updates).catch(() => { });
             }
           }
         }
@@ -761,7 +776,7 @@ export const ClientDetailModal = ({
   };
 
   const clientCode = formData.cd_clien || client.cd_clien || client.client_code;
-  const isAlreadyApprovedAndIntegrated = (formData.status === 'aprovado' || client.status === 'aprovado') && Boolean(clientCode);
+  const isAlreadyApproved = (formData.status === 'aprovado' || client.status === 'aprovado');
   const currentFolderData = folders.find((f) => f.id === activeFolder) || folders[0];
   const getCleanPhone = (phone) => phone ? phone.replace(/\D/g, '') : '';
   const whatsAppUrl = formData.phone ? `https://wa.me/55${getCleanPhone(formData.phone)}?text=Ol%C3%A1%2C%20falamos%20da%20Vetline%20Distribuidora%20sobre%20o%20seu%20cadastro.` : null;
@@ -994,20 +1009,17 @@ export const ClientDetailModal = ({
               const telecom = extractClientTelecomInfo(client || formData);
               if (!telecom.hasTelecomData || (!telecom.isVoip && !telecom.simSwappedRecently)) return null;
               return (
-                <div className={`mb-4 rounded-2xl p-4 shadow-sm border-2 animate-in fade-in duration-200 ${
-                  telecom.isVoip ? 'bg-red-50 border-red-400' : 'bg-amber-50 border-amber-400'
-                }`}>
+                <div className={`mb-4 rounded-2xl p-4 shadow-sm border-2 animate-in fade-in duration-200 ${telecom.isVoip ? 'bg-red-50 border-red-400' : 'bg-amber-50 border-amber-400'
+                  }`}>
                   <div className="flex items-start gap-3.5">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs mt-0.5 border ${
-                      telecom.isVoip ? 'bg-red-100 border-red-300 text-red-700' : 'bg-amber-100 border-amber-300 text-amber-700'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs mt-0.5 border ${telecom.isVoip ? 'bg-red-100 border-red-300 text-red-700' : 'bg-amber-100 border-amber-300 text-amber-700'
+                      }`}>
                       <AlertTriangle className={`w-5 h-5 animate-pulse ${telecom.isVoip ? 'text-red-600' : 'text-amber-600'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                          telecom.isVoip ? 'bg-red-200 text-red-900 border-red-300' : 'bg-amber-200 text-amber-900 border-amber-300'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${telecom.isVoip ? 'bg-red-200 text-red-900 border-red-300' : 'bg-amber-200 text-amber-900 border-amber-300'
+                          }`}>
                           Alerta Telecom (Antifraude)
                         </span>
                         <h4 className={`font-black text-sm sm:text-base ${telecom.isVoip ? 'text-red-950' : 'text-amber-950'}`}>
@@ -1248,11 +1260,10 @@ export const ClientDetailModal = ({
                                     }
                                   }}
                                   placeholder={formData.tp_inscricao === 'I' ? 'ISENTO' : 'Número da Inscrição'}
-                                  className={`w-full px-2.5 py-1.5 rounded-lg border text-slate-800 text-xs ${
-                                    formData.tp_inscricao === 'I'
+                                  className={`w-full px-2.5 py-1.5 rounded-lg border text-slate-800 text-xs ${formData.tp_inscricao === 'I'
                                       ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-medium'
                                       : 'border-slate-300 focus:border-brand-green outline-none bg-white'
-                                  }`}
+                                    }`}
                                 />
                               ) : (
                                 <div className="font-medium text-slate-800">
@@ -1269,20 +1280,18 @@ export const ClientDetailModal = ({
                                   {loadingCnae && <Loader2 className="w-3 h-3 animate-spin text-brand-green" />}
                                 </label>
                                 {cnaeValidation?.hasCnae && (
-                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                                    cnaeValidation.isPermitted
+                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${cnaeValidation.isPermitted
                                       ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                                       : 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                                  }`}>
+                                    }`}>
                                     {cnaeValidation.isPermitted ? 'Permitido ✓' : 'CNAE Fora do Permitido (Analisar)'}
                                   </span>
                                 )}
                               </div>
-                              <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
-                                cnaeValidation?.hasCnae && !cnaeValidation.isPermitted
+                              <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${cnaeValidation?.hasCnae && !cnaeValidation.isPermitted
                                   ? 'bg-amber-50/80 border-amber-300 text-amber-950 font-bold'
                                   : 'bg-slate-50 border-slate-200 text-slate-800'
-                              }`}>
+                                }`}>
                                 <span className="font-mono font-bold text-slate-900">
                                   {cnaeValidation?.formattedCnae || client.cnae || (loadingCnae ? 'Consultando via API Receita Federal...' : 'Não extraído')}
                                 </span>
@@ -1300,11 +1309,10 @@ export const ClientDetailModal = ({
                               <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">
                                 Início de Atividade / Fundação (Receita Federal):
                               </label>
-                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                                companyAgeAlert?.isRecent
+                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${companyAgeAlert?.isRecent
                                   ? 'bg-amber-50/80 border-amber-300'
                                   : 'bg-slate-50 border-slate-200'
-                              }`}>
+                                }`}>
                                 <div className="flex items-center gap-2">
                                   <Calendar className="w-3.5 h-3.5 text-slate-500" />
                                   <span className="font-mono font-bold text-slate-900">
@@ -1330,17 +1338,15 @@ export const ClientDetailModal = ({
                               <label className="text-[11px] text-slate-500 font-semibold block mb-0.5">
                                 Registro SIPEAGRO (MAPA):
                               </label>
-                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                                (client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
+                              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${(client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                   ? 'bg-emerald-50/80 border-emerald-300'
                                   : 'bg-slate-50 border-slate-200'
-                              }`}>
+                                }`}>
                                 <div className="flex items-center gap-2">
-                                  <FileCheck2 className={`w-4 h-4 ${
-                                    (client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
+                                  <FileCheck2 className={`w-4 h-4 ${(client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                       ? 'text-brand-green'
                                       : 'text-slate-400'
-                                  }`} />
+                                    }`} />
                                   <span className="font-bold text-slate-900">
                                     {(client.tem_sipeagro || client.has_sipeagro || effectiveSipeagroUrl)
                                       ? 'Sim (Possui Registro SIPEAGRO)'
@@ -1908,13 +1914,12 @@ export const ClientDetailModal = ({
                                 Auditoria Telecom & Linha (Twilio)
                               </h4>
                             </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              !hasData
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${!hasData
                                 ? 'bg-slate-800 text-slate-400 border-slate-700'
                                 : isVoip
                                   ? 'bg-red-500/20 text-red-300 border-red-500/40 animate-pulse'
                                   : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            }`}>
+                              }`}>
                               {!hasData
                                 ? 'Não Auditado'
                                 : isVoip
@@ -1937,17 +1942,16 @@ export const ClientDetailModal = ({
 
                             <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
                               <span className="text-[10px] text-slate-400 block font-medium">Segurança & Risco</span>
-                              <span className={`font-bold block text-[11px] ${
-                                !hasData 
-                                  ? 'text-slate-300' 
-                                  : isVoip 
-                                    ? 'text-red-400 font-black' 
+                              <span className={`font-bold block text-[11px] ${!hasData
+                                  ? 'text-slate-300'
+                                  : isVoip
+                                    ? 'text-red-400 font-black'
                                     : 'text-emerald-400'
-                              }`}>
-                                {!hasData 
-                                  ? 'Pendente' 
-                                  : isVoip 
-                                    ? '⚠️ Linha VOIP (Virtual)' 
+                                }`}>
+                                {!hasData
+                                  ? 'Pendente'
+                                  : isVoip
+                                    ? '⚠️ Linha VOIP (Virtual)'
                                     : 'Não é VOIP (Autêntico) ✓'}
                               </span>
                               <span className={`text-[10px] ${simSwapped ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
@@ -1962,11 +1966,10 @@ export const ClientDetailModal = ({
 
                           {/* Feedback de Consulta Manual */}
                           {telecomFeedback && (
-                            <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${
-                              telecomFeedback.type === 'success'
+                            <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border leading-relaxed ${telecomFeedback.type === 'success'
                                 ? 'bg-emerald-950/90 border-emerald-600 text-emerald-200'
                                 : 'bg-amber-950/90 border-amber-600 text-amber-200'
-                            }`}>
+                              }`}>
                               <span className="flex-1">{telecomFeedback.message}</span>
                             </div>
                           )}
@@ -2095,13 +2098,12 @@ export const ClientDetailModal = ({
                     {bureauFeedback.map((fb, idx) => (
                       <div
                         key={idx}
-                        className={`p-2 rounded-lg text-xs border ${
-                          fb.type === 'success'
+                        className={`p-2 rounded-lg text-xs border ${fb.type === 'success'
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                             : (fb.type === 'warning'
                               ? 'bg-amber-50 border-amber-300 text-amber-900'
                               : 'bg-red-50 border-red-300 text-red-900')
-                        }`}
+                          }`}
                       >
                         {fb.message}
                       </div>
@@ -2222,13 +2224,12 @@ export const ClientDetailModal = ({
                             {bureauFeedback.map((fb, idx) => (
                               <div
                                 key={idx}
-                                className={`p-2 rounded-lg text-xs border ${
-                                  fb.type === 'success'
+                                className={`p-2 rounded-lg text-xs border ${fb.type === 'success'
                                     ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                                     : (fb.type === 'warning'
                                       ? 'bg-amber-50 border-amber-300 text-amber-900'
                                       : 'bg-red-50 border-red-300 text-red-900')
-                                }`}
+                                  }`}
                               >
                                 {fb.message}
                               </div>
@@ -2296,11 +2297,10 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('em_analise')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                  isSaving ? 'opacity-70 cursor-not-allowed' : ''
-                } ${formData.status === 'em_analise'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${isSaving ? 'opacity-70 cursor-not-allowed' : ''
+                  } ${formData.status === 'em_analise'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
                   }`}
               >
                 {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
@@ -2312,33 +2312,31 @@ export const ClientDetailModal = ({
                 type="button"
                 onClick={() => handleSaveAll('recusado')}
                 disabled={isSaving}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                  isSaving ? 'opacity-70 cursor-not-allowed' : ''
-                } ${formData.status === 'recusado'
-                  ? 'bg-red-600 text-white shadow-xs'
-                  : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${isSaving ? 'opacity-70 cursor-not-allowed' : ''
+                  } ${formData.status === 'recusado'
+                    ? 'bg-red-600 text-white shadow-xs'
+                    : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
                   }`}
               >
                 {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
                 <span>Recusar</span>
               </button>
 
-              {/* Botão: Confirmar / Aprovar (Ocultado quando já aprovado e gerou o código do cliente) */}
-              {isAlreadyApprovedAndIntegrated ? (
+                {/* Botão: Confirmar / Aprovar (Ocultado quando já aprovado) */ }
+              {isAlreadyApproved ? (
                 <div className="px-3.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center gap-1.5 shadow-xs select-none">
                   <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Cadastrado no ERP (Cód: {clientCode})</span>
+                  <span>{clientCode ? `Cadastrado no ERP (Cód: ${clientCode})` : 'Cadastro Aprovado ✓'}</span>
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => handleSaveAll('aprovado')}
                   disabled={isSaving}
-                  className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    isSaving ? 'opacity-80 cursor-wait' : ''
-                  } ${formData.status === 'aprovado'
-                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${isSaving ? 'opacity-80 cursor-wait' : ''
+                    } ${formData.status === 'aprovado'
+                      ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400 ring-offset-1'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
                     }`}
                 >
                   {isSaving ? (
