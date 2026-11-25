@@ -54,6 +54,7 @@ export const ClientDetailModal = ({
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
 
   // Validação e Extração de CNAE
@@ -201,6 +202,7 @@ export const ClientDetailModal = ({
       });
       setIsEditing(false);
       setSaveSuccess(false);
+      setSaveError(null);
     }
   }, [client]);
 
@@ -493,6 +495,7 @@ export const ClientDetailModal = ({
   const handleSaveAll = async (newStatusOverride = null) => {
     setIsSaving(true);
     setSaveSuccess(false);
+    setSaveError(null);
     try {
       const finalStatus = newStatusOverride || formData.status;
       const inscrSave = resolverTipoENumeroInscricao({
@@ -516,38 +519,17 @@ export const ClientDetailModal = ({
         const textoAlerta = gerarTextoAlerta({ ...client, ...payloadToSave }, confirmDate);
         payloadToSave.alerta = textoAlerta;
 
-        if (onUpdateClient) {
-          await onUpdateClient(client.id, payloadToSave);
-        } else if (onUpdateStatus) {
-          await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
-        }
+        const mergedClientForWebhook = {
+          ...client,
+          ...payloadToSave,
+          status: 'aprovado',
+          alerta: textoAlerta
+        };
 
         try {
-          const mergedClientForWebhook = {
-            ...client,
-            ...payloadToSave,
-            status: 'aprovado',
-            alerta: textoAlerta
-          };
           webhookResult = await enviarWebhookNovoClienteMoinho(mergedClientForWebhook);
-
-          // Se o webhook retornou um cd_vend ou cd_clien do ERP, atualiza o cadastro
-          const extraFields = { alerta: textoAlerta };
-          if (webhookResult && (webhookResult.cd_vend || webhookResult.cd_clien)) {
-            if (webhookResult.cd_vend) {
-              extraFields.cd_vend = webhookResult.cd_vend;
-              payloadToSave.cd_vend = webhookResult.cd_vend;
-            }
-            if (webhookResult.cd_clien) {
-              extraFields.cd_clien = webhookResult.cd_clien;
-              payloadToSave.cd_clien = webhookResult.cd_clien;
-            }
-          }
-          if (onUpdateClient) {
-            await onUpdateClient(client.id, extraFields);
-          }
         } catch (whErr) {
-          console.warn('Falha não bloqueante ao disparar webhook N8N:', whErr);
+          console.error('Falha de conexão com o servidor de aprovação:', whErr);
           webhookResult = {
             success: false,
             statusType: 'error',
@@ -555,7 +537,31 @@ export const ClientDetailModal = ({
             message: whErr.message || 'Falha de comunicação com o Webhook'
           };
         }
+
+        // Se o webhook falhou (Timeout, erro SQL Server, etc.): NÃO altera para aprovado!
+        if (!webhookResult || !webhookResult.success || webhookResult.statusType === 'error' || webhookResult.error) {
+          const errMsg = webhookResult?.error || webhookResult?.message || 'Falha na comunicação ou Timeout no banco de dados do ERP Moinho.';
+          setSaveError(`Não foi possível aprovar no ERP MOINHO: ${errMsg}. O cadastro NÃO foi aprovado e permaneceu em análise.`);
+          setIsSaving(false);
+          return;
+        }
+
+        // Se o webhook confirmou com sucesso, preenche campos retornados pelo ERP
+        if (webhookResult.cd_vend) {
+          payloadToSave.cd_vend = webhookResult.cd_vend;
+        }
+        if (webhookResult.cd_clien) {
+          payloadToSave.cd_clien = webhookResult.cd_clien;
+        }
+
+        // AGORA SIM salva como 'aprovado' no banco de dados Supabase
+        if (onUpdateClient) {
+          await onUpdateClient(client.id, payloadToSave);
+        } else if (onUpdateStatus) {
+          await onUpdateStatus(client.id, payloadToSave.status, payloadToSave.notes);
+        }
       } else {
+        // Demais alterações de status ou edição cadastral normal
         if (onUpdateClient) {
           await onUpdateClient(client.id, payloadToSave);
         } else if (onUpdateStatus) {
@@ -2260,6 +2266,24 @@ export const ClientDetailModal = ({
               </div>
             )}
           </div>
+
+          {/* Alerta de Erro de Integração ERP Moinho */}
+          {saveError && (
+            <div className="bg-red-50 border-t border-b border-red-300 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-red-800 animate-fade-in flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <span className="font-semibold">{saveError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveError(null)}
+                className="text-red-500 hover:text-red-800 p-1 cursor-pointer"
+                title="Fechar alerta"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* 4. Rodapé Fixo e Otimizado */}
           <div className="bg-white px-3 py-2.5 sm:px-6 sm:py-3 border-t border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 flex-shrink-0">

@@ -256,18 +256,50 @@ export default async function handler(req, res) {
       headers['Authorization'] = `Bearer ${N8N_WEBHOOK_SECRET}`;
     }
 
-    const n8nResponse = await fetch(N8N_MOINHO_WEBHOOK_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload)
-    });
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 45000); // 45s timeout
 
-    const responseText = await n8nResponse.text();
+    let n8nResponse;
+    let responseText = '';
+    try {
+      n8nResponse = await fetch(N8N_MOINHO_WEBHOOK_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: abortController.signal
+      });
+      clearTimeout(timeoutId);
+      responseText = await n8nResponse.text();
+    } catch (whErr) {
+      clearTimeout(timeoutId);
+      if (whErr.name === 'AbortError') {
+        console.error('aprovar-cliente: Timeout de 45s atingido ao aguardar n8n/Moinho.');
+        return res.status(504).json({
+          success: false,
+          error: 'Timeout: O servidor do ERP Moinho demorou mais de 45 segundos para responder. O cadastro NÃO foi aprovado.'
+        });
+      }
+      throw whErr;
+    }
+
     let responseData = null;
     try {
       responseData = JSON.parse(responseText);
     } catch (e) {
       responseData = responseText;
+    }
+
+    // Se o HTTP status do n8n não foi 2xx, reporta erro imediatamente
+    if (!n8nResponse.ok) {
+      const errMsg = typeof responseData === 'object' && (responseData?.error || responseData?.message)
+        ? (responseData.error || responseData.message)
+        : `Erro na comunicação com o n8n/ERP (HTTP ${n8nResponse.status})`;
+      console.error(`aprovar-cliente: n8n retornou HTTP ${n8nResponse.status}:`, responseText);
+      return res.status(502).json({
+        success: false,
+        error: errMsg,
+        status: n8nResponse.status
+      });
     }
 
     // Trava de segurança: a aprovação é de UM cliente. Se o n8n devolver mais de um item,
@@ -279,24 +311,36 @@ export default async function handler(req, res) {
         success: false,
         qtd: items.length,
         error: items.length === 0
-          ? 'O ERP não processou este cadastro (nenhum retorno do workflow). Verifique se o status foi salvo como aprovado.'
+          ? 'O ERP não processou este cadastro (nenhum retorno do workflow). Verifique a conexão com o banco do Moinho.'
           : `O workflow do ERP processou ${items.length} cadastros em vez de 1. O código do cliente NÃO foi gravado. Verifique o workflow no n8n.`
       });
     }
 
     const item = items[0] || {};
-    if (item.error) {
-      // Erro real do ERP fica só no log do servidor (Vercel > Logs), nunca vai para o navegador
-      console.error(`aprovar-cliente: erro do ERP para cliente ${clientRecord.id} (${clientRecord.cpf_cnpj}):`, item.error);
+    if (item.error || item.resultado === 'ERRO') {
+      const errDetail = item.error || item.message || 'Erro ao gravar cliente no ERP Moinho.';
+      console.error(`aprovar-cliente: erro do ERP para cliente ${clientRecord.id} (${clientRecord.cpf_cnpj}):`, errDetail);
+      return res.status(502).json({
+        success: false,
+        error: String(errDetail).toLowerCase().includes('timeout')
+          ? 'Timeout: O banco de dados do ERP Moinho demorou mais do que o limite permitido para responder.'
+          : `Erro no ERP Moinho: ${errDetail}`,
+        data: [{
+          cd_clien: null,
+          resultado: 'ERRO',
+          error: errDetail
+        }]
+      });
     }
+
     return res.status(200).json({
-      success: n8nResponse.ok && !item.error,
+      success: true,
       status: n8nResponse.status,
       qtd: 1,
       data: [{
         cd_clien: item.cd_clien ?? null,
-        resultado: item.resultado ?? null,
-        error: item.error ? 'Erro ao gravar no ERP.' : undefined
+        cd_vend: item.cd_vend ?? null,
+        resultado: item.resultado ?? 'OK'
       }]
     });
   } catch (err) {

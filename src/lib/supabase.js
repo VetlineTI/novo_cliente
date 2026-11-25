@@ -1605,14 +1605,15 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
     }
 
     if (!response.ok || !resData?.success) {
+      const errMsg = resData?.error || resData?.data?.[0]?.error || `Falha no processamento da aprovação (HTTP ${response.status})`;
       console.warn(`Servidor de aprovação retornou erro HTTP ${response.status}:`, resData);
       return {
         success: false,
         statusType: 'error',
         cd_clien: null,
         resultado: 'ERRO',
-        message: resData?.error || `Falha no processamento da aprovação (HTTP ${response.status})`,
-        error: resData?.error || `HTTP ${response.status}`,
+        message: errMsg,
+        error: errMsg,
         response: resData
       };
     }
@@ -1666,15 +1667,16 @@ export const enviarWebhookNovoClienteMoinho = async (clientData) => {
       };
     }
 
-    // Retorno de fallback caso venha 200 com formato não especificado
+    // Se não veio confirmação nem código do cliente gerado pelo ERP, não assumir sucesso
+    const failMsg = firstItem.error || firstItem.message || 'O ERP MOINHO não confirmou a criação do cliente.';
     return {
-      success: true,
-      statusType: 'created',
-      cd_clien: cdClien,
-      cd_vend: cdVend,
-      resultado: firstItem.resultado || 'OK',
-      message: 'Cadastro confirmado com sucesso no ERP MOINHO.',
-      error: null,
+      success: false,
+      statusType: 'error',
+      cd_clien: null,
+      cd_vend: null,
+      resultado: 'ERRO',
+      message: failMsg,
+      error: failMsg,
       response: n8nData
     };
   } catch (err) {
