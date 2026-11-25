@@ -107,6 +107,30 @@ export default async function handler(req, res) {
     }
 
     // 3. MONTA O PAYLOAD OFICIAL COM OS DADOS REAIS DO BANCO
+    // Regra de Inscrição ERP Moinho:
+    // - O código 'N' NÃO EXISTE (somente 'E', 'I', 'M').
+    // - PJ ou PF com IE numérica -> 'E', com inscrição só em dígitos.
+    // - Isento ou sem IE -> 'I'.
+    const rawNumInscr = String(clientRecord.numero_inscricao ?? clientRecord.numero_ie ?? '').trim();
+    const rawTpInscr = String(clientRecord.tp_inscricao || '').trim().toUpperCase();
+    const digitsInscr = rawNumInscr.replace(/\D/g, '');
+    const hasDigits = digitsInscr.length > 0;
+    const isIsento = rawNumInscr.toUpperCase() === 'ISENTO' || rawTpInscr === 'I';
+
+    let resolvedTpInscr = 'I';
+    let resolvedNumInscr = 'ISENTO';
+
+    if (rawTpInscr === 'M') {
+      resolvedTpInscr = 'M';
+      resolvedNumInscr = hasDigits ? digitsInscr : (rawNumInscr || 'ISENTO');
+    } else if (hasDigits && !isIsento) {
+      resolvedTpInscr = 'E';
+      resolvedNumInscr = digitsInscr;
+    } else {
+      resolvedTpInscr = 'I';
+      resolvedNumInscr = 'ISENTO';
+    }
+
     const payload = {
       event: 'CLIENT_APPROVED',
       action: 'confirmar_cadastro',
@@ -119,8 +143,12 @@ export default async function handler(req, res) {
         cpf_cnpj: clientRecord.cpf_cnpj || '',
         razao_social_nome: clientRecord.razao_social_nome || '',
         nome_fantasia: clientRecord.nome_fantasia || '',
-        tp_inscricao: clientRecord.tp_inscricao || (clientRecord.tipo_pessoa === 'PF' ? 'I' : 'E'),
-        numero_inscricao: clientRecord.numero_inscricao || clientRecord.numero_ie || 'ISENTO',
+        tp_inscricao: resolvedTpInscr,
+        tp_inscr: resolvedTpInscr,
+        numero_inscricao: resolvedNumInscr,
+        inscricao: resolvedNumInscr,
+        numero_ie: resolvedNumInscr,
+        possui_ie: resolvedTpInscr === 'E',
         crmv: clientRecord.crmv || null,
         telefone: clientRecord.telefone || '',
         email: clientRecord.email || '',

@@ -39,6 +39,7 @@ import { extractClientTelecomInfo, checkPhoneTelecom } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
 import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
 import { calcularCondicaoEPrazoPagamento } from '../../utils/paymentConditionValidator';
+import { resolverTipoENumeroInscricao } from '../../utils/inscricaoValidator';
 
 export const ClientDetailModal = ({
   isOpen,
@@ -149,6 +150,13 @@ export const ClientDetailModal = ({
         ? client.praz_medio
         : condPrazoPadrao.praz_medio;
 
+      const inscrResolvida = resolverTipoENumeroInscricao({
+        tipo_pessoa: client.tipo_pessoa || client.person_type || 'PJ',
+        tp_inscricao: client.tp_inscricao || client.tipo_inscricao || client.tp_inscr,
+        numero_inscricao: client.numero_inscricao || client.numero_ie,
+        numero_ie: client.numero_ie
+      });
+
       setFormData({
         full_name: client.full_name || '',
         trade_name: client.trade_name || '',
@@ -160,10 +168,10 @@ export const ClientDetailModal = ({
         cnae_descricao: client.cnae_descricao || '',
         ram_ativ: client.ram_ativ || client.segmento || client.segment || '',
         segment: client.ram_ativ || client.segmento || client.segment || '',
-        has_ie: Boolean(client.has_ie),
-        ie_number: client.ie_number || '',
-        tp_inscricao: client.tp_inscricao || (client.has_ie ? 'E' : (client.numero_ie === 'ISENTO' ? 'I' : (client.person_type === 'PJ' ? 'E' : 'I'))),
-        numero_inscricao: client.numero_inscricao || client.numero_ie || (client.tp_inscricao === 'I' ? 'ISENTO' : ''),
+        has_ie: inscrResolvida.possui_ie,
+        ie_number: inscrResolvida.numero_inscricao,
+        tp_inscricao: inscrResolvida.tp_inscricao,
+        numero_inscricao: inscrResolvida.numero_inscricao,
         crmv: client.crmv || client.numero_crmv || '',
         zipcode: client.zipcode || '',
         street: client.street || '',
@@ -487,8 +495,17 @@ export const ClientDetailModal = ({
     setSaveSuccess(false);
     try {
       const finalStatus = newStatusOverride || formData.status;
+      const inscrSave = resolverTipoENumeroInscricao({
+        tipo_pessoa: formData.person_type || client.tipo_pessoa || client.person_type,
+        tp_inscricao: formData.tp_inscricao,
+        numero_inscricao: formData.numero_inscricao,
+        numero_ie: formData.numero_inscricao
+      });
+
       const payloadToSave = {
         ...formData,
+        tp_inscricao: inscrSave.tp_inscricao,
+        numero_inscricao: inscrSave.numero_inscricao,
         ...(newStatusOverride ? { status: newStatusOverride } : {})
       };
 

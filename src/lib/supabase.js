@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { checkCompanyAge } from '../utils/validators';
+import { resolverTipoENumeroInscricao } from '../utils/inscricaoValidator';
 
 const supabaseUrl = 
   import.meta.env.VITE_SUPABASE_URL || 
@@ -303,17 +304,17 @@ export const normalizeClientRecord = (c) => {
   const nome_fantasia = c.nome_fantasia || c.trade_name || '';
   const rawNumeroInscricao = c.numero_inscricao ?? c.numero_ie ?? c.ie_number ?? null;
   const isPF = tipo_pessoa === 'PF';
-  const tp_inscricao = c.tp_inscricao || c.tipo_inscricao || (
-    isPF 
-      ? 'I'
-      : (rawNumeroInscricao && String(rawNumeroInscricao).toUpperCase() === 'ISENTO' 
-          ? 'I' 
-          : (c.possui_ie !== undefined ? (c.possui_ie ? 'E' : 'I') : 'E'))
-  );
-  const numero_inscricao = (isPF || tp_inscricao === 'I') ? 'ISENTO' : (rawNumeroInscricao || '');
+  const inscrResolved = resolverTipoENumeroInscricao({
+    tipo_pessoa,
+    tp_inscricao: c.tp_inscricao || c.tipo_inscricao || c.tp_inscr,
+    numero_inscricao: rawNumeroInscricao,
+    numero_ie: c.numero_ie
+  });
+  const tp_inscricao = inscrResolved.tp_inscricao;
+  const numero_inscricao = inscrResolved.numero_inscricao;
   const crmv = c.crmv || c.numero_crmv || c.crmv_number || '';
   const numero_ie = numero_inscricao;
-  const possui_ie = tp_inscricao === 'E';
+  const possui_ie = inscrResolved.possui_ie;
   const telefone = c.telefone || c.phone || '';
   const ram_ativ = c.ram_ativ ?? c.RAM_ATIV ?? c.ramo_atividade ?? c.segmento ?? c.segment ?? '';
   const segmento = c.segmento || c.segment || c.ram_ativ || '';
@@ -394,7 +395,9 @@ export const normalizeClientRecord = (c) => {
     trade_name: nome_fantasia,
     tp_inscricao,
     tipo_inscricao: tp_inscricao,
+    tp_inscr: tp_inscricao,
     numero_inscricao,
+    inscricao: numero_inscricao,
     crmv,
     numero_crmv: crmv,
     possui_ie,
@@ -503,22 +506,14 @@ export const toPortuguesePayload = (data) => {
   if (data.nome_fantasia !== undefined || data.trade_name !== undefined) p.nome_fantasia = data.nome_fantasia || data.trade_name || null;
   
   // Tipo e Número de Inscrição ('E' = Estadual, 'I' = Isento, 'M' = Municipal)
-  let resolvedTp = data.tp_inscricao || data.tipo_inscricao || null;
-  let resolvedNum = data.numero_inscricao !== undefined 
-    ? data.numero_inscricao 
-    : (data.numero_ie !== undefined ? data.numero_ie : data.ie_number);
-
-  if (resolvedTp === 'I' || String(resolvedNum).toUpperCase() === 'ISENTO') {
-    p.tp_inscricao = 'I';
-    p.numero_inscricao = 'ISENTO';
-  } else {
-    if (resolvedTp) {
-      p.tp_inscricao = resolvedTp;
-    }
-    if (resolvedNum !== undefined) {
-      p.numero_inscricao = resolvedNum || 'ISENTO';
-    }
-  }
+  const resolvedInscr = resolverTipoENumeroInscricao({
+    tipo_pessoa: data.tipo_pessoa || data.person_type,
+    tp_inscricao: data.tp_inscricao || data.tipo_inscricao || data.tp_inscr,
+    numero_inscricao: data.numero_inscricao,
+    numero_ie: data.numero_ie !== undefined ? data.numero_ie : data.ie_number
+  });
+  p.tp_inscricao = resolvedInscr.tp_inscricao;
+  p.numero_inscricao = resolvedInscr.numero_inscricao;
   
   // Limpa Telefone/Celular para salvar estritamente apenas números (sem traço, parênteses ou espaços)
   if (data.telefone !== undefined || data.phone !== undefined) {
