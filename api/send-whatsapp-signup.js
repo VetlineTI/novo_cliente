@@ -360,7 +360,11 @@ export default async function handler(req, res) {
 
               if (targetClient && targetClient.cpf_cnpj && (!targetClient.doc_cenprot_url || !targetClient.doc_receita_url)) {
                 const docClean = String(targetClient.cpf_cnpj).replace(/\D/g, '');
-                const directToken = process.env.DIRECTD_TOKEN || '12DC14EA-112C-426C-9EC9-05A1280D23D1';
+                const directToken = process.env.DIRECTD_TOKEN;
+                if (!directToken) {
+                  console.warn('DIRECTD_TOKEN não configurado no servidor.');
+                  return;
+                }
                 const isPJ = docClean.length === 14;
 
                 const auditUpdates = {
