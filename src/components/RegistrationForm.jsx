@@ -44,6 +44,7 @@ import {
   fetchAddressByCEP,
   fetchCNPJDataFromBrasilAPI
 } from '../utils/validators';
+import { calcularCondicaoEPrazoPagamento } from '../utils/paymentConditionValidator';
 import {
   uploadDocument,
   submitNewClient,
@@ -1059,6 +1060,16 @@ export const RegistrationForm = ({ onSuccess }) => {
 
       const initialCreditLimit = personType === 'PJ' ? 3000.00 : 1500.00;
 
+      // Cálculo de Condição de Pagamento e Prazo Médio (Regras Vetline ERP)
+      // CPF sem protesto: condicao 49, prazo 28
+      // CNPJ até 6 meses: condicao 6, prazo 14
+      // CNPJ mais de 6 meses sem protesto: condicao 49, prazo 28
+      const condicaoPrazoInicial = calcularCondicaoEPrazoPagamento({
+        tipo_pessoa: personType,
+        data_abertura: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
+        total_protestos: null
+      });
+
       // Auditoria de Linha Telecom (Twilio Lookups v2: VOIP e SIM Swap)
       let telecomData = null;
       try {
@@ -1124,6 +1135,8 @@ export const RegistrationForm = ({ onSuccess }) => {
         cd_vend: 'ATENA',
         tab_pre: 'VTL01',
         tp_ped: 'VTL01',
+        condicao_pagamento: condicaoPrazoInicial.condicao_pagamento,
+        praz_medio: condicaoPrazoInicial.praz_medio,
         limite_credito: initialCreditLimit,
         credit_limit: initialCreditLimit,
         endereco_entrega_diferente: hasDifferentDelivery,

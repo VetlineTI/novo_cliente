@@ -129,6 +129,8 @@ export default async function handler(req, res) {
         cd_vend: clientRecord.cd_vend || 'ATENA',
         tab_pre: clientRecord.tab_pre || 'VTL01',
         tp_ped: clientRecord.tp_ped || 'VTL01',
+        condicao_pagamento: (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '') ? Number(clientRecord.condicao_pagamento) : null,
+        praz_medio: (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '') ? Number(clientRecord.praz_medio) : null,
         limite_credito: Number(clientRecord.limite_credito || 0),
         cep: clientRecord.cep || '',
         logradouro: clientRecord.logradouro || '',

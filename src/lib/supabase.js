@@ -338,6 +338,12 @@ export const normalizeClientRecord = (c) => {
   const cd_vend = c.cd_vend || 'ATENA';
   const tab_pre = c.tab_pre || 'VTL01';
   const tp_ped = c.tp_ped || 'VTL01';
+  const condicao_pagamento = (c.condicao_pagamento !== undefined && c.condicao_pagamento !== null && c.condicao_pagamento !== '')
+    ? Number(c.condicao_pagamento)
+    : null;
+  const praz_medio = (c.praz_medio !== undefined && c.praz_medio !== null && c.praz_medio !== '')
+    ? Number(c.praz_medio)
+    : null;
   const storage_bucket = c.storage_bucket || 'novos_clientes';
   const doc_ie_url = c.doc_ie_url || null;
   const doc_contrato_social_url = c.doc_contrato_social_url || c.doc_contract_url || null;
@@ -443,6 +449,8 @@ export const normalizeClientRecord = (c) => {
     ip_address: ip_origem,
     tab_pre,
     tp_ped,
+    condicao_pagamento,
+    praz_medio,
     storage_bucket,
     doc_ie_url,
     doc_contrato_social_url,
@@ -566,6 +574,16 @@ export const toPortuguesePayload = (data) => {
   }
   if (data.tab_pre) p.tab_pre = data.tab_pre;
   if (data.tp_ped) p.tp_ped = data.tp_ped;
+  if (data.condicao_pagamento !== undefined) {
+    p.condicao_pagamento = (data.condicao_pagamento !== '' && data.condicao_pagamento !== null)
+      ? Number(data.condicao_pagamento)
+      : null;
+  }
+  if (data.praz_medio !== undefined) {
+    p.praz_medio = (data.praz_medio !== '' && data.praz_medio !== null)
+      ? Number(data.praz_medio)
+      : null;
+  }
   if (data.storage_bucket) p.storage_bucket = data.storage_bucket;
   if (data.doc_ie_url !== undefined) p.doc_ie_url = data.doc_ie_url;
   if (data.doc_contrato_social_url !== undefined || data.doc_contract_url !== undefined) {

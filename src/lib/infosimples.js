@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
+import { calcularCondicaoEPrazoPagamento } from '../utils/paymentConditionValidator';
 
 // Rota protegida com proxy no servidor (/api/infosimples)
 // O token é injetado estritamente no backend e nunca exposto ao navegador
@@ -965,6 +966,14 @@ export const executarAuditoriaBureau = async (client) => {
         const autoLimit = numProt === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
         updatePayload.limite_credito = autoLimit;
         updatePayload.credit_limit = autoLimit;
+
+        const condPrazo = calcularCondicaoEPrazoPagamento({
+          tipo_pessoa: isPJ ? 'PJ' : 'PF',
+          data_abertura: client.data_abertura || client.data_inicio_atividade || results.receita?.dataAbertura || null,
+          total_protestos: numProt
+        });
+        updatePayload.condicao_pagamento = condPrazo.condicao_pagamento;
+        updatePayload.praz_medio = condPrazo.praz_medio;
       }
 
       const saveRes = await updateClientData(clientId, updatePayload);

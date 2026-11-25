@@ -58,6 +58,11 @@ Aplicação web moderna, intuitiva e altamente responsiva para credenciamento, l
 - **Segmentos de Atuação (`ram_ativ` & `descricao`)**: Lista de segmentos carregada dinamicamente da tabela `novo_cliente.segmento` exibindo a `descricao` amigável no formulário e gravando o código `ram_ativ` no banco de dados.
 - **Endereço Principal & Entrega**: Preenchimento automático via CEP (BrasilAPI / ViaCEP).
 - **Vendedor Responsável (`cd_vend`)**: Seleção de vendedor ativo do schema `talao` (tabela `talao.vendedor`, via RPC `listar_vendedores`) ou padrão `'ATENA'`. O servidor só grava códigos existentes; valor inválido vira `'ATENA'`.
+- **Condição de Pagamento (`condicao_pagamento`) & Prazo Médio (`praz_medio`)**: Cálculo automático na submissão do cadastro e na consulta de protestos/bureau (`src/utils/paymentConditionValidator.js`):
+  - **CPF sem protesto**: Condição `49` e Prazo `28` dias.
+  - **CPF ou CNPJ com protesto**: Condição `6` e Prazo `28` dias.
+  - **CNPJ sem protesto até 6 meses de abertura**: Condição `6` e Prazo `14` dias.
+  - **CNPJ sem protesto com mais de 6 meses**: Condição `49` e Prazo `28` dias.
 
 ### 5. 👑 Painel Administrativo (`/admin`)
 - Rota dedicada para administradores e analistas de cadastro da Vetline.
@@ -255,6 +260,7 @@ Para garantir o funcionamento completo e seguro no seu Supabase:
    - [`supabase/destravar_admin.sql`](file:///supabase/destravar_admin.sql): Permissões da listagem do admin apenas para `authenticated` (as funções checam `is_admin()`).
    - [`supabase/restaurar_listagem_admin.sql`](file:///supabase/restaurar_listagem_admin.sql): Recria `get_novo_cliente_clients` com checagem de admin e devolve o EXECUTE só para `authenticated` (corrige 42501 no painel), com diagnóstico de permissões.
    - [`supabase/fix_update_novo_cliente.sql`](file:///supabase/fix_update_novo_cliente.sql): Corrige a RPC `update_novo_cliente` (removia status por usar colunas inexistentes `possui_ie`/`numero_ie`) e passa a gravar `cd_clien`, `alerta`, `tp_inscricao`, `numero_inscricao`, `crmv` e `ram_ativ`.
+   - [`supabase/add_condicao_pagamento_e_praz_medio.sql`](file:///supabase/add_condicao_pagamento_e_praz_medio.sql): Adiciona as colunas `condicao_pagamento` (número inteiro até 3 dígitos, 0 a 999) e `praz_medio` (número inteiro até 2 dígitos, 0 a 99) na tabela `novo_cliente.data_new_cliente`, com constraints de validação e atualização da RPC `update_novo_cliente`.
    - [`supabase/revogar_funcoes_admin_anon.sql`](file:///supabase/revogar_funcoes_admin_anon.sql): **Obrigatório.** Revoga de `PUBLIC`/`anon` as funções administrativas (`grant_role_by_email`, `set_user_role`, `list_auth_users_with_profiles`, `get_novo_cliente_clients`, `update_novo_cliente`, `delete_novo_cliente`, `ensure_client_auth_user`), restringe a leitura da tabela a dono ou admin e emite relatório de privilégios.
 4. Clique no botão verde **Run** (Executar).
 

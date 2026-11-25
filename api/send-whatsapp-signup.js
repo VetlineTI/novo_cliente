@@ -156,6 +156,8 @@ export default async function handler(req, res) {
                       cd_vend: clientRecord.cd_vend || 'ATENA',
                       tab_pre: clientRecord.tab_pre || 'VTL01',
                       tp_ped: clientRecord.tp_ped || 'VTL01',
+                      condicao_pagamento: (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '') ? Number(clientRecord.condicao_pagamento) : null,
+                      praz_medio: (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '') ? Number(clientRecord.praz_medio) : null,
                       limite_credito: Number(clientRecord.limite_credito || 0),
                       cep: clientRecord.cep || '',
                       logradouro: clientRecord.logradouro || '',
@@ -298,6 +300,34 @@ export default async function handler(req, res) {
                       const numP = protData.retorno.numeroTotalProtestos ?? 0;
                       auditUpdates.total_protestos = numP;
                       auditUpdates.limite_credito = numP === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
+
+                      // Regra de Condição de Pagamento e Prazo Médio (Vetline ERP)
+                      // 1. CPF ou CNPJ com protesto: condição 6 e prazo 28
+                      // 2. CPF sem protesto: condição 49 e prazo 28
+                      // 3. CNPJ sem protesto até 6 meses de abertura: condição 6 e prazo 14
+                      // 4. CNPJ sem protesto mais de 6 meses de abertura: condição 49 e prazo 28
+                      if (numP > 0) {
+                        auditUpdates.condicao_pagamento = 6;
+                        auditUpdates.praz_medio = 28;
+                      } else {
+                        if (!isPJ) {
+                          auditUpdates.condicao_pagamento = 49;
+                          auditUpdates.praz_medio = 28;
+                        } else {
+                          const dtAbertura = targetClient.data_abertura || targetClient.data_inicio_atividade;
+                          let isAte6Meses = false;
+                          if (dtAbertura) {
+                            const d = new Date(dtAbertura);
+                            if (!isNaN(d.getTime())) {
+                              const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+                              isAte6Meses = diffDays >= 0 && diffDays <= 180;
+                            }
+                          }
+                          auditUpdates.condicao_pagamento = isAte6Meses ? 6 : 49;
+                          auditUpdates.praz_medio = isAte6Meses ? 14 : 28;
+                        }
+                      }
+
                       if (protData.metaDados?.urlComprovante) {
                         auditUpdates.doc_cenprot_url = protData.metaDados.urlComprovante;
                       }

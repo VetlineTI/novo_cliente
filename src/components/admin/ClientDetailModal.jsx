@@ -160,6 +160,8 @@ export const ClientDetailModal = ({
         cd_vend: client.cd_vend || 'ATENA',
         tab_pre: client.tab_pre || 'VTL01',
         tp_ped: client.tp_ped || 'VTL01',
+        condicao_pagamento: client.condicao_pagamento !== undefined && client.condicao_pagamento !== null ? client.condicao_pagamento : '',
+        praz_medio: client.praz_medio !== undefined && client.praz_medio !== null ? client.praz_medio : '',
         cd_clien: client.cd_clien || client.client_code || null,
         limite_credito: client.limite_credito !== undefined && client.limite_credito !== null ? Number(client.limite_credito) : (client.credit_limit !== undefined && client.credit_limit !== null ? Number(client.credit_limit) : 0),
         has_different_delivery_address: Boolean(client.has_different_delivery_address),
@@ -1682,6 +1684,67 @@ export const ClientDetailModal = ({
                               <span className="text-[10px] text-slate-400 font-medium">Padrão ERP</span>
                             </div>
                           )}
+                        </div>
+
+                        {/* Condição de Pagamento e Prazo Médio (ERP) */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[11px] text-slate-600 font-bold block mb-1">
+                              Condição Pagto (até 3 díg.):
+                            </label>
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                max="999"
+                                value={formData.condicao_pagamento ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                  handleChange('condicao_pagamento', val === '' ? '' : parseInt(val, 10));
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green font-mono font-bold text-slate-900 bg-white"
+                                placeholder="Ex: 1"
+                              />
+                            ) : (
+                              <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                                <span className="font-mono font-bold text-slate-900 text-sm">
+                                  {formData.condicao_pagamento !== undefined && formData.condicao_pagamento !== null && formData.condicao_pagamento !== ''
+                                    ? formData.condicao_pagamento
+                                    : 'Não def.'}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium">ERP</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] text-slate-600 font-bold block mb-1">
+                              Prazo Médio (até 2 díg.):
+                            </label>
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={formData.praz_medio ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                                  handleChange('praz_medio', val === '' ? '' : parseInt(val, 10));
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 focus:border-brand-green font-mono font-bold text-slate-900 bg-white"
+                                placeholder="Ex: 30"
+                              />
+                            ) : (
+                              <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                                <span className="font-mono font-bold text-slate-900 text-sm">
+                                  {formData.praz_medio !== undefined && formData.praz_medio !== null && formData.praz_medio !== ''
+                                    ? `${formData.praz_medio} dias`
+                                    : 'Não def.'}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium">Dias</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Vendedor Responsável */}
