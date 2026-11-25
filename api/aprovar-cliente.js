@@ -131,20 +131,15 @@ export default async function handler(req, res) {
       resolvedNumInscr = 'ISENTO';
     }
 
-    // Regra de Condição de Pagamento e Prazo Médio (ERP Moinho)
+    // Regra de Condição de Pagamento e Prazo Médio (ERP Moinho):
+    // - CNPJ com até 6 meses de abertura: condição 6 e prazo 14
+    // - CNPJ com mais de 6 meses (ex: 7 meses) ou CPF: condição 49 e prazo 28
     const isPJRecord = String(clientRecord.tipo_pessoa || '').toUpperCase() === 'PJ';
-    const hasProtestRecord = clientRecord.total_protestos !== null && clientRecord.total_protestos !== undefined && Number(clientRecord.total_protestos) > 0;
 
     let calculatedCond = 49;
     let calculatedPrazo = 28;
 
-    if (hasProtestRecord) {
-      calculatedCond = 6;
-      calculatedPrazo = 28;
-    } else if (!isPJRecord) {
-      calculatedCond = 49;
-      calculatedPrazo = 28;
-    } else {
+    if (isPJRecord) {
       const dtAbertura = clientRecord.data_abertura || clientRecord.data_inicio_atividade;
       let isAte6Meses = false;
       if (dtAbertura) {
@@ -154,9 +149,16 @@ export default async function handler(req, res) {
           isAte6Meses = diffDays >= 0 && diffDays <= 180;
         }
       } else {
-        const obsMatch = String(clientRecord.observacoes || '').match(/\[Abertura:\s*([^\]]+)\]/i);
+        const obsMatch = String(clientRecord.observacoes || '').match(/Abertura:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})/i);
         if (obsMatch) {
-          const d = new Date(obsMatch[1]);
+          const rawD = obsMatch[1];
+          let d;
+          if (rawD.includes('/')) {
+            const [dia, mes, ano] = rawD.split('/');
+            d = new Date(`${ano}-${mes}-${dia}`);
+          } else {
+            d = new Date(rawD);
+          }
           if (!isNaN(d.getTime())) {
             const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
             isAte6Meses = diffDays >= 0 && diffDays <= 180;

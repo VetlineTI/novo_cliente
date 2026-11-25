@@ -1,11 +1,10 @@
 import { checkCompanyAge } from './validators';
 
 /**
- * Calcula a Condição de Pagamento e Prazo Médio (ERP Moinho) com base nas regras:
- * 1. Com Protesto (CPF ou CNPJ): condicao = 6, praz_medio = 28
- * 2. CPF Sem Protesto: condicao = 49, praz_medio = 28
- * 3. CNPJ Sem Protesto até 6 meses de abertura: condicao = 6, praz_medio = 14
- * 4. CNPJ Sem Protesto com mais de 6 meses: condicao = 49, praz_medio = 28
+ * Calcula a Condição de Pagamento e Prazo Médio (ERP Moinho) com base nas regras Vetline:
+ * - CNPJ com até 6 meses de abertura (sem protesto): condição = 6, praz_medio = 14
+ * - CNPJ com mais de 6 meses de abertura (consolidado, mesmo com protesto): condição = 49, praz_medio = 28
+ * - CPF: condição = 49, praz_medio = 28
  * 
  * @param {Object} params
  * @param {'PF'|'PJ'} params.tipo_pessoa
@@ -15,42 +14,33 @@ import { checkCompanyAge } from './validators';
  */
 export const calcularCondicaoEPrazoPagamento = ({ tipo_pessoa, data_abertura, total_protestos }) => {
   const isPJ = String(tipo_pessoa || '').toUpperCase() === 'PJ';
-  const hasProtest = total_protestos !== null && total_protestos !== undefined && Number(total_protestos) > 0;
 
-  // 1. Caso com Protesto (CPF ou CNPJ)
-  if (hasProtest) {
-    return {
-      condicao_pagamento: 6,
-      praz_medio: 28,
-      motivo: `Possui ${total_protestos} protesto(s) ativo(s): Condição 6 / Prazo 28 dias`
-    };
-  }
-
-  // 2. Pessoa Física (CPF) sem protesto
+  // 1. Pessoa Física (CPF): sempre condição 49 e prazo 28
   if (!isPJ) {
     return {
       condicao_pagamento: 49,
       praz_medio: 28,
-      motivo: 'Pessoa Física (CPF) sem protestos: Condição 49 / Prazo 28 dias'
+      motivo: 'Pessoa Física (CPF): Condição 49 / Prazo 28 dias'
     };
   }
 
-  // 3. Pessoa Jurídica (CNPJ) sem protesto
+  // 2. Pessoa Jurídica (CNPJ)
   const ageInfo = checkCompanyAge(data_abertura);
   const isRecent6Months = ageInfo.hasDate && ageInfo.diffDays !== null && ageInfo.diffDays <= 180;
 
+  // CNPJ recente até 6 meses de abertura: condição 6 e prazo 14
   if (isRecent6Months) {
     return {
       condicao_pagamento: 6,
       praz_medio: 14,
-      motivo: `CNPJ recente (${ageInfo.ageText || 'até 6 meses'}) sem protestos: Condição 6 / Prazo 14 dias`
+      motivo: `CNPJ recente (${ageInfo.ageText || 'até 6 meses de abertura'}): Condição 6 / Prazo 14 dias`
     };
   }
 
-  // 4. CNPJ com mais de 6 meses sem protesto
+  // CNPJ com mais de 6 meses de abertura (ex: 7 meses): condição 49 e prazo 28
   return {
     condicao_pagamento: 49,
     praz_medio: 28,
-    motivo: `CNPJ com mais de 6 meses (${ageInfo.ageText || 'consolidado'}) sem protestos: Condição 49 / Prazo 28 dias`
+    motivo: `CNPJ com mais de 6 meses (${ageInfo.ageText || 'consolidado'}): Condição 49 / Prazo 28 dias`
   };
 };
