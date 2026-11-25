@@ -45,6 +45,7 @@ import {
   fetchCNPJDataFromBrasilAPI
 } from '../utils/validators';
 import { calcularCondicaoEPrazoPagamento } from '../utils/paymentConditionValidator';
+import { resolverTipoENumeroInscricao } from '../utils/inscricaoValidator';
 import {
   uploadDocument,
   submitNewClient,
@@ -1094,6 +1095,15 @@ export const RegistrationForm = ({ onSuccess }) => {
         telecomObsTag = telecomObsTag ? `${telecomObsTag} | ${sipeTag}` : sipeTag;
       }
 
+      // Resolução oficial de tp_inscr e inscricao (Regra ERP Moinho)
+      const rawInscrValue = personType === 'PF' ? (numeroInscricao?.trim() || 'ISENTO') : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || sintegraIe || 'ISENTO'));
+      const inscrResolvida = resolverTipoENumeroInscricao({
+        tipo_pessoa: personType,
+        tp_inscricao: tpInscricao,
+        numero_inscricao: rawInscrValue,
+        numero_ie: sintegraIe
+      });
+
       // Dados estruturados para tabela novo_cliente.data_new_cliente em Português BR
       const payload = {
         tipo_pessoa: personType,
@@ -1110,8 +1120,14 @@ export const RegistrationForm = ({ onSuccess }) => {
         cnae_descricao: personType === 'PJ' ? (cnpjInfo?.cnaeDescricao || null) : null,
         data_abertura: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
         data_inicio_atividade: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
-        tp_inscricao: personType === 'PF' ? 'I' : tpInscricao,
-        numero_inscricao: personType === 'PF' ? 'ISENTO' : (tpInscricao === 'I' ? 'ISENTO' : (numeroInscricao?.trim() || sintegraIe || 'ISENTO')),
+        tp_inscricao: inscrResolvida.tp_inscricao,
+        tp_inscr: inscrResolvida.tp_inscr,
+        numero_inscricao: inscrResolvida.numero_inscricao,
+        inscricao: inscrResolvida.inscricao,
+        possui_ie: inscrResolvida.possui_ie,
+        has_ie: inscrResolvida.possui_ie,
+        numero_ie: inscrResolvida.numero_inscricao,
+        ie_number: inscrResolvida.numero_inscricao,
         crmv: personType === 'PF' ? (crmv?.trim() || null) : null,
         telefone: phone,
         phone: phone,

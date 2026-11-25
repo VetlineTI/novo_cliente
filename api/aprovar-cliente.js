@@ -107,6 +107,85 @@ export default async function handler(req, res) {
     }
 
     // 3. MONTA O PAYLOAD OFICIAL COM OS DADOS REAIS DO BANCO
+    // Regra de Inscrição ERP Moinho:
+    // - O código 'N' NÃO EXISTE (somente 'E', 'I', 'M').
+    // - PJ ou PF com IE numérica -> 'E', com inscrição só em dígitos.
+    // - Isento ou sem IE -> 'I'.
+    const rawNumInscr = String(clientRecord.numero_inscricao ?? clientRecord.numero_ie ?? '').trim();
+    const rawTpInscr = String(clientRecord.tp_inscricao || '').trim().toUpperCase();
+    const digitsInscr = rawNumInscr.replace(/\D/g, '');
+    const hasDigits = digitsInscr.length > 0;
+    const isIsento = rawNumInscr.toUpperCase() === 'ISENTO' || rawTpInscr === 'I';
+
+    let resolvedTpInscr = 'I';
+    let resolvedNumInscr = 'ISENTO';
+
+    if (rawTpInscr === 'M') {
+      resolvedTpInscr = 'M';
+      resolvedNumInscr = hasDigits ? digitsInscr : (rawNumInscr || 'ISENTO');
+    } else if (hasDigits && !isIsento) {
+      resolvedTpInscr = 'E';
+      resolvedNumInscr = digitsInscr;
+    } else {
+      resolvedTpInscr = 'I';
+      resolvedNumInscr = 'ISENTO';
+    }
+
+    // Regra de Condição de Pagamento e Prazo Médio (ERP Moinho)
+    const isPJRecord = String(clientRecord.tipo_pessoa || '').toUpperCase() === 'PJ';
+    const hasProtestRecord = clientRecord.total_protestos !== null && clientRecord.total_protestos !== undefined && Number(clientRecord.total_protestos) > 0;
+
+    let calculatedCond = 49;
+    let calculatedPrazo = 28;
+
+    if (hasProtestRecord) {
+      calculatedCond = 6;
+      calculatedPrazo = 28;
+    } else if (!isPJRecord) {
+      calculatedCond = 49;
+      calculatedPrazo = 28;
+    } else {
+      const dtAbertura = clientRecord.data_abertura || clientRecord.data_inicio_atividade;
+      let isAte6Meses = false;
+      if (dtAbertura) {
+        const d = new Date(dtAbertura);
+        if (!isNaN(d.getTime())) {
+          const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+          isAte6Meses = diffDays >= 0 && diffDays <= 180;
+        }
+      } else {
+        const obsMatch = String(clientRecord.observacoes || '').match(/\[Abertura:\s*([^\]]+)\]/i);
+        if (obsMatch) {
+          const d = new Date(obsMatch[1]);
+          if (!isNaN(d.getTime())) {
+            const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+            isAte6Meses = diffDays >= 0 && diffDays <= 180;
+          }
+        }
+      }
+      calculatedCond = isAte6Meses ? 6 : 49;
+      calculatedPrazo = isAte6Meses ? 14 : 28;
+    }
+
+    const finalCondicao = (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '')
+      ? Number(clientRecord.condicao_pagamento)
+      : calculatedCond;
+
+    const finalPrazo = (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '')
+      ? Number(clientRecord.praz_medio)
+      : calculatedPrazo;
+
+    // Se o registro no banco estiver sem condição/prazo, salva no banco em background
+    if (clientRecord.condicao_pagamento === null || clientRecord.condicao_pagamento === undefined || clientRecord.praz_medio === null || clientRecord.praz_medio === undefined) {
+      supabaseAdmin
+        .schema('novo_cliente')
+        .from('data_new_cliente')
+        .update({ condicao_pagamento: finalCondicao, praz_medio: finalPrazo })
+        .eq('id', clientRecord.id)
+        .then(() => {})
+        .catch(e => console.warn('Falha não bloqueante ao salvar condicao/prazo no banco:', e));
+    }
+
     const payload = {
       event: 'CLIENT_APPROVED',
       action: 'confirmar_cadastro',
@@ -119,8 +198,12 @@ export default async function handler(req, res) {
         cpf_cnpj: clientRecord.cpf_cnpj || '',
         razao_social_nome: clientRecord.razao_social_nome || '',
         nome_fantasia: clientRecord.nome_fantasia || '',
-        tp_inscricao: clientRecord.tp_inscricao || (clientRecord.tipo_pessoa === 'PF' ? 'I' : 'E'),
-        numero_inscricao: clientRecord.numero_inscricao || clientRecord.numero_ie || 'ISENTO',
+        tp_inscricao: resolvedTpInscr,
+        tp_inscr: resolvedTpInscr,
+        numero_inscricao: resolvedNumInscr,
+        inscricao: resolvedNumInscr,
+        numero_ie: resolvedNumInscr,
+        possui_ie: resolvedTpInscr === 'E',
         crmv: clientRecord.crmv || null,
         telefone: clientRecord.telefone || '',
         email: clientRecord.email || '',
@@ -129,8 +212,8 @@ export default async function handler(req, res) {
         cd_vend: clientRecord.cd_vend || 'ATENA',
         tab_pre: clientRecord.tab_pre || 'VTL01',
         tp_ped: clientRecord.tp_ped || 'VTL01',
-        condicao_pagamento: (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '') ? Number(clientRecord.condicao_pagamento) : null,
-        praz_medio: (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '') ? Number(clientRecord.praz_medio) : null,
+        condicao_pagamento: finalCondicao,
+        praz_medio: finalPrazo,
         limite_credito: Number(clientRecord.limite_credito || 0),
         cep: clientRecord.cep || '',
         logradouro: clientRecord.logradouro || '',
