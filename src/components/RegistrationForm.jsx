@@ -45,7 +45,7 @@ import {
   fetchAddressByCEP,
   fetchCNPJDataFromBrasilAPI
 } from '../utils/validators';
-import { calcularCondicaoEPrazoPagamento } from '../utils/paymentConditionValidator';
+import { calcularCondicaoEPrazoPagamento, calcularLimiteCredito } from '../utils/paymentConditionValidator';
 import { resolverTipoENumeroInscricao } from '../utils/inscricaoValidator';
 import {
   uploadDocument,
@@ -1181,7 +1181,11 @@ export const RegistrationForm = ({ onSuccess }) => {
       let docSintegraUrl = sintegraResultRef.current?.receiptUrl || null;
       let sintegraIe = sintegraResultRef.current?.ie || null;
 
-      const initialCreditLimit = personType === 'PJ' ? 3000.00 : 1500.00;
+      const initialCreditLimit = calcularLimiteCredito({
+        tipo_pessoa: personType,
+        data_abertura: personType === 'PJ' ? (cnpjInfo?.dataAbertura || null) : null,
+        total_protestos: null
+      }).limite_credito;
 
       // Cálculo de Condição de Pagamento e Prazo Médio (Regras Vetline ERP)
       // CPF sem protesto: condicao 49, prazo 28

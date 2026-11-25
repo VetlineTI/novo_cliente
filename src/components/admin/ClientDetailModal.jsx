@@ -38,7 +38,7 @@ import { executarAuditoriaBureau } from '../../lib/infosimples';
 import { extractClientTelecomInfo, checkPhoneTelecom } from '../../lib/telecom';
 import { checkCnaePermitted } from '../../utils/cnaeValidator';
 import { fetchCNPJDataFromBrasilAPI, checkCompanyAge } from '../../utils/validators';
-import { calcularCondicaoEPrazoPagamento } from '../../utils/paymentConditionValidator';
+import { calcularCondicaoEPrazoPagamento, calcularLimiteCredito } from '../../utils/paymentConditionValidator';
 import { resolverTipoENumeroInscricao } from '../../utils/inscricaoValidator';
 
 export const ClientDetailModal = ({
@@ -143,6 +143,20 @@ export const ClientDetailModal = ({
         total_protestos: client.total_protestos
       });
 
+      const limitePadrao = calcularLimiteCredito({
+        tipo_pessoa: client.tipo_pessoa || client.person_type || 'PJ',
+        data_abertura: client.data_abertura || client.data_inicio_atividade,
+        total_protestos: client.total_protestos
+      }).limite_credito;
+
+      const hasProtesto = client.total_protestos !== null && client.total_protestos !== undefined && Number(client.total_protestos) > 0;
+      // Regra oficial Vetline: Se tem protesto (> 0), o limite é 500. Se não tem protesto, CNPJ > 6 meses é 3000, até 6 meses ou CPF é 1500.
+      const effectiveLimite = hasProtesto
+        ? 500.00
+        : (client.limite_credito !== undefined && client.limite_credito !== null && Number(client.limite_credito) > 0
+            ? Number(client.limite_credito)
+            : limitePadrao);
+
       const effectiveCondicao = (client.condicao_pagamento !== undefined && client.condicao_pagamento !== null && client.condicao_pagamento !== '')
         ? client.condicao_pagamento
         : condPrazoPadrao.condicao_pagamento;
@@ -187,7 +201,7 @@ export const ClientDetailModal = ({
         condicao_pagamento: effectiveCondicao,
         praz_medio: effectivePrazo,
         cd_clien: client.cd_clien || client.client_code || null,
-        limite_credito: client.limite_credito !== undefined && client.limite_credito !== null ? Number(client.limite_credito) : (client.credit_limit !== undefined && client.credit_limit !== null ? Number(client.credit_limit) : 0),
+        limite_credito: effectiveLimite,
         has_different_delivery_address: Boolean(client.has_different_delivery_address),
         delivery_zipcode: client.delivery_zipcode || '',
         delivery_street: client.delivery_street || '',

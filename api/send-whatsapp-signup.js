@@ -375,7 +375,32 @@ export default async function handler(req, res) {
                     if (protData?.retorno && (protData.metaDados?.resultadoId === 1 || protData.metaDados?.resultadoId === 2)) {
                       const numP = protData.retorno.numeroTotalProtestos ?? 0;
                       auditUpdates.total_protestos = numP;
-                      auditUpdates.limite_credito = numP === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
+
+                      // Checagem de tempo de fundação para PJ (6 meses)
+                      let isAte6Meses = false;
+                      if (isPJ) {
+                        const dtAbertura = targetClient.data_abertura || targetClient.data_inicio_atividade;
+                        if (dtAbertura) {
+                          const d = new Date(dtAbertura);
+                          if (!isNaN(d.getTime())) {
+                            const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+                            isAte6Meses = diffDays >= 0 && diffDays <= 180;
+                          }
+                        }
+                      }
+
+                      // Regra de Limite de Crédito Oficial (Vetline):
+                      // - Se tem protesto (> 0) (seja CPF ou CNPJ): 500
+                      // - Se for CPF sem protesto: 1500
+                      // - Se for CNPJ sem protesto:
+                      //     - Até 6 meses de abertura: 1500
+                      //     - Mais de 6 meses de abertura: 3000
+                      const calculatedLimit = (numP > 0)
+                        ? 500.00
+                        : (!isPJ || isAte6Meses ? 1500.00 : 3000.00);
+
+                      auditUpdates.limite_credito = calculatedLimit;
+                      auditUpdates.credit_limit = calculatedLimit;
 
                       // Regra de Condição de Pagamento e Prazo Médio (Vetline ERP)
                       // - CNPJ até 6 meses de abertura: condição 6 e prazo 14
@@ -384,15 +409,6 @@ export default async function handler(req, res) {
                         auditUpdates.condicao_pagamento = 49;
                         auditUpdates.praz_medio = 28;
                       } else {
-                        const dtAbertura = targetClient.data_abertura || targetClient.data_inicio_atividade;
-                        let isAte6Meses = false;
-                        if (dtAbertura) {
-                          const d = new Date(dtAbertura);
-                          if (!isNaN(d.getTime())) {
-                            const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-                            isAte6Meses = diffDays >= 0 && diffDays <= 180;
-                          }
-                        }
                         auditUpdates.condicao_pagamento = isAte6Meses ? 6 : 49;
                         auditUpdates.praz_medio = isAte6Meses ? 14 : 28;
                       }

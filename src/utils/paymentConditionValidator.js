@@ -44,3 +44,57 @@ export const calcularCondicaoEPrazoPagamento = ({ tipo_pessoa, data_abertura, to
     motivo: `CNPJ com mais de 6 meses (${ageInfo.ageText || 'consolidado'}): Condição 49 / Prazo 28 dias`
   };
 };
+
+/**
+ * Calcula o Limite de Crédito oficial (Vetline) com base nas regras:
+ * - Se tem protesto (> 0) (seja CPF ou CNPJ): limite = 500
+ * - Se for CPF sem protesto: limite = 1500
+ * - Se for CNPJ sem protesto:
+ *     - Até 6 meses de abertura: limite = 1500
+ *     - Mais de 6 meses de abertura: limite = 3000
+ * 
+ * @param {Object} params
+ * @param {'PF'|'PJ'} params.tipo_pessoa
+ * @param {string|Date|null} [params.data_abertura]
+ * @param {number|null} [params.total_protestos]
+ * @returns {{ limite_credito: number, motivo: string }}
+ */
+export const calcularLimiteCredito = ({ tipo_pessoa, data_abertura, total_protestos }) => {
+  const isPJ = String(tipo_pessoa || '').toUpperCase() === 'PJ';
+  const numProt = total_protestos !== null && total_protestos !== undefined ? Number(total_protestos) : 0;
+  const hasProtesto = numProt > 0;
+
+  // 1. Se tem protesto (CPF ou CNPJ): limite = 500
+  if (hasProtesto) {
+    return {
+      limite_credito: 500.00,
+      motivo: `Com protesto (${numProt} protesto(s)): limite de R$ 500,00`
+    };
+  }
+
+  // 2. Pessoa Física (CPF) sem protesto: limite = 1500
+  if (!isPJ) {
+    return {
+      limite_credito: 1500.00,
+      motivo: 'Pessoa Física (CPF) sem protesto: limite de R$ 1.500,00'
+    };
+  }
+
+  // 3. Pessoa Jurídica (CNPJ) sem protesto
+  const ageInfo = checkCompanyAge(data_abertura);
+  const isRecent6Months = ageInfo.hasDate && ageInfo.diffDays !== null && ageInfo.diffDays <= 180;
+
+  // CNPJ sem protesto até 6 meses de abertura: limite = 1500
+  if (isRecent6Months) {
+    return {
+      limite_credito: 1500.00,
+      motivo: `CNPJ recente (${ageInfo.ageText || 'até 6 meses'}) sem protesto: limite de R$ 1.500,00`
+    };
+  }
+
+  // CNPJ sem protesto e mais de 6 meses de abertura: limite = 3000
+  return {
+    limite_credito: 3000.00,
+    motivo: `CNPJ consolidado (${ageInfo.ageText || 'mais de 6 meses'}) sem protesto: limite de R$ 3.000,00`
+  };
+};

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured, updateClientData } from './supabase';
-import { calcularCondicaoEPrazoPagamento } from '../utils/paymentConditionValidator';
+import { calcularCondicaoEPrazoPagamento, calcularLimiteCredito } from '../utils/paymentConditionValidator';
 
 // Rota protegida com proxy no servidor (/api/infosimples)
 // O token é injetado estritamente no backend e nunca exposto ao navegador
@@ -963,7 +963,11 @@ export const executarAuditoriaBureau = async (client) => {
       if (totalProtestos !== null && totalProtestos !== undefined) {
         updatePayload.total_protestos = totalProtestos;
         const numProt = Number(totalProtestos) || 0;
-        const autoLimit = numProt === 0 ? (isPJ ? 3000.00 : 1500.00) : 0.00;
+        const autoLimit = calcularLimiteCredito({
+          tipo_pessoa: isPJ ? 'PJ' : 'PF',
+          data_abertura: client.data_abertura || client.data_inicio_atividade || results.receita?.dataAbertura || null,
+          total_protestos: numProt
+        }).limite_credito;
         updatePayload.limite_credito = autoLimit;
         updatePayload.credit_limit = autoLimit;
 

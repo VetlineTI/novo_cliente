@@ -177,15 +177,44 @@ export default async function handler(req, res) {
       ? Number(clientRecord.praz_medio)
       : calculatedPrazo;
 
-    // Se o registro no banco estiver sem condição/prazo, salva no banco em background
-    if (clientRecord.condicao_pagamento === null || clientRecord.condicao_pagamento === undefined || clientRecord.praz_medio === null || clientRecord.praz_medio === undefined) {
+    // Regra de Limite de Crédito Oficial (Vetline):
+    // - Se tem protesto (> 0) (seja CPF ou CNPJ): limite = 500
+    // - Se for CPF sem protesto: limite = 1500
+    // - Se for CNPJ sem protesto:
+    //     - Até 6 meses de abertura: limite = 1500
+    //     - Mais de 6 meses de abertura: limite = 3000
+    const hasProtesto = clientRecord.total_protestos !== null && clientRecord.total_protestos !== undefined && Number(clientRecord.total_protestos) > 0;
+    let calculatedLimite = 1500.00;
+    if (hasProtesto) {
+      calculatedLimite = 500.00;
+    } else if (isPJRecord && !isAte6Meses) {
+      calculatedLimite = 3000.00;
+    } else {
+      calculatedLimite = 1500.00;
+    }
+    // Se tem protesto, o limite é forçado estritamente para 500.00
+    const finalLimite = hasProtesto
+      ? 500.00
+      : (Number(clientRecord.limite_credito || 0) > 0 ? Number(clientRecord.limite_credito) : calculatedLimite);
+
+    // Se o registro no banco estiver sem condição/prazo/limite atualizado, salva no banco em background
+    if (
+      clientRecord.condicao_pagamento === null || clientRecord.condicao_pagamento === undefined ||
+      clientRecord.praz_medio === null || clientRecord.praz_medio === undefined ||
+      (hasProtesto && Number(clientRecord.limite_credito) !== 500)
+    ) {
       supabaseAdmin
         .schema('novo_cliente')
         .from('data_new_cliente')
-        .update({ condicao_pagamento: finalCondicao, praz_medio: finalPrazo })
+        .update({
+          condicao_pagamento: finalCondicao,
+          praz_medio: finalPrazo,
+          limite_credito: finalLimite,
+          credit_limit: finalLimite
+        })
         .eq('id', clientRecord.id)
         .then(() => {})
-        .catch(e => console.warn('Falha não bloqueante ao salvar condicao/prazo no banco:', e));
+        .catch(e => console.warn('Falha não bloqueante ao salvar condicao/prazo/limite no banco:', e));
     }
 
     const payload = {
@@ -216,7 +245,8 @@ export default async function handler(req, res) {
         tp_ped: clientRecord.tp_ped || 'VTL01',
         condicao_pagamento: finalCondicao,
         praz_medio: finalPrazo,
-        limite_credito: Number(clientRecord.limite_credito || 0),
+        limite_credito: finalLimite,
+        credit_limit: finalLimite,
         cep: clientRecord.cep || '',
         logradouro: clientRecord.logradouro || '',
         numero: clientRecord.numero || '',
