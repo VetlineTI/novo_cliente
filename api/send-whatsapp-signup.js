@@ -104,7 +104,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({ whatsapp_confirmed: true })
           }).catch(errTab => console.warn('Erro ao atualizar whatsapp_confirmed em data_new_cliente:', errTab));
 
-          // 2. REGRA DE NEGÓCIO PRINCIPAL: Envio imediato para o ERP Moinho via n8n e aprovação com cd_clien
+          // 2. AUDITORIA PREVENTIVA: Consulta de Protestos e Bureau ANTES de qualquer envio ao ERP Moinho
           try {
             // Busca o registro completo e mais recente do cliente no schema novo_cliente
             const clientFullRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}&select=*&order=criado_em.desc.nullslast&limit=1`, {
@@ -124,6 +124,128 @@ export default async function handler(req, res) {
                 if (clientRecord.cd_clien) {
                   console.log(`Cliente ${cleanEmail} já possui cd_clien (${clientRecord.cd_clien}). Envio duplicado ignorado.`);
                 } else {
+                  const isPJRecord = String(clientRecord.tipo_pessoa || '').toUpperCase() === 'PJ';
+                  const docClean = String(clientRecord.cpf_cnpj || '').replace(/\D/g, '');
+
+                  // Checagem de tempo de fundação para PJ (regra 6 meses)
+                  const dtAbertura = clientRecord.data_abertura || clientRecord.data_inicio_atividade;
+                  let isAte6Meses = false;
+                  if (dtAbertura) {
+                    const d = new Date(dtAbertura);
+                    if (!isNaN(d.getTime())) {
+                      const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+                      isAte6Meses = diffDays >= 0 && diffDays <= 180;
+                    }
+                  } else {
+                    const obsMatch = String(clientRecord.observacoes || '').match(/Abertura:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+                    if (obsMatch) {
+                      const rawD = obsMatch[1];
+                      let d;
+                      if (rawD.includes('/')) {
+                        const [dia, mes, ano] = rawD.split('/');
+                        d = new Date(`${ano}-${mes}-${dia}`);
+                      } else {
+                        d = new Date(rawD);
+                      }
+                      if (!isNaN(d.getTime())) {
+                        const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+                        isAte6Meses = diffDays >= 0 && diffDays <= 180;
+                      }
+                    }
+                  }
+
+                  // Consulta de Protestos Direct Data (SEMPRE antes de definir o limite enviado ao Moinho)
+                  let totalProtestos = clientRecord.total_protestos !== null && clientRecord.total_protestos !== undefined
+                    ? Number(clientRecord.total_protestos)
+                    : null;
+                  let cenprotUrl = clientRecord.doc_cenprot_url || null;
+
+                  const directToken = process.env.DIRECTD_TOKEN;
+                  if (docClean && directToken && totalProtestos === null) {
+                    try {
+                      console.log(`Consultando protestos Direct Data preventivamente para ${docClean}...`);
+                      const protRes = await fetch(`https://apiv3.directd.com.br/api/ProtestosOnline?${isPJRecord ? 'CNPJ' : 'CPF'}=${docClean}&TOKEN=${directToken}&gerarComprovante=true`, {
+                        signal: AbortSignal.timeout(12000)
+                      });
+                      if (protRes.ok) {
+                        const protData = await protRes.json();
+                        if (protData?.retorno && (protData.metaDados?.resultadoId === 1 || protData.metaDados?.resultadoId === 2)) {
+                          totalProtestos = protData.retorno.numeroTotalProtestos ?? 0;
+                          if (protData.metaDados?.urlComprovante) {
+                            cenprotUrl = protData.metaDados.urlComprovante;
+                          }
+                          console.log(`Protestos consultados para ${docClean}: ${totalProtestos}`);
+                        }
+                      } else {
+                        console.warn(`Direct Data retornou status ${protRes.status} na consulta de protestos.`);
+                      }
+                    } catch (eProt) {
+                      console.warn('Erro ou timeout na consulta prévia de protestos Direct Data:', eProt.message || eProt);
+                    }
+                  }
+
+                  // Regra Oficial de Limite de Crédito (Vetline):
+                  // - Se tem protesto (> 0) (seja CPF ou CNPJ): limite = R$ 500,00
+                  // - Se for CPF sem protesto: limite = R$ 1.500,00
+                  // - Se for CNPJ sem protesto:
+                  //     - Até 6 meses de abertura: limite = R$ 1.500,00
+                  //     - Mais de 6 meses de abertura: limite = R$ 3.000,00
+                  // - Se não foi possível consultar protestos (pendente/erro): limite preventivo seguro = R$ 1.500,00 (NUNCA 3000!)
+                  const hasProtesto = totalProtestos !== null && totalProtestos > 0;
+                  let calculatedLimit = 1500.00;
+                  if (hasProtesto) {
+                    calculatedLimit = 500.00;
+                  } else if (isPJRecord && !isAte6Meses && totalProtestos === 0) {
+                    calculatedLimit = 3000.00;
+                  } else {
+                    calculatedLimit = 1500.00;
+                  }
+
+                  const finalLimite = hasProtesto ? 500.00 : calculatedLimit;
+
+                  // Regra de Condição de Pagamento e Prazo Médio (ERP Moinho):
+                  // - CNPJ com até 6 meses de abertura: condição 6 e prazo 14
+                  // - CNPJ com mais de 6 meses (ex: 7 meses) ou CPF: condição 49 e prazo 28
+                  const calculatedCond = (!isPJRecord || !isAte6Meses) ? 49 : 6;
+                  const calculatedPrazo = (!isPJRecord || !isAte6Meses) ? 28 : 14;
+
+                  const finalCondicao = (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '')
+                    ? Number(clientRecord.condicao_pagamento)
+                    : calculatedCond;
+
+                  const finalPrazo = (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '')
+                    ? Number(clientRecord.praz_medio)
+                    : calculatedPrazo;
+
+                  // Atualiza os dados de auditoria no Supabase ANTES do envio ao ERP
+                  const preAuditUpdates = {
+                    condicao_pagamento: finalCondicao,
+                    praz_medio: finalPrazo,
+                    limite_credito: finalLimite,
+                    credit_limit: finalLimite,
+                    bureau_consulted_at: new Date().toISOString()
+                  };
+                  if (totalProtestos !== null) {
+                    preAuditUpdates.total_protestos = totalProtestos;
+                  }
+                  if (cenprotUrl) {
+                    preAuditUpdates.doc_cenprot_url = cenprotUrl;
+                  }
+
+                  await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?id=eq.${clientRecord.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                      'apikey': supabaseServiceKey,
+                      'Authorization': `Bearer ${supabaseServiceKey}`,
+                      'Content-Type': 'application/json',
+                      'Prefer': 'return=minimal',
+                      'Accept-Profile': 'novo_cliente',
+                      'Content-Profile': 'novo_cliente'
+                    },
+                    body: JSON.stringify(preAuditUpdates)
+                  }).catch(e => console.warn('Falha não bloqueante ao salvar auditoria prévia no banco:', e));
+
+                  // 3. REGRA DE NEGÓCIO: Envio para o ERP Moinho via n8n com limite já auditado
                   const n8nWebhookUrl = 
                     process.env.N8N_MOINHO_WEBHOOK_URL || 
                     'https://n8n.srv1055305.hstgr.cloud/webhook/novo-cliente-moinho';
@@ -157,52 +279,6 @@ export default async function handler(req, res) {
                     resolvedNumInscr = 'ISENTO';
                   }
 
-                  // Regra de Condição de Pagamento e Prazo Médio (ERP Moinho):
-                  // - CNPJ com até 6 meses de abertura: condição 6 e prazo 14
-                  // - CNPJ com mais de 6 meses (ex: 7 meses) ou CPF: condição 49 e prazo 28
-                  const isPJRecord = String(clientRecord.tipo_pessoa || '').toUpperCase() === 'PJ';
-                  
-                  let calculatedCond = 49;
-                  let calculatedPrazo = 28;
-
-                  if (isPJRecord) {
-                    const dtAbertura = clientRecord.data_abertura || clientRecord.data_inicio_atividade;
-                    let isAte6Meses = false;
-                    if (dtAbertura) {
-                      const d = new Date(dtAbertura);
-                      if (!isNaN(d.getTime())) {
-                        const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-                        isAte6Meses = diffDays >= 0 && diffDays <= 180;
-                      }
-                    } else {
-                      const obsMatch = String(clientRecord.observacoes || '').match(/Abertura:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})/i);
-                      if (obsMatch) {
-                        const rawD = obsMatch[1];
-                        let d;
-                        if (rawD.includes('/')) {
-                          const [dia, mes, ano] = rawD.split('/');
-                          d = new Date(`${ano}-${mes}-${dia}`);
-                        } else {
-                          d = new Date(rawD);
-                        }
-                        if (!isNaN(d.getTime())) {
-                          const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-                          isAte6Meses = diffDays >= 0 && diffDays <= 180;
-                        }
-                      }
-                    }
-                    calculatedCond = isAte6Meses ? 6 : 49;
-                    calculatedPrazo = isAte6Meses ? 14 : 28;
-                  }
-
-                  const finalCondicao = (clientRecord.condicao_pagamento !== null && clientRecord.condicao_pagamento !== undefined && clientRecord.condicao_pagamento !== '')
-                    ? Number(clientRecord.condicao_pagamento)
-                    : calculatedCond;
-
-                  const finalPrazo = (clientRecord.praz_medio !== null && clientRecord.praz_medio !== undefined && clientRecord.praz_medio !== '')
-                    ? Number(clientRecord.praz_medio)
-                    : calculatedPrazo;
-
                   const moinhoPayload = {
                     event: 'CLIENT_APPROVED',
                     action: 'confirmar_cadastro',
@@ -232,7 +308,7 @@ export default async function handler(req, res) {
                       tp_ped: clientRecord.tp_ped || 'VTL01',
                       condicao_pagamento: finalCondicao,
                       praz_medio: finalPrazo,
-                      limite_credito: Number(clientRecord.limite_credito || 0),
+                      limite_credito: finalLimite,
                       cep: clientRecord.cep || '',
                       logradouro: clientRecord.logradouro || '',
                       numero: clientRecord.numero || '',
@@ -254,7 +330,7 @@ export default async function handler(req, res) {
                       doc_comprovante_endereco_url: clientRecord.doc_comprovante_endereco_url || null,
                       doc_ie_url: clientRecord.doc_ie_url || null,
                       doc_jucesp_url: clientRecord.doc_jucesp_url || null,
-                      doc_cenprot_url: clientRecord.doc_cenprot_url || null,
+                      doc_cenprot_url: cenprotUrl || clientRecord.doc_cenprot_url || null,
                       doc_sipeagro_url: clientRecord.doc_sipeagro_url || null,
                       tem_sipeagro: Boolean(clientRecord.tem_sipeagro),
                       nire_jucesp: clientRecord.nire_jucesp || null,
@@ -273,11 +349,12 @@ export default async function handler(req, res) {
                     headers['Authorization'] = `Bearer ${n8nSecret}`;
                   }
 
-                  console.log(`Disparando envio ao ERP Moinho para ${cleanEmail}...`);
+                  console.log(`Disparando envio ao ERP Moinho para ${cleanEmail} com limite R$ ${finalLimite}...`);
                   const n8nResponse = await fetch(n8nWebhookUrl, {
                     method: 'POST',
                     headers,
-                    body: JSON.stringify(moinhoPayload)
+                    body: JSON.stringify(moinhoPayload),
+                    signal: AbortSignal.timeout(35000)
                   });
 
                   const responseText = await n8nResponse.text();
@@ -293,19 +370,22 @@ export default async function handler(req, res) {
                   const item = items[0] || {};
                   const cdClien = item.cd_clien ?? item.CD_CLIEN ?? item.cd_cliente ?? null;
 
-                  // Atualização segura no banco: apenas campos existentes na tabela data_new_cliente
+                  // Atualização no banco Supabase
                   const dbUpdates = {
-                    status: 'aprovado',
                     whatsapp_confirmed: true,
                     condicao_pagamento: finalCondicao,
-                    praz_medio: finalPrazo
+                    praz_medio: finalPrazo,
+                    limite_credito: finalLimite,
+                    credit_limit: finalLimite
                   };
 
                   if (cdClien) {
                     dbUpdates.cd_clien = String(cdClien);
+                    dbUpdates.status = 'aprovado';
                     console.log(`Cliente ${cleanEmail} cadastrado no ERP Moinho com cd_clien: ${cdClien}`);
                   } else if (item.resultado === 'JA_EXISTE' || String(item.resultado || '').toLowerCase().includes('existe')) {
                     console.log(`Cliente ${cleanEmail} já existia no ERP Moinho (resultado: ${item.resultado})`);
+                    dbUpdates.status = 'aprovado';
                     const curObs = clientRecord.observacoes || '';
                     if (!curObs.includes('Já existente no ERP')) {
                       dbUpdates.observacoes = curObs ? `${curObs} | [Moinho: Já existente no ERP]` : `[Moinho: Já existente no ERP]`;
@@ -335,116 +415,13 @@ export default async function handler(req, res) {
                     const patchErr = await patchRes.text();
                     console.error('Erro no PATCH data_new_cliente:', patchRes.status, patchErr);
                   } else {
-                    console.log(`Cliente ${cleanEmail} atualizado com sucesso no Supabase com status='aprovado'${cdClien ? ` e cd_clien='${cdClien}'` : ''}.`);
+                    console.log(`Cliente ${cleanEmail} atualizado com sucesso no Supabase com limite=${finalLimite}${cdClien ? ` e cd_clien='${cdClien}'` : ''}.`);
                   }
                 }
               }
             }
           } catch (eMoinho) {
-            console.error('Erro ao enviar cliente ao Moinho na confirmação de WhatsApp:', eMoinho);
-          }
-
-          // 3. Auditoria de Sócios e Protestos Direct Data (executado de forma segura sem travar resposta)
-          try {
-            const clientQueryRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?email=eq.${encodeURIComponent(cleanEmail)}&select=id,cpf_cnpj,tipo_pessoa,uf,doc_cenprot_url,doc_receita_url`, {
-              headers: {
-                'apikey': supabaseServiceKey,
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-                'Accept-Profile': 'novo_cliente'
-              }
-            });
-
-            if (clientQueryRes.ok) {
-              const clientList = await clientQueryRes.json();
-              const targetClient = clientList && clientList[0];
-
-              if (targetClient && targetClient.cpf_cnpj && (!targetClient.doc_cenprot_url || !targetClient.doc_receita_url)) {
-                const docClean = String(targetClient.cpf_cnpj).replace(/\D/g, '');
-                const directToken = process.env.DIRECTD_TOKEN;
-                if (!directToken) {
-                  console.warn('DIRECTD_TOKEN não configurado no servidor.');
-                  return;
-                }
-                const isPJ = docClean.length === 14;
-
-                const auditUpdates = {
-                  bureau_consulted_at: new Date().toISOString()
-                };
-
-                // Consulta Protestos na Direct Data
-                try {
-                  const protRes = await fetch(`https://apiv3.directd.com.br/api/ProtestosOnline?${isPJ ? 'CNPJ' : 'CPF'}=${docClean}&TOKEN=${directToken}&gerarComprovante=true`);
-                  if (protRes.ok) {
-                    const protData = await protRes.json();
-                    if (protData?.retorno && (protData.metaDados?.resultadoId === 1 || protData.metaDados?.resultadoId === 2)) {
-                      const numP = protData.retorno.numeroTotalProtestos ?? 0;
-                      auditUpdates.total_protestos = numP;
-
-                      // Checagem de tempo de fundação para PJ (6 meses)
-                      let isAte6Meses = false;
-                      if (isPJ) {
-                        const dtAbertura = targetClient.data_abertura || targetClient.data_inicio_atividade;
-                        if (dtAbertura) {
-                          const d = new Date(dtAbertura);
-                          if (!isNaN(d.getTime())) {
-                            const diffDays = Math.floor((new Date().getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-                            isAte6Meses = diffDays >= 0 && diffDays <= 180;
-                          }
-                        }
-                      }
-
-                      // Regra de Limite de Crédito Oficial (Vetline):
-                      // - Se tem protesto (> 0) (seja CPF ou CNPJ): 500
-                      // - Se for CPF sem protesto: 1500
-                      // - Se for CNPJ sem protesto:
-                      //     - Até 6 meses de abertura: 1500
-                      //     - Mais de 6 meses de abertura: 3000
-                      const calculatedLimit = (numP > 0)
-                        ? 500.00
-                        : (!isPJ || isAte6Meses ? 1500.00 : 3000.00);
-
-                      auditUpdates.limite_credito = calculatedLimit;
-                      auditUpdates.credit_limit = calculatedLimit;
-
-                      // Regra de Condição de Pagamento e Prazo Médio (Vetline ERP)
-                      // - CNPJ até 6 meses de abertura: condição 6 e prazo 14
-                      // - CNPJ mais de 6 meses (ex: 7 meses) ou CPF: condição 49 e prazo 28
-                      if (!isPJ) {
-                        auditUpdates.condicao_pagamento = 49;
-                        auditUpdates.praz_medio = 28;
-                      } else {
-                        auditUpdates.condicao_pagamento = isAte6Meses ? 6 : 49;
-                        auditUpdates.praz_medio = isAte6Meses ? 14 : 28;
-                      }
-
-                      if (protData.metaDados?.urlComprovante) {
-                        auditUpdates.doc_cenprot_url = protData.metaDados.urlComprovante;
-                      }
-                    }
-                  }
-                } catch (eProt) {
-                  console.warn('Erro ao consultar Protestos na Direct Data:', eProt);
-                }
-
-                // Salva certidões no banco se coletou algo
-                if (Object.keys(auditUpdates).length > 1) {
-                  await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/data_new_cliente?id=eq.${targetClient.id}`, {
-                    method: 'PATCH',
-                    headers: {
-                      'apikey': supabaseServiceKey,
-                      'Authorization': `Bearer ${supabaseServiceKey}`,
-                      'Content-Type': 'application/json',
-                      'Prefer': 'return=minimal',
-                      'Accept-Profile': 'novo_cliente',
-                      'Content-Profile': 'novo_cliente'
-                    },
-                    body: JSON.stringify(auditUpdates)
-                  }).catch(() => {});
-                }
-              }
-            }
-          } catch (eAudit) {
-            console.warn('Erro na auditoria Direct Data:', eAudit);
+            console.error('Erro no processamento de auditoria e envio ao Moinho na confirmação de WhatsApp:', eMoinho);
           }
 
         } catch (e) {
