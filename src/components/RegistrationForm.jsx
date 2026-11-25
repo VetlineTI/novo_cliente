@@ -6,6 +6,7 @@ import {
   ExternalLink,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   MapPin,
   Search,
@@ -67,6 +68,13 @@ export const RegistrationForm = ({ onSuccess }) => {
   const [tpInscricao, setTpInscricao] = useState('E'); // 'E' (Estadual), 'I' (Isento), 'M' (Municipal)
   const [numeroInscricao, setNumeroInscricao] = useState('');
   const [phone, setPhone] = useState('');
+  // Validação de Linha Telecom em Tempo Real (Twilio Lookups v2: VOIP e SIM Swap)
+  const [loadingTelecom, setLoadingTelecom] = useState(false);
+  const [telecomStatus, setTelecomStatus] = useState(null); // { success, isValid, isVoip, carrier, lineType, simSwappedRecently, message }
+  const lastCheckedPhoneRef = useRef('');
+  const telecomDebounceTimerRef = useRef(null);
+  const isVoipBlocked = Boolean(telecomStatus?.isVoip);
+
   const [segment, setSegment] = useState(''); // Guarda o ram_ativ selecionado
   const [segmentsList, setSegmentsList] = useState([]);
   const [loadingSegments, setLoadingSegments] = useState(false);
@@ -162,6 +170,12 @@ export const RegistrationForm = ({ onSuccess }) => {
     setTpInscricao(personType === 'PJ' ? 'E' : 'I');
     setNumeroInscricao(personType === 'PJ' ? '' : 'ISENTO');
     setPhone('');
+    setTelecomStatus(null);
+    setLoadingTelecom(false);
+    lastCheckedPhoneRef.current = '';
+    if (telecomDebounceTimerRef.current) {
+      clearTimeout(telecomDebounceTimerRef.current);
+    }
     setSegment('');
     setEmail('');
     setCnpjInfo(null);
@@ -230,6 +244,100 @@ export const RegistrationForm = ({ onSuccess }) => {
       setSegment(selectedValue);
     }
     if (errors.segment) setErrors(prev => ({ ...prev, segment: null }));
+  };
+
+  // Validação em tempo real do Telefone celular na Twilio Lookups v2 (VOIP e Operadora)
+  const validatePhoneTelecom = async (rawPhone) => {
+    const clean = unmask(rawPhone);
+    if (!clean || clean.length < 10) return;
+    if (lastCheckedPhoneRef.current === clean && telecomStatus) return;
+
+    setLoadingTelecom(true);
+    try {
+      const res = await checkPhoneTelecom(clean);
+      lastCheckedPhoneRef.current = clean;
+      if (res && res.success) {
+        if (res.is_voip) {
+          setTelecomStatus({
+            isValid: false,
+            isVoip: true,
+            carrier: res.carrier || null,
+            lineType: res.line_type || 'voip',
+            simSwappedRecently: Boolean(res.sim_swapped_recently),
+            message: 'Número VOIP / Virtual Não Permitido'
+          });
+          setErrors(prev => ({
+            ...prev,
+            phone: 'Número VOIP / Virtual não permitido. Por favor, informe um número de celular válido com chip ativo.'
+          }));
+        } else {
+          setTelecomStatus({
+            isValid: true,
+            isVoip: false,
+            carrier: res.carrier || null,
+            lineType: res.line_type || 'mobile',
+            simSwappedRecently: Boolean(res.sim_swapped_recently),
+            message: 'Número validado com sucesso'
+          });
+          setErrors(prev => ({ ...prev, phone: null }));
+        }
+      } else {
+        // Se a API não respondeu ou deu erro transitório, não bloqueia falsamente
+        setTelecomStatus({
+          isValid: true,
+          isVoip: false,
+          carrier: null,
+          message: 'Número validado'
+        });
+      }
+    } catch (err) {
+      console.warn('Falha ao validar linha telecom:', err);
+    } finally {
+      setLoadingTelecom(false);
+    }
+  };
+
+  const handlePhoneChange = (val) => {
+    const masked = maskPhone(val);
+    setPhone(masked);
+    const clean = unmask(masked);
+
+    if (errors.phone) {
+      setErrors(prev => ({ ...prev, phone: null }));
+    }
+
+    // Se o usuário começou a alterar o telefone que era VOIP, desbloqueia temporariamente para digitação
+    if (lastCheckedPhoneRef.current && lastCheckedPhoneRef.current !== clean) {
+      if (telecomStatus?.isVoip) {
+        setTelecomStatus(null);
+      }
+    }
+
+    if (telecomDebounceTimerRef.current) {
+      clearTimeout(telecomDebounceTimerRef.current);
+    }
+
+    // Se completou 11 dígitos (DDD + 9 dígitos), valida automaticamente com debounce curto
+    if (clean.length === 11) {
+      telecomDebounceTimerRef.current = setTimeout(() => {
+        validatePhoneTelecom(clean);
+      }, 400);
+    } else if (clean.length < 10) {
+      if (telecomStatus) {
+        setTelecomStatus(null);
+        lastCheckedPhoneRef.current = '';
+      }
+    }
+  };
+
+  const handlePhoneBlur = () => {
+    const clean = unmask(phone);
+    if (clean.length >= 10 && lastCheckedPhoneRef.current !== clean) {
+      if (telecomDebounceTimerRef.current) {
+        clearTimeout(telecomDebounceTimerRef.current);
+      }
+      validatePhoneTelecom(clean);
+    }
   };
 
   // Reset de documento ao trocar tipo de pessoa
@@ -717,6 +825,10 @@ export const RegistrationForm = ({ onSuccess }) => {
     const cleanPhone = unmask(phone);
     if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 11) {
       newErrors.phone = 'Informe um telefone/celular válido com DDD.';
+    } else if (telecomStatus?.isVoip) {
+      newErrors.phone = 'Número VOIP / Virtual não permitido. Por favor, informe um número de celular válido com chip ativo.';
+    } else if (loadingTelecom) {
+      newErrors.phone = 'Aguarde a validação do número na operadora...';
     }
 
     // 5. Segmento
@@ -806,6 +918,16 @@ export const RegistrationForm = ({ onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
+
+    // Bloqueio explícito se número de celular for VOIP / Virtual
+    if (telecomStatus?.isVoip) {
+      setSubmitError('O cadastro não pode ser concluído com linha VOIP/Virtual. Informe outro número de celular válido com chip ativo.');
+      return;
+    }
+    if (loadingTelecom) {
+      setSubmitError('Aguarde a validação do número na operadora...');
+      return;
+    }
 
     // Bloqueio explícito e imediato se CNPJ (PJ) ou CRMV (PF) não estiverem com situação ATIVA
     if (personType === 'PJ' && (!cnpjInfo || !cnpjInfo.isAtiva)) {
@@ -1072,11 +1194,20 @@ export const RegistrationForm = ({ onSuccess }) => {
       });
 
       // Auditoria de Linha Telecom (Twilio Lookups v2: VOIP e SIM Swap)
-      let telecomData = null;
-      try {
-        telecomData = await checkPhoneTelecom(phone);
-      } catch (telecomErr) {
-        console.warn('Falha silenciosa na consulta telecom:', telecomErr);
+      let telecomData = (telecomStatus && telecomStatus.success && lastCheckedPhoneRef.current === unmask(phone)) ? telecomStatus : null;
+      if (!telecomData) {
+        try {
+          telecomData = await checkPhoneTelecom(phone);
+        } catch (telecomErr) {
+          console.warn('Falha silenciosa na consulta telecom:', telecomErr);
+        }
+      }
+
+      if (telecomData?.is_voip) {
+        setSubmitError('O cadastro não pode ser concluído com linha VOIP/Virtual. Informe outro número de celular válido com chip ativo.');
+        setIsSubmitting(false);
+        setIsPreparingSubmit(false);
+        return;
       }
 
       let telecomObsTag = '';
@@ -1816,19 +1947,67 @@ export const RegistrationForm = ({ onSuccess }) => {
                   <span>WhatsApp / Telefone</span>
                   <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => {
-                    setPhone(maskPhone(e.target.value));
-                    if (errors.phone) setErrors(prev => ({ ...prev, phone: null }));
-                  }}
-                  placeholder="(00) 00000-0000"
-                  maxLength={15}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${errors.phone ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    onBlur={handlePhoneBlur}
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 transition-all ${
+                      errors.phone || telecomStatus?.isVoip
+                        ? 'border-red-400 bg-red-50/20 focus:ring-red-500/20 focus:border-red-500'
+                        : telecomStatus?.isValid && !telecomStatus?.isVoip
+                        ? 'border-emerald-500 bg-emerald-50/15 focus:ring-emerald-500/20 focus:border-emerald-500'
+                        : 'border-slate-200 focus:ring-brand-green/30 focus:border-brand-green'
                     }`}
-                />
-                {errors.phone && <p className="text-xs text-red-500 mt-1 font-medium">{errors.phone}</p>}
+                  />
+                  {loadingTelecom && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Loading da consulta na Twilio */}
+                {loadingTelecom && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 animate-pulse font-medium">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-green" />
+                    <span>Validando operadora e tipo de linha...</span>
+                  </div>
+                )}
+
+                {/* Alerta de Linha VOIP (Bloqueante) */}
+                {telecomStatus?.isVoip && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5 animate-fade-in shadow-xs">
+                    <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-red-700">Número VOIP / Virtual Não Permitido</p>
+                      <p className="text-red-600 text-[11px] leading-relaxed">
+                        Identificamos que este número é uma linha virtual/VOIP{telecomStatus.carrier ? ` (${telecomStatus.carrier})` : ''}.
+                        Por segurança cadastral, não é permitido prosseguir com número VOIP. Por favor, <strong>informe outro número de celular com chip ativo</strong> para continuar o cadastro.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sucesso de Validação Twilio */}
+                {telecomStatus?.isValid && !telecomStatus?.isVoip && !errors.phone && (
+                  <div className="mt-1.5 p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-1.5 animate-fade-in">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    <span className="font-semibold text-emerald-700">Número validado com sucesso</span>
+                    {telecomStatus.carrier && (
+                      <span className="text-emerald-600 text-[11px] font-normal">
+                        • Operadora: {telecomStatus.carrier}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {errors.phone && !telecomStatus?.isVoip && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{errors.phone}</p>
+                )}
               </div>
 
               {/* E-mail para Faturamento */}
@@ -1840,16 +2019,32 @@ export const RegistrationForm = ({ onSuccess }) => {
                 <input
                   type="email"
                   value={email}
+                  disabled={isVoipBlocked}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     if (errors.email) setErrors(prev => ({ ...prev, email: null }));
                   }}
                   placeholder="ex: contato@empresa.com.br"
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${errors.email ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
-                    }`}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-green/30 focus:border-brand-green transition-all ${
+                    errors.email ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
+                  } ${isVoipBlocked ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                 />
                 {errors.email && <p className="text-xs text-red-500 mt-1 font-medium">{errors.email}</p>}
               </div>
+            </div>
+
+            {/* Aviso de bloqueio dos próximos campos se for VOIP */}
+            {isVoipBlocked && (
+              <div className="my-3 p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-center gap-2.5 font-medium shadow-xs animate-fade-in">
+                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>
+                  <strong>Preenchimento bloqueado:</strong> o número informado é VOIP. Substitua por outro número de celular válido acima para liberar os próximos campos do cadastro.
+                </span>
+              </div>
+            )}
+
+            {/* Início dos Campos Seguintes (bloqueados se VOIP) */}
+            <div className={`space-y-6 transition-all duration-300 ${isVoipBlocked ? 'opacity-40 pointer-events-none select-none cursor-not-allowed filter grayscale-[20%]' : ''}`}>
 
               {/* Segmento de Atuação (Largura Total na linha) */}
               <div className="sm:col-span-2">
@@ -1961,7 +2156,6 @@ export const RegistrationForm = ({ onSuccess }) => {
                   )}
                 </div>
               )}
-            </div>
 
             {/* ========================================================================= */}
             {/* 4. ENDEREÇO PRINCIPAL / CADASTRAL (COM BUSCA AUTOMÁTICA POR CEP)          */}
@@ -2476,7 +2670,7 @@ export const RegistrationForm = ({ onSuccess }) => {
             {/* ========================================================================= */}
             <button
               type="submit"
-              disabled={isSubmitting || isValidatingPartnerDoc || isPreparingSubmit}
+              disabled={isSubmitting || isValidatingPartnerDoc || isPreparingSubmit || isVoipBlocked || loadingTelecom}
               style={{ backgroundColor: '#1d5b79', color: '#ffffff' }}
               className="w-full py-4 px-6 rounded-xl bg-[#1d5b79] hover:bg-[#144258] active:scale-[0.99] !text-white font-bold text-base sm:text-lg tracking-wide shadow-lg shadow-[#1d5b79]/30 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
             >
@@ -2496,6 +2690,7 @@ export const RegistrationForm = ({ onSuccess }) => {
                 <span className="text-white font-bold">Enviar cadastro</span>
               )}
             </button>
+            </div>
           </>
         )}
       </form>
