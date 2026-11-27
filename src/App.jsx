@@ -6,17 +6,15 @@ import { SuccessModal } from './components/SuccessModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
-import { ShieldCheck, Cookie, CheckCircle, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Cookie, CheckCircle, Mail } from 'lucide-react';
 import { TermsModal } from './components/TermsModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
-
-const DIGITAL_SALES_REDIRECT_URL = 'https://pages.leadstaker.com/p/atendimento-vetline';
 
 export function App() {
   const [successData, setSuccessData] = useState(null);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [whatsappConfirmed, setWhatsappConfirmed] = useState(false);
-  const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const [confirmedEmail, setConfirmedEmail] = useState('');
   const [policyModal, setPolicyModal] = useState({ isOpen: false, tab: 'terms' });
   const [formKey, setFormKey] = useState(0);
 
@@ -45,8 +43,9 @@ export function App() {
 
     if (isConfirmed) {
       setWhatsappConfirmed(true);
-      const emailParam = urlParams.get('email');
+      const emailParam = (urlParams.get('email') || '').trim();
       if (emailParam) {
+        setConfirmedEmail(emailParam);
         // Redundância de segurança: garante o processamento da aprovação no servidor
         fetch(`/api/send-whatsapp-signup?action=confirm&email=${encodeURIComponent(emailParam)}`, {
           method: 'POST'
@@ -56,32 +55,6 @@ export function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
-
-  // Redireciona automaticamente para o atendimento de vendas digitais após confirmação do WhatsApp
-  useEffect(() => {
-    if (!whatsappConfirmed || typeof window === 'undefined') return;
-
-    setRedirectCountdown(5);
-
-    const intervalId = window.setInterval(() => {
-      setRedirectCountdown((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(intervalId);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    const timeoutId = window.setTimeout(() => {
-      window.location.href = DIGITAL_SALES_REDIRECT_URL;
-    }, 5000);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.clearTimeout(timeoutId);
-    };
-  }, [whatsappConfirmed]);
 
   // Escuta histórico de navegação (botão voltar/avançar do navegador)
   useEffect(() => {
@@ -177,25 +150,21 @@ export function App() {
               <div className="flex items-start sm:items-center gap-3">
                 <CheckCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-0.5 sm:mt-0" />
                 <div>
-                  <p className="font-bold text-sm sm:text-base">🎉 Cadastro confirmado e aprovado com sucesso!</p>
-                  <p className="text-xs sm:text-sm text-emerald-800 mt-1">
-                    Seus dados foram integrados ao ERP Vetline. Você será redirecionado para o{' '}
-                    <strong>atendimento de vendas digitais</strong>{' '}
-                    {redirectCountdown > 0 ? (
-                      <span>em {redirectCountdown}s...</span>
-                    ) : (
-                      <span>agora...</span>
-                    )}
+                  <p className="font-bold text-sm sm:text-base">🎉 Cadastro realizado com sucesso!</p>
+                  <p className="text-xs sm:text-sm text-emerald-800 mt-1 flex flex-wrap items-center gap-1">
+                    <Mail className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>
+                      Em breve você receberá um e-mail{' '}
+                      {confirmedEmail ? (
+                        <>
+                          em <strong>{confirmedEmail}</strong>
+                        </>
+                      ) : (
+                        'no endereço informado no cadastro'
+                      )}{' '}
+                      com sua <strong>senha provisória</strong> para acessar o e-commerce.
+                    </span>
                   </p>
-                  <div className="mt-2.5">
-                    <a
-                      href={DIGITAL_SALES_REDIRECT_URL}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 rounded-lg transition-colors shadow-xs"
-                    >
-                      <span>Ir para o atendimento de vendas digitais</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
                 </div>
               </div>
               <button
