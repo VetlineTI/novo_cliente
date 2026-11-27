@@ -6,14 +6,17 @@ import { SuccessModal } from './components/SuccessModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { getAdminSession, logoutAdmin } from './lib/adminAuth';
-import { ShieldCheck, Cookie, CheckCircle } from 'lucide-react';
+import { ShieldCheck, Cookie, CheckCircle, ExternalLink } from 'lucide-react';
 import { TermsModal } from './components/TermsModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
+
+const DIGITAL_SALES_REDIRECT_URL = 'https://pages.leadstaker.com/p/atendimento-vetline';
 
 export function App() {
   const [successData, setSuccessData] = useState(null);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [whatsappConfirmed, setWhatsappConfirmed] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
   const [policyModal, setPolicyModal] = useState({ isOpen: false, tab: 'terms' });
   const [formKey, setFormKey] = useState(0);
 
@@ -53,6 +56,32 @@ export function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
+
+  // Redireciona automaticamente para o atendimento de vendas digitais após confirmação do WhatsApp
+  useEffect(() => {
+    if (!whatsappConfirmed || typeof window === 'undefined') return;
+
+    setRedirectCountdown(5);
+
+    const intervalId = window.setInterval(() => {
+      setRedirectCountdown((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(intervalId);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const timeoutId = window.setTimeout(() => {
+      window.location.href = DIGITAL_SALES_REDIRECT_URL;
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [whatsappConfirmed]);
 
   // Escuta histórico de navegação (botão voltar/avançar do navegador)
   useEffect(() => {
@@ -144,18 +173,36 @@ export function App() {
         {/* Banner de Confirmação do WhatsApp (quando o cliente clica no link do zap) */}
         {whatsappConfirmed && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-            <div className="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-900 flex items-center justify-between gap-3 shadow-xs">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-900 flex items-start sm:items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-0.5 sm:mt-0" />
                 <div>
-                  <p className="font-bold text-sm">🎉 Cadastro confirmado e aprovado com sucesso!</p>
-                  <p className="text-xs text-emerald-700 mt-0.5">Seus dados foram integrados ao ERP Vetline e nosso time entrará em contato em breve para dar início ao seu atendimento.</p>
+                  <p className="font-bold text-sm sm:text-base">🎉 Cadastro confirmado e aprovado com sucesso!</p>
+                  <p className="text-xs sm:text-sm text-emerald-800 mt-1">
+                    Seus dados foram integrados ao ERP Vetline. Você será redirecionado para o{' '}
+                    <strong>atendimento de vendas digitais</strong>{' '}
+                    {redirectCountdown > 0 ? (
+                      <span>em {redirectCountdown}s...</span>
+                    ) : (
+                      <span>agora...</span>
+                    )}
+                  </p>
+                  <div className="mt-2.5">
+                    <a
+                      href={DIGITAL_SALES_REDIRECT_URL}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 rounded-lg transition-colors shadow-xs"
+                    >
+                      <span>Ir para o atendimento de vendas digitais</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setWhatsappConfirmed(false)}
                 className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded cursor-pointer"
+                aria-label="Fechar aviso"
               >
                 ✕
               </button>
